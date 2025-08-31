@@ -6,5 +6,7 @@
     [
       ./hardware/qemu.nix
       ./modules/standard.nix
+
+      ./modules/podman.nix
     ];
 }

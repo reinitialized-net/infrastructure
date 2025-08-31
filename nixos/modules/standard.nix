@@ -2,11 +2,12 @@
 # Standard Configuration Module for all Containers/Virtual Servers
 { config, pkgs, ...}:
 {
+  # Configure time
   time = {
     timeZone = "America/Chicago";
     hardwareClockInLocalTime = true;
   };
-
+  # Configure Networking & Firewall
   networking = {
     hostName = "standard";
     networkmanager.enable = true;
@@ -17,7 +18,7 @@
       allowedTCPPorts = [ 22 ];
     };
   };
-
+  # Configure Services
   services = {
     # Enable SSH
     openssh = {
@@ -29,7 +30,6 @@
       };
     };
   };
-
   # Configure Packages & Programs
   environment.systemPackages = with pkgs; [
     vim
@@ -43,7 +43,6 @@
       defaultEditor = true;
     };
   };
-
   # Configure Users
   users = {
     mutableUsers = false;
@@ -76,5 +75,11 @@
         };
       };
     };
+  };
+  # Security Settings
+  security.sudo.enable = false;
+  security.sudo-rs = {
+    enable = true;
+    wheelNeedsPassword = false;
   };
 }
