@@ -14,13 +14,13 @@
     {
       packages.${system}.iso = nixosSystem {
         inherit system;
-        modules = [ ./nixos/profiles/demo.nix ];
+        modules = [ ./nixos/demo.nix ];
       }.config.system.build.isoImage;
 
       nixosConfigurations.nixos-demo = nixosSystem {
         inherit system;
         modules = [
-          ./nixos/profiles/demo.nix
+          ./nixos/demo.nix
         ];
       };
     };
