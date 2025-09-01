@@ -4,8 +4,8 @@
 	virtualisation.podman = {
 		enable = true;
 		dockerCompat = true; # Optional: allow 'docker' CLI to use podman
-		defaultNetwork.settings.dns_enabled = true;
-		socket.enable = true; # Enable the Podman socket for Portainer
+		defaultNetwork.settings.dns_enabled = true; # Enable DNS for networking
+		dockerSocket.enable = true; # Enable Docker compatibility socket
 	};
 	# Create a dedicated podman user (system user, no login)
   users = {
