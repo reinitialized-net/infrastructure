@@ -4,9 +4,9 @@
 {
   imports = 
     [
-      ./hardware/qemu.nix
-      ./modules/standard.nix
+      "${modulesPath}/hardware/qemu.nix"
+      "${modulesPath}/modules/standard.nix"
 
-      ./modules/podman.nix
+      "${modulesPath}/modules/podman.nix"
     ];
 }
