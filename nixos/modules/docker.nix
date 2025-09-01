@@ -6,10 +6,6 @@
   # 1. Install Docker
   virtualisation.docker = {
     enable = true;
-    # Recommended: enable log driver for integration with journald
-    extraOptions = ''
-      --log-driver=journald
-    '';
   };
   boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
 
