@@ -19,7 +19,9 @@
       device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
       fsType = "ext4";
       options = [ "defaults" ];
+
       autoResize = true;
+      autoFormat = true;
     };
   };
 
@@ -29,7 +31,7 @@
 
     users = {
       docker = {
-        # User must be managed using sudo.
+        # User must be managed using sudo
         initialHashedPassword = "!";
         isSystemUser = true;
         shell = "${pkgs.shadow}/bin/nologin";
