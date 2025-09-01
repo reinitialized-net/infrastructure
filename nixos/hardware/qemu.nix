@@ -28,7 +28,7 @@
       device = "/dev/disk/by-label/BOOT";
       fsType = "vfat";
     };
-    "/" = lib.mkDefault{
+    "/" = lib.mkDefault {
       device = "/dev/disk/by-label/os";
       fsType = "ext4";
 
@@ -52,5 +52,5 @@
   };
 
   swapDevices = [ ];
-  system.stateVersion = lib.mkDefault "25.05";
+  system.stateVersion = "25.05";
 }

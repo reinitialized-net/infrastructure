@@ -21,10 +21,20 @@
         ];
       }.config.system.build.isoImage;
 
-      nixosConfigurations.nixos-demo = nixosSystem {
+      nixosConfigurations.standardVM = nixosSystem {
         inherit system;
         modules = [
-          ./nixos/demo.nix
+          ./nixos/hardware/qemu.nix
+          ./nixos/modules/standard.nix
+        ];
+      };
+      nixosConfigurations.dockerVM = nixosSystem {
+        inherit system;
+        modules = [
+          ./nixos/hardware/qemu.nix
+          ./nixos/modules/standard.nix
+
+          ./nixos/modules/docker.nix
         ];
       };
     };

@@ -1,0 +1,39 @@
+# modules/docker.nix
+# Installs and configures Docker according to best practices.
+{ config, pkgs, lib, ... }:
+
+{
+  # 1. Install Docker
+  virtualisation.docker = {
+    enable = true;
+    # Recommended: enable log driver for integration with journald
+    extraOptions = [ "--log-driver=journald" ];
+  };
+  boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
+
+  # 2. Mount the disk labeled "container-data"
+  fileSystems = {
+    "/var/lib/docker/volumes" = {
+      device = "/dev/disk/by-label/container-data";
+      fsType = "ext4";
+      options = [ "defaults" ];
+      autoResize = true;
+    };
+  };
+
+  # 3. Create a dedicated docker system user
+  users = {
+    groups.docker = {};
+
+    users = {
+      docker = {
+        # User must be managed using sudo.
+        initialHashedPassword = "!";
+        isSystemUser = true;
+        shell = "${pkgs.shadow}/bin/nologin";
+        group = "docker";
+        home = "/var/lib/docker";
+      };
+    };
+  };
+}
