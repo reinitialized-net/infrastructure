@@ -1,6 +1,6 @@
 # profiles/demo.nix
 ## A demostration profile for testing Nix configurations
-{ config, lib, pkgs, modulesPath, ... }:
+{ config, ... }:
 {
   imports = 
     [
@@ -8,5 +8,6 @@
       ./modules/standard.nix
 
       ./modules/podman.nix
+      ./modules/portainer.nix
     ];
 }
