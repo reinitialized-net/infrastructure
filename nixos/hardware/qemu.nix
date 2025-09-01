@@ -25,11 +25,11 @@
   # Define FileSystems
   fileSystems = {
     "/boot" = lib.mkDefault {
-      device = "/dev/disk/by-label/BOOT";
+      device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part1";
       fsType = "vfat";
     };
     "/" = lib.mkDefault {
-      device = "/dev/disk/by-label/os";
+      device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part2";
       fsType = "ext4";
 
       autoResize = true;

@@ -14,7 +14,7 @@
   # 2. Mount the disk labeled "container-data"
   fileSystems = {
     "/var/lib/docker/volumes" = {
-      device = "/dev/disk/by-label/container-data";
+      device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
       fsType = "ext4";
       options = [ "defaults" ];
       autoResize = true;
