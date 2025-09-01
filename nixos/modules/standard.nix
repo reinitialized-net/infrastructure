@@ -82,4 +82,9 @@
     enable = true;
     wheelNeedsPassword = false;
   };
+  # Nix Settings
+  nix.settings = {
+		auto-optimise-store = true;
+		experimental-features = [ "nix-command" "flakes" ];
+	};
 }
