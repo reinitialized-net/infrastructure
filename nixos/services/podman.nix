@@ -36,6 +36,7 @@
     users = {
       podman = {
         isSystemUser = true;
+        linger = true;
         shell = "${pkgs.shadow}/bin/nologin";
         home = "/var/lib/containers";
         group = "podman";

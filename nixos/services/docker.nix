@@ -28,6 +28,7 @@
     users = {
       docker = {
         isSystemUser = true;
+        linger = true;
         shell = "${pkgs.shadow}/bin/nologin";
         home = "/var/lib/docker";
         group = "docker";
