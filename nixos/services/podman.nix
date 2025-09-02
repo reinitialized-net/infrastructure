@@ -29,14 +29,14 @@
     };
   };
 
-	# 3) Create a dedicated user
+	# 3) Create a dedicated user for managing containers
   users = {
     groups.podman = {};
 
     users = {
-      podman = {
+      containers = {
         isSystemUser = true;
-        shell = "${pkgs.shadow}/bin/nologin";
+        shell = pkgs.bash;
         home = "/var/lib/containers";
         group = "podman";
         # User must be managed using sudo

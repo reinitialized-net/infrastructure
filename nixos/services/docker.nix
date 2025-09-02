@@ -21,15 +21,14 @@
     };
   };
 
-  # 3) Create a dedicated user
+  # 3) Create a dedicated user for managing containers
   users = {
     groups.docker = {};
 
     users = {
-      docker = {
+      containers = {
         isSystemUser = true;
-        linger = true;
-        shell = "${pkgs.shadow}/bin/nologin";
+        shell = pkgs.bash;
         home = "/var/lib/docker";
         group = "docker";
         # User must be managed using sudo
