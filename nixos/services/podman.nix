@@ -55,6 +55,8 @@
       if ! ${pkgs.podman}/bin/podman network exists backend; then
         ${pkgs.podman}/bin/podman network create backend
       fi
+
+      chown -R podman:podman /var/lib/containers
     '';
     serviceConfig = {
       Type = "oneshot";
