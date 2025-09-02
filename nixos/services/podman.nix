@@ -3,15 +3,19 @@
 { config, lib, pkgs, ... }:
 {
   # 1) Install Podman
-	virtualisation.podman = {
-		enable = true;
-    # Optional: allow 'docker' CLI to use podman
-		dockerCompat = true;
-    # Optional: Enable DNS for networking
-		defaultNetwork.settings.dns_enabled = true;
-    # Optional: Enable Docker compatibility socket (eg. for Portainer)
-		dockerSocket.enable = lib.mkDefault false;
-	};
+    virtualisation = {
+    podman = {
+      enable = true;
+      # Optional: allow 'docker' CLI to use podman
+      dockerCompat = true;
+      # Optional: Enable DNS for networking
+      defaultNetwork.settings.dns_enabled = true;
+      # Optional: Enable Docker compatibility socket (eg. for Portainer)
+      dockerSocket.enable = lib.mkDefault false;
+    };
+    oci-containers.backend = "podman";
+  };
+  boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
 
   # 2) Mount secondary disk to /var/lib/containers/storage/volumes
   fileSystems = {

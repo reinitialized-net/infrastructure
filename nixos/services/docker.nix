@@ -2,9 +2,10 @@
 # Installs and configures Docker according to best practices.
 { config, pkgs, lib, ... }:
 {
-  # 1) Install Docker
-  virtualisation.docker = {
-    enable = true;
+  # 1) Install and configure Docker
+  virtualisation = {
+    docker.enable = true;
+    oci-containers.backend = "docker";
   };
   boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
 
