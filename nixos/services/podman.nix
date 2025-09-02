@@ -13,9 +13,9 @@
 		dockerSocket.enable = lib.mkDefault false;
 	};
 
-  # 2) Mount secondary disk to /var/lib/docker/volumes
+  # 2) Mount secondary disk to /var/lib/containers/storage/volumes
   fileSystems = {
-    "/var/lib/docker/volumes" = {
+    "/var/lib/containers/storage/volumes" = {
       device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
       fsType = "ext4";
       options = [ "defaults" ];
