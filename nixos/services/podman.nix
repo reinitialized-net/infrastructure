@@ -51,7 +51,7 @@
     after = [ "podman.service" ];
     wantedBy = [ "multi-user.target" ];
     serviceConfig = {
-      ExecStart = "${pkgs.podman}/bin/docker network create backend";
+      ExecStart = "${pkgs.podman}/bin/podman network create backend";
       Type = "oneshot";
       RemainAfterExit = true;
     };
