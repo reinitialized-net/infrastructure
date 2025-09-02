@@ -56,7 +56,7 @@
         ${pkgs.podman}/bin/podman network create backend
       fi
 
-      chown -R podman:podman /var/lib/containers
+      chown -R containers:containers /var/lib/containers
     '';
     serviceConfig = {
       Type = "oneshot";
