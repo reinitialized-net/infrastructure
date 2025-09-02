@@ -24,17 +24,27 @@
       nixosConfigurations.standardVM = nixosSystem {
         inherit system;
         modules = [
+          ./nixos/standard.nix
           ./nixos/hardware/qemu.nix
-          ./nixos/modules/standard.nix
         ];
       };
+      
       nixosConfigurations.dockerVM = nixosSystem {
         inherit system;
         modules = [
+          ./nixos/standard.nix
           ./nixos/hardware/qemu.nix
-          ./nixos/modules/standard.nix
 
-          ./nixos/modules/docker.nix
+          ./nixos/services/docker.nix
+        ];
+      };
+      nixosConfigurations.podmanVM = nixosSystem {
+        inherit system;
+        modules = [
+          ./nixos/standard.nix
+          ./nixos/hardware/qemu.nix
+
+          ./nixos/services/podman.nix
         ];
       };
     };

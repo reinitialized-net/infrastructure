@@ -1,0 +1,43 @@
+# modules/podman.nix
+# Installs and configures Podman according to best practices.
+{ config, lib, pkgs, ... }:
+{
+  # 1) Install Podman
+	virtualisation.podman = {
+		enable = true;
+    # Optional: allow 'docker' CLI to use podman
+		dockerCompat = true;
+    # Optional: Enable DNS for networking
+		defaultNetwork.settings.dns_enabled = true;
+    # Optional: Enable Docker compatibility socket (eg. for Portainer)
+		dockerSocket.enable = lib.mkDefault false;
+	};
+
+  # 2) Mount secondary disk to /var/lib/docker/volumes
+  fileSystems = {
+    "/var/lib/docker/volumes" = {
+      device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
+      fsType = "ext4";
+      options = [ "defaults" ];
+
+      autoResize = true;
+      autoFormat = true;
+    };
+  };
+
+	# 3) Create a dedicated podman user (system user, no login)
+  users = {
+    groups.podman = {};
+
+    users = {
+      podman = {
+        isSystemUser = true;
+        shell = "${pkgs.shadow}/bin/nologin";
+        home = "/var/lib/podman";
+        group = "podman";
+        # User must be managed using sudo
+        initialHashedPassword = "!";
+      };
+    };
+  };
+}
