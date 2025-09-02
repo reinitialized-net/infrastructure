@@ -13,7 +13,7 @@
     autoStart = true;
     serviceName = "portainer";
 
-    podman.user = lib.mkIf (config.virtualisation.podman.enable) "podman";
+    podman.user = lib.mkIf (config.virtualisation.podman.enable) "containers";
   };
 
   # Allow firewall access to Portainer (port 9000)
