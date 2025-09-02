@@ -9,9 +9,9 @@
       "portainer_data:/data"
       "/run/podman/podman.sock:/var/run/docker.sock"
     ];
-    networks = [
-      "backend"
-    ];
+    # networks = [
+    #   "backend"
+    # ];
 
     autoStart = true;
     serviceName = "portainer";
