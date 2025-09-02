@@ -9,8 +9,12 @@
       "portainer_data:/data"
       "/run/podman/podman.sock:/var/run/docker.sock"
     ];
-    restartPolicy = "always";
-    extraOptions = "--rm";
+    networks = [
+      "backend"
+    ];
+
+    autoStart = true;
+    serviceName = "portainer";
 
     podman.user = lib.mkIf (config.virtualisation.podman.enable) "podman";
   };
