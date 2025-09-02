@@ -45,4 +45,9 @@
       };
     };
   };
+
+  # 4) Ensure proper permissions
+  boot.postBootCommands = ''
+    chown -R podman:podman /var/lib/containers
+  '';
 }
