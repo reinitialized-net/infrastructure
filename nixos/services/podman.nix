@@ -50,8 +50,13 @@
     description = "Perform Container initialization";
     after = [ "podman.service" ];
     wantedBy = [ "multi-user.target" ];
+    script = ''
+      #!/usr/bin/env bash
+      if ! podman network exists backend; then
+        podman network create backend
+      fi
+    '';
     serviceConfig = {
-      ExecStart = "${pkgs.podman}/bin/podman network create backend";
       Type = "oneshot";
       RemainAfterExit = true;
     };
