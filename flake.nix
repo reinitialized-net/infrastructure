@@ -38,13 +38,14 @@
           ./nixos/services/docker.nix
         ];
       };
-      nixosConfigurations.podmanVM = nixosSystem {
+      nixosConfigurations.portainerVM = nixosSystem {
         inherit system;
         modules = [
           ./nixos/standard.nix
           ./nixos/hardware/qemu.nix
 
           ./nixos/services/podman.nix
+          ./nixos/applications/portainer.nix
         ];
       };
     };
