@@ -52,8 +52,8 @@
     wantedBy = [ "multi-user.target" ];
     script = ''
       #!/usr/bin/env bash
-      if ! podman network exists backend; then
-        podman network create backend
+      if ! ${pkgs.podman}/bin/podman network exists backend; then
+        ${pkgs.podman}/bin/podman network create backend
       fi
     '';
     serviceConfig = {
