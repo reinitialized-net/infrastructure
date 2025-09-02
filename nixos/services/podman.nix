@@ -25,7 +25,7 @@
     };
   };
 
-	# 3) Create a dedicated podman user (system user, no login)
+	# 3) Create a dedicated Podman user
   users = {
     groups.podman = {};
 
