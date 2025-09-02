@@ -45,8 +45,9 @@
     };
   };
 
-  # 4) Ensure proper permissions
+  # 4) Finalization Commands
   boot.postBootCommands = ''
     chown -R podman:podman /var/lib/containers
+    ${pkgs.podman}/bin/podman network create backend
   '';
 }
