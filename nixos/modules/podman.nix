@@ -45,9 +45,15 @@
     };
   };
 
-  # 4) Finalization Commands
-  boot.postBootCommands = ''
-    chown -R podman:podman /var/lib/containers
-    ${pkgs.podman}/bin/podman network create backend
-  '';
+  # 4) Create container-init service
+  systemd.services.container-init = {
+    description = "Perform Container initialization";
+    after = [ "podman.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.podman}/bin/docker network create backend";
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+  };
 }

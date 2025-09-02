@@ -42,8 +42,15 @@
     };
   };
 
-  # 4) Finalization Commands
-  boot.postBootCommands = ''
-    ${pkgs.docker}/bin/docker network create backend
-  '';
+  # 4) Create container-init service
+  systemd.services.container-init = {
+    description = "Perform Container initialization";
+    after = [ "docker.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.docker}/bin/docker network create backend";
+      Type = "oneshot";
+      RemainAfterExit = true;
+    };
+  };
 }
