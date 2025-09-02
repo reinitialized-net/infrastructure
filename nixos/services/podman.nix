@@ -29,7 +29,7 @@
     };
   };
 
-	# 3) Create a dedicated Podman user
+	# 3) Create a dedicated user
   users = {
     groups.podman = {};
 
@@ -37,7 +37,7 @@
       podman = {
         isSystemUser = true;
         shell = "${pkgs.shadow}/bin/nologin";
-        home = "/var/lib/podman";
+        home = "/var/lib/containers";
         group = "podman";
         # User must be managed using sudo
         initialHashedPassword = "!";

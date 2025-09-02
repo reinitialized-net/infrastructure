@@ -21,7 +21,7 @@
     };
   };
 
-  # 3) Create a dedicated Docker user
+  # 3) Create a dedicated user
   users = {
     groups.docker = {};
 
