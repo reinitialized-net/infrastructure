@@ -2,23 +2,24 @@
 # Standard Configuration Module for all Containers/Virtual Servers
 { config, pkgs, ...}:
 {
-  # Configure time
+  # 1) Configure time
   time = {
+    # Central Standard
     timeZone = "America/Chicago";
     hardwareClockInLocalTime = true;
   };
-  # Configure Networking & Firewall
+  # 2) Configure Networking
   networking = {
-    hostName = "standard";
+    # Enable NetworkManager
     networkmanager.enable = true;
-
-    # Ensure firewall is enabled and allow SSH
     firewall = {
+      # Ensure firewall is enabled
       enable = true;
+      # Allow SSH for remote management
       allowedTCPPorts = [ 22 ];
     };
   };
-  # Configure Services
+  # 3) Configure Services
   services = {
     # Enable SSH
     openssh = {
@@ -30,7 +31,7 @@
       };
     };
   };
-  # Configure Packages & Programs
+  # 4) Configure Packages & Programs
   environment.systemPackages = with pkgs; [
     vim
     bash
@@ -43,9 +44,10 @@
       defaultEditor = true;
     };
   };
-  # Configure Users
+  # 5) Configure Users
   users = {
-    mutableUsers = false;
+    mutableUsers = false; 
+    # Required since we block interactive login for root to force usage of sudo.
     allowNoPasswordLogin = true;
     defaultUserShell = pkgs.bashInteractive;
 
@@ -76,15 +78,19 @@
       };
     };
   };
-  # Security Settings
-  security.sudo.enable = false;
-  security.sudo-rs = {
-    enable = true;
-    wheelNeedsPassword = false;
+  # 6) Security Settings
+  security = {
+    # Replace sudo with sudo-rs
+    sudo.enable = false;
+    sudo-rs = {
+      enable = true;
+      wheelNeedsPassword = false;
+    };
   };
-  # Nix Settings
+  # 7) Nix Settings
   nix.settings = {
 		auto-optimise-store = true;
+    # Enable flakes since they are soonTM
 		experimental-features = [ "nix-command" "flakes" ];
 	};
 }
