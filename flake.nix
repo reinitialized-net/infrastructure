@@ -22,30 +22,14 @@
       }.config.system.build.isoImage;
 
       nixosConfigurations.standardVM = nixosSystem {
-        inherit system;
         modules = [
-          ./nixos/standard.nix
           ./nixos/hardware/qemu.nix
+          ./nixos/standard.nix
         ];
       };
-      
-      nixosConfigurations.dockerVM = nixosSystem {
-        inherit system;
+      nixosConfigurations.demoTesting = nixosSystem {
         modules = [
-          ./nixos/standard.nix
-          ./nixos/hardware/qemu.nix
-
-          ./nixos/services/docker.nix
-        ];
-      };
-      nixosConfigurations.portainerVM = nixosSystem {
-        inherit system;
-        modules = [
-          ./nixos/standard.nix
-          ./nixos/hardware/qemu.nix
-
-          ./nixos/services/podman.nix
-          ./nixos/applications/portainer.nix
+          ./nixos/hosts/demo.testing.nix
         ];
       };
     };
