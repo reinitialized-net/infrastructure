@@ -27,4 +27,7 @@
 
     podman.user = lib.mkIf (config.virtualisation.podman.enable) "containers";
   };
+
+  # 4) Allow firewall access to Services
+  networking.firewall.allowedTCPPorts = [ 9000 ];
 }
