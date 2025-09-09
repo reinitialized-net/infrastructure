@@ -14,17 +14,17 @@
       nixosSystem = nixpkgs.lib.nixosSystem;
     in
     {
-      packages.${system}.iso = nixosSystem {
-        inherit system;
-        modules = [ 
-          ./nixos/demo.nix
-        ];
-      }.config.system.build.isoImage;
+      # packages.${system}.iso = nixosSystem {
+      #   inherit system;
+      #   modules = [ 
+      #     ./nixos/demo.nix
+      #   ];
+      # }.config.system.build.isoImage;
 
       nixosConfigurations.standardVM = nixosSystem {
         modules = [
           ./nixos/hardware/qemu.nix
-          ./nixos/standard.nix
+          ./nixos/profiles/standard.nix
         ];
       };
       nixosConfigurations.demoTesting = nixosSystem {
