@@ -93,4 +93,11 @@
     # Enable flakes since they are soonTM
 		experimental-features = [ "nix-command" "flakes" ];
 	};
+  # 8) Enable Automatic Security Upgrades
+  system.autoUpgrade = {
+    enable = true;
+    flake = inputs.self.outPath;
+    dates = "02:00";
+    randomizedDelaySec = "45min";
+  }
 }
