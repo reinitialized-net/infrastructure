@@ -1,5 +1,5 @@
 # Host Configuration for mgnt.portainer
-{ config, ... }:
+{ config, lib, ... }:
 
 {
   # 1) Import required modules
