@@ -31,13 +31,13 @@
           ./nixos/profiles/standard.nix
         ];
       };
-      nixosConfigurations.demoTesting = nixosSystem {
+      nixosConfigurations.devenv = nixosSystem {
         inherit system;
         specialArgs = { 
           inherit inputs;
         };
         modules = [
-          ./nixos/hosts/demo.testing.nix
+          ./nixos/hosts/devenv.testing.nix
         ];
       };
     };
