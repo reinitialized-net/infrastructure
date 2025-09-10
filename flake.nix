@@ -22,14 +22,18 @@
       # }.config.system.build.isoImage;
 
       nixosConfigurations.standardVM = nixosSystem {
-        specialArgs = { inherit inputs; };
+        specialArgs = { 
+          inherit inputs;
+        };
         modules = [
           ./nixos/hardware/qemu.nix
           ./nixos/profiles/standard.nix
         ];
       };
       nixosConfigurations.demoTesting = nixosSystem {
-        specialArgs = { inherit inputs; };
+        specialArgs = { 
+          inherit inputs;
+        };
         modules = [
           ./nixos/hosts/demo.testing.nix
         ];
