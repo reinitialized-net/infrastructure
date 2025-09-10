@@ -5,7 +5,7 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
   };
 
-  outputs = { self, nixpkgs, ... }:
+  outputs = { self, nixpkgs, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { 
@@ -22,6 +22,7 @@
       # }.config.system.build.isoImage;
 
       nixosConfigurations.standardVM = nixosSystem {
+        inherit system;
         specialArgs = { 
           inherit inputs;
         };
@@ -31,6 +32,7 @@
         ];
       };
       nixosConfigurations.demoTesting = nixosSystem {
+        inherit system;
         specialArgs = { 
           inherit inputs;
         };
