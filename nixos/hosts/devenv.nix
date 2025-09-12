@@ -11,7 +11,7 @@
   ];
 
   # 2) Adjust system properties
-  networking.hostName = "admin";
+  networking.hostName = "devenv";
   
   # 3) Deploy Portainer using oci-container interface
   virtualisation.oci-containers.containers.portainer = {

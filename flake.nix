@@ -1,5 +1,5 @@
 {
-  description = "Official Bleu Pigger NixOS Flake";
+  description = "Official Bleu Pigs NixOS Flake";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
@@ -37,7 +37,7 @@
           inherit inputs;
         };
         modules = [
-          ./nixos/hosts/devenv.testing.nix
+          ./nixos/hosts/devenv.nix
         ];
       };
     };
