@@ -19,11 +19,11 @@
         };
 
         modules = [
+          ./hardware/qemu.nix
+          ./profiles/standard.nix
           {
             # Import baseline configuration
             imports = [
-              ./hardware/qemu.nix
-              ./profiles/standard.nix
             ];
           }
         ];
