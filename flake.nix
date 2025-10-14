@@ -12,7 +12,7 @@
       };
       nixosSystem = nixpkgs.lib.nixosSystem;
     in {
-      nixosConfiguration.devenv = nixosSystem {
+      nixosConfigurations.devenv = nixosSystem {
         inherit system;
         specialArgs = {
           inherit inputs;
