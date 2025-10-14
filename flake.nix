@@ -26,7 +26,7 @@
               ./profiles/standard.nix
             ];
           }
-        ]
+        ];
       };
-    }
-};
+    };
+}
