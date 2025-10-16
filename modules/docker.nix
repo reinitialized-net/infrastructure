@@ -12,7 +12,6 @@
         no-new-privileges = true; # Prevent privilege escalation
       };
     };
-    docker.enable = true;
     oci-containers.backend = "docker";
   };
   boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
