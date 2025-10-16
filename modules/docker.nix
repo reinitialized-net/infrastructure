@@ -10,8 +10,8 @@
       daemon.settings = {
         icc = false; # Disable inter-container communication
         no-new-privileges = true; # Prevent privilege escalation
-      }
-    }
+      };
+    };
     docker.enable = true;
     oci-containers.backend = "docker";
   };
