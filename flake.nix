@@ -20,17 +20,22 @@
 
         modules = [
           {
-            # Import baseline configuration
             imports = [
               ./hardware/qemu.nix
               ./profiles/standard.nix
               ./modules/docker.nix
             ];
 
-            # Define system-specific settings
             networking.hostName = "devenv";
+            networking.interfaces.eth0.ipv4.addresses = [
+              {
+                address = "10.1.200.2";
+                prefixLength = 24;
+              }
+            ];
+            networking.defaultGateway = "10.1.200.1";
+            networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
 
-            # Define required packages
             environment.systemPackages = with pkgs; [
               vim
               git
