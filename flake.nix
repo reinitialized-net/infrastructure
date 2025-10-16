@@ -28,7 +28,7 @@
             ];
 
             # Define system-specific settings
-            networking.hostname = "devenv";
+            networking.hostName = "devenv";
 
             # Define required packages
             environment.systemPackages = with pkgs; [
@@ -38,6 +38,8 @@
               btop
               fastfetch
               docker-compose
+
+              nixd
             ];
           }
         ];
