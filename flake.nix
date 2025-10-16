@@ -20,7 +20,8 @@
         };
 
         modules = [
-          {
+          vscode-server.nixosModules.default
+          ({ config, pkgs, ... }: {
             imports = [
               ./hardware/qemu.nix
               ./profiles/standard.nix
@@ -73,7 +74,7 @@
                 "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
               ];
             };
-          }
+          })
         ];
       };
     };
