@@ -2,9 +2,10 @@
   description = "Reinitialized Infrastructure";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+    inputs.vscode-server.url = "github:nix-community/nixos-vscode-server";
   };
 
-  outputs = { self, nixpkgs, ... }@inputs:
+  outputs = { self, nixpkgs, vscode-server, ... }@inputs:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs { 
@@ -37,7 +38,8 @@
             networking.defaultGateway = "10.1.200.1";
             networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
 
-            programs.nix-ld.enable = true;
+            ## Support vscode-server for remote ssh
+            services.vscode-server.enable = true;
 
             environment.systemPackages = with pkgs; [
               vim
