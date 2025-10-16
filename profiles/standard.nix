@@ -93,23 +93,5 @@
     dates = "02:00";
     randomizedDelaySec = "45min";
   };
-  # 9) systemd service for ensuring unique machine-id
-    systemd.services.sysprep = {
-    description = "Perform System Preparation";
-    after = [ "podman.service" ];
-    wantedBy = [ "multi-user.target" ];
-    script = ''
-      #!/usr/bin/env bash
-      if ! ${pkgs.podman}/bin/podman network exists backend; then
-        ${pkgs.podman}/bin/podman network create backend
-      fi
-
-      chown -R containers:podman /var/lib/containers
-    '';
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-    };
-  };
 }
 
