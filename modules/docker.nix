@@ -4,6 +4,14 @@
 {
   # Install/Configure Docker
   virtualisation = {
+    docker = {
+      enable = true;
+
+      daemon.settings = {
+        icc = false; # Disable inter-container communication
+        no-new-privileges = true; # Prevent privilege escalation
+      }
+    }
     docker.enable = true;
     oci-containers.backend = "docker";
   };
@@ -33,15 +41,6 @@
         initialHashedPassword = "!";
       };
     };
-  };
-  # Enable Docker service
-  services.docker = {
-    enable = true;
-    extraOptions = [
-      "--icc=false"
-      "--no-new-privileges"
-    ];
-    defaultNetwork = "backend";
   };
   # Ensure the backend network exists
   systemd.services.docker-init = {
