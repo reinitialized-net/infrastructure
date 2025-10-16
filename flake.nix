@@ -19,11 +19,25 @@
         };
 
         modules = [
-          ./hardware/qemu.nix
-          ./profiles/standard.nix
           {
             # Import baseline configuration
             imports = [
+              ./hardware/qemu.nix
+              ./profiles/standard.nix
+              ./modules/docker.nix
+            ];
+
+            # Define system-specific settings
+            networking.hostname = "devenv";
+
+            # Define required packages
+            environment.systemPackages = with pkgs; [
+              vim
+              git
+              curl
+              btop
+              fastfetch
+              docker-compose
             ];
           }
         ];
