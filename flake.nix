@@ -26,6 +26,7 @@
               ./modules/docker.nix
             ];
 
+            # System-specific configuration
             networking.hostName = "devenv";
             networking.interfaces.eth0.ipv4.addresses = [
               {
@@ -35,6 +36,8 @@
             ];
             networking.defaultGateway = "10.1.200.1";
             networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
+
+            programs.nix-ld.enable = true;
 
             environment.systemPackages = with pkgs; [
               vim
