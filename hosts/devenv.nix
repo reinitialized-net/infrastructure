@@ -32,7 +32,7 @@
     docker-compose
 
     nixd
-    nixfmt
+    nixfmt-rfc-style
   ];
 
   # Create develop user
