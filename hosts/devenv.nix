@@ -32,6 +32,7 @@
     docker-compose
 
     nixd
+    nixfmt
   ];
 
   # Create develop user
