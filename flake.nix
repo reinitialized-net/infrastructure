@@ -12,15 +12,25 @@
       #   inherit system;
       # };
       nixosSystem = nixpkgs.lib.nixosSystem;
-    in {
-      nixosConfigurations.devenv = nixosSystem {
-        inherit system;
-        specialArgs = {
-          inherit inputs;
-        };
 
+      createVS = 
+        {
+          modules ? [ ]
+        }:
+        nixosSystem {
+          inherit system;
+          specialArgs = {
+            inherit inputs;
+          };
+
+          modules = [
+            ./hardware/qemu.nix
+            ./modules/standard.nix
+          ] ++ modules;
+        };
+    in {
+      nixosConfigurations.devenv = createVS {
         modules = [
-          vscode-server.nixosModules.default
           ./hosts/devenv.nix
         ];
       };
