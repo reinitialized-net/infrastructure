@@ -1,6 +1,6 @@
-# module/standard.nix
+# modules/standard.nix
 # Standard Configuration Module for all Containers/Virtual Servers
-{ config, pkgs, inputs, ...}:
+{ pkgs, inputs, ...}:
 {
   # 1) Configure time
   time = {
