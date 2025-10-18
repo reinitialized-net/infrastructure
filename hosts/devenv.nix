@@ -6,7 +6,6 @@
     ../modules/standard.nix
     ../modules/docker.nix
     ../hardware/qemu.nix
-    inputs.vscode-server.nixosModules.default
   ];
 
   # System-specific configuration
