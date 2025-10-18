@@ -13,6 +13,7 @@
       # };
       nixosSystem = nixpkgs.lib.nixosSystem;
 
+      ## Helper function for creating configurations
       createVS = 
         {
           modules ? [ ]
@@ -22,7 +23,6 @@
 
           specialArgs = {
             inherit inputs;
-            inherit vscode-server;
           };
 
           modules = modules;
