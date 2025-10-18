@@ -21,12 +21,12 @@
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
 
   ## Web-based IDE
-  services.openvscode-server = {
-    enable = true;
-    extraArguments = {
-      "openvscode-server.port" = 8080;
-    };
-  };
+  # services.openvscode-server = {
+  #   enable = true;
+  #   extraArguments = {
+  #     "openvscode-server.port" = 8080;
+  #   };
+  # };
   ## TEMPORARY HACK FOR REMOTE SSH
   services.vscode-server.enable = true;
 
