@@ -28,7 +28,7 @@
   #   };
   # };
   ## TEMPORARY HACK FOR REMOTE SSH
-  services.vscode-server.enable = true;
+  #services.vscode-server.enable = true;
 
   environment.systemPackages = with pkgs; [
     vim
