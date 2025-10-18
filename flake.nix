@@ -22,7 +22,7 @@
 
           specialArgs = {
             inherit inputs;
-            inherit localPackages;
+            inherit vscode-server;
           };
 
           modules = modules;
