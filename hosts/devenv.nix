@@ -1,6 +1,6 @@
 # hosts/devenv.nix
 ## Defines configuration for the development environment VS.
-{ config, pkgs, vscode-server, inputs, ...}:
+{ pkgs, inputs, ...}:
 {
   imports = [
     ../modules/standard.nix
