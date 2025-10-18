@@ -1,6 +1,6 @@
 # hosts/devenv.nix
 ## Defines configuration for the development environment VS.
-{ pkgs, inputs, ...}:
+{ config, pkgs, vscode-server, inputs, ...}:
 {
   imports = [
     ../modules/standard.nix
@@ -20,17 +20,15 @@
   networking.defaultGateway = "10.1.200.1";
   networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
 
-  ## Support vscode-server for remote ssh.
-  ## TODO: look into alternative solutions. VSCode server??
-  services.vscode-server.enable = true;
-
-  ## Trial run openvscode-server
+  ## Web-based IDE
   services.openvscode-server = {
     enable = true;
     extraArguments = {
       "openvscode-server.port" = 8080;
     };
   };
+  ## TEMPORARY HACK FOR REMOTE SSH
+  services.vscode-server.enable = true;
 
   environment.systemPackages = with pkgs; [
     vim
