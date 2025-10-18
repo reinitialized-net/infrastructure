@@ -5,7 +5,7 @@
     vscode-server.url = "github:nix-community/nixos-vscode-server";
   };
 
-  outputs = { self, nixpkgs, localPackages, vscode-server, ... }@inputs:
+  outputs = { self, nixpkgs, vscode-server, ... }@inputs:
     let
       system = "x86_64-linux";
       # pkgs = import nixpkgs { 
