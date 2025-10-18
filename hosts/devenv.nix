@@ -23,6 +23,14 @@
   ## TODO: look into alternative solutions. VSCode server??
   services.vscode-server.enable = true;
 
+  ## Trial run openvscode-server
+  services.openvscode-server = {
+    enable = true;
+    extraArguments = {
+      "openvscode-server.port" = 8080;
+    };
+  };
+
   environment.systemPackages = with pkgs; [
     vim
     git
