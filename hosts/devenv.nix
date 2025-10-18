@@ -1,11 +1,12 @@
 # hosts/devenv.nix
 ## Defines configuration for the development environment VS.
-{ pkgs, ...}:
+{ pkgs, inputs, ...}:
 {
   imports = [
     ../modules/standard.nix
     ../modules/docker.nix
     ../hardware/qemu.nix
+    inputs.vscode-server.nixosModules.default
   ];
 
   # System-specific configuration

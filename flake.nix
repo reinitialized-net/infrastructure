@@ -31,7 +31,6 @@
     in {
       nixosConfigurations.devenv = createVS {
         modules = [
-          vscode-server.nixosModules.default
           ./hosts/devenv.nix
         ];
       };
