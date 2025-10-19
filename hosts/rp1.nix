@@ -47,19 +47,6 @@
     };
 
     config = { ... }: {
-      # Mount persistant storage
-      fileSystems = {
-        "/var/lib/caddy" = {
-          device = "/var/lib/caddy";
-          fsType = "none";
-          options = [ "bind" ];
-        };
-        "/etc/caddy" = {
-          device = "/etc/caddy";
-          fsType = "none";
-          options = [ "bind" ];
-        };
-      };
       # Enable Caddy service
       services.caddy = {
         enable = true;
