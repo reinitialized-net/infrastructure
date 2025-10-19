@@ -75,7 +75,7 @@
       };
       # Setup ACME
       security.acme = {
-        enable = true;
+        acceptTerms = true;
         email = "admin@reinitialized.net";
       };
 
