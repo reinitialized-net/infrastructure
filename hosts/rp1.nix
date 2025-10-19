@@ -52,12 +52,14 @@
       # Enable Caddy service
       services.caddy = {
         enable = true;
+        email = "admin@reinitialized.net";
+        acmeCA = "https://acme-v02.api.letsencrypt.org/directory";
 
         virtualHosts = {
           "jellyfin.reinitialized.me" = {
             serverAliases = [ "www.jellyfin.reinitialized.me" ];
             listenAddresses = [ "10.1.12.2" ];
-            hostName = "media1.svcs.reinitialized.net";
+            #hostName = "media1.svcs.reinitialized.net";
 
             extraConfig = ''
               reverse_proxy http://10.1.11.21:8096
