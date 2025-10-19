@@ -3,9 +3,9 @@
 { pkgs, ...}:
 {
   imports = [
-    ../modules/standard.nix
-    ../modules/docker.nix
     ../hardware/qemu.nix
+    
+    ../modules/standard.nix
   ];
 
   # System-specific configuration

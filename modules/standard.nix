@@ -93,5 +93,7 @@
     dates = "02:00";
     randomizedDelaySec = "45min";
   };
+  
+  system.stateVersion = "25.05"; # LEAVE ALONE.
 }
 

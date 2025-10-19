@@ -48,7 +48,5 @@
   };
 
   swapDevices = [ ];
-  
-  system.stateVersion = "25.05"; # LEAVE ALONE.
 }
 
