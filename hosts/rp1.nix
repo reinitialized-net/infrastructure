@@ -40,9 +40,11 @@
     bindMounts = {
       "/var/lib/caddy" = {
         hostPath = "/mnt/containers/caddy/var/lib/caddy";
+        isReadOnly =  false;
       };
       "/etc/caddy" = {
         hostPath = "/mnt/containers/caddy/etc/caddy";
+        isReadOnly = false;
       };
     };
 
