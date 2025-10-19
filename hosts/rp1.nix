@@ -33,13 +33,14 @@
     firewall.allowedUDPPorts = [ 80 443 ];
   };
 
-  # Setup Caddy container
-  containers.caddy = {
+  # Setup Nginx container
+  containers.nginx = {
+    ephemeral = true;
     autoStart = true;
     privateNetwork = false;
     bindMounts = {
       "/var/lib/acme" = {
-        hostPath = "/mnt/containers/caddy/var/lib/acme";
+        hostPath = "/mnt/containers/nginx/var/lib/acme";
         isReadOnly =  false;
       };
 
@@ -52,7 +53,6 @@
       #   isReadOnly = false;
       # };
     };
-
     config = { ... }: {
       # Setup Nginx service
       services.nginx = {
