@@ -65,7 +65,7 @@
 
         openssh = {
           authorizedKeys.keys = [
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKLs7Ibr8m51iIUtjDSYSO/jegma3yRiwe+0Lf+lD+qM rnetadmin"
+            "sh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGJ7/hKrwNacpYeg0J5vChYyIcVPGYkD/cKnJ+rQ25MT reinitialized"
           ];
         };
       };
