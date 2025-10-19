@@ -51,11 +51,13 @@
       fileSystems = {
         "/var/lib/caddy" = {
           device = "/var/lib/caddy";
-          fsType = "ext4";
+          fsType = "none";
+          options = [ "bind" ];
         };
         "/etc/caddy" = {
           device = "/etc/caddy";
-          fsType = "ext4";
+          fsType = "none";
+          options = [ "bind" ];
         };
       };
       # Enable Caddy service
