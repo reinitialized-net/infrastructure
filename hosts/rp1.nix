@@ -53,6 +53,10 @@
           device = "/var/lib/caddy";
           fsType = "ext4";
         };
+        "/etc/caddy" = {
+          device = "/etc/caddy";
+          fsType = "ext4";
+        };
       };
       # Enable Caddy service
       services.caddy = {
