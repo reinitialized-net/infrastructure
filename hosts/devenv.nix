@@ -26,6 +26,7 @@
   #     "openvscode-server.port" = 8080;
   #   };
   # };
+  
   ## Temporarily use remote-ssh VS Code server until we can switch to openvscode-server
   services.vscode-server.enable = true;
 

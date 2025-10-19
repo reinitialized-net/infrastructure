@@ -30,11 +30,13 @@
     in {
       nixosConfigurations.devenv = createVS {
         modules = [
-          ./hardware/qemu.nix
-          ./modules/standard.nix
           ./hosts/devenv.nix
-
           inputs.vscode-server.nixosModules.default
+        ];
+      };
+      nixosConfigurations.rp1 = createVS {
+        modules = [
+          ./hosts/rp1.nix
         ];
       };
     };
