@@ -38,35 +38,65 @@
     autoStart = true;
     privateNetwork = false;
     bindMounts = {
-      "/var/lib/caddy" = {
-        hostPath = "/mnt/containers/caddy/var/lib/caddy";
+      "/var/lib/acme" = {
+        hostPath = "/mnt/containers/caddy/var/lib/acme";
         isReadOnly =  false;
       };
-      "/etc/caddy" = {
-        hostPath = "/mnt/containers/caddy/etc/caddy";
-        isReadOnly = false;
-      };
+
+      # "/var/lib/caddy" = {
+      #   hostPath = "/mnt/containers/caddy/var/lib/caddy";
+      #   isReadOnly =  false;
+      # };
+      # "/etc/caddy" = {
+      #   hostPath = "/mnt/containers/caddy/etc/caddy";
+      #   isReadOnly = false;
+      # };
     };
 
     config = { ... }: {
-      # Enable Caddy service
-      services.caddy = {
+      # Setup Nginx service
+      services.nginx = {
         enable = true;
-        email = "admin@reinitialized.net";
-        acmeCA = "https://acme-v02.api.letsencrypt.org/directory";
+        recommendedProxySettings = true;
+        recommendedTlsSettings = true;
 
         virtualHosts = {
           "jellyfin.reinitialized.me" = {
-            serverAliases = [ "www.jellyfin.reinitialized.me" ];
-            listenAddresses = [ "10.1.12.2" ];
-            #hostName = "media1.svcs.reinitialized.net";
+            enableACME = true;
+            forceSSL = true;
 
-            extraConfig = ''
-              reverse_proxy http://10.1.11.21:8096
-            '';
+            locations = {
+              "/" = {
+                proxyPass = "http://10.1.11.21:8096";
+              };
+            };
           };
         };
       };
+      # Setup ACME
+      security.acme = {
+        enable = true;
+        email = "admin@reinitialized.net";
+      };
+
+      # # Enable Caddy service
+      # services.caddy = {
+      #   enable = true;
+      #   email = "admin@reinitialized.net";
+      #   acmeCA = "https://acme-v02.api.letsencrypt.org/directory";
+
+      #   virtualHosts = {
+      #     "jellyfin.reinitialized.me" = {
+      #       serverAliases = [ "www.jellyfin.reinitialized.me" ];
+      #       listenAddresses = [ "10.1.12.2" ];
+      #       #hostName = "media1.svcs.reinitialized.net";
+
+      #       extraConfig = ''
+      #         reverse_proxy http://10.1.11.21:8096
+      #       '';
+      #     };
+      #   };
+      # };
     };
   };
 }
