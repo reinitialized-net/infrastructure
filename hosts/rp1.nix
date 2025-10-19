@@ -39,10 +39,10 @@
     privateNetwork = false;
     bindMounts = {
       "/var/lib/caddy" = {
-        hostPath = "/var/lib/caddy";
+        hostPath = "/mnt/containers/caddy/var/lib/caddy";
       };
       "/etc/caddy" = {
-        hostPath = "/etc/caddy";
+        hostPath = "/mnt/containers/caddy/etc/caddy";
       };
     };
 
