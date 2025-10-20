@@ -52,7 +52,18 @@
         recommendedTlsSettings = true;
 
         virtualHosts = {
-          "jellyfin.reinitialized.me" = {
+          "media.reinitialized.me" = {
+            enableACME = true;
+            forceSSL = true;
+            listenAddresses = [ "10.1.12.2" ];
+
+            locations = {
+              "/" = {
+                proxyPass = "http://10.1.11.21:8096";
+              };
+            };
+
+          "riven.media.reinitialized.me" = {
             enableACME = true;
             forceSSL = true;
             listenAddresses = [ "10.1.12.2" ];
