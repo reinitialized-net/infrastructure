@@ -43,15 +43,6 @@
         hostPath = "/mnt/containers/nginx/var/lib/acme";
         isReadOnly =  false;
       };
-
-      # "/var/lib/caddy" = {
-      #   hostPath = "/mnt/containers/caddy/var/lib/caddy";
-      #   isReadOnly =  false;
-      # };
-      # "/etc/caddy" = {
-      #   hostPath = "/mnt/containers/caddy/etc/caddy";
-      #   isReadOnly = false;
-      # };
     };
     config = { ... }: {
       # Setup Nginx service
@@ -64,6 +55,7 @@
           "jellyfin.reinitialized.me" = {
             enableACME = true;
             forceSSL = true;
+            listenAddresses = [ "10.1.12.2" ];
 
             locations = {
               "/" = {
@@ -76,27 +68,11 @@
       # Setup ACME
       security.acme = {
         acceptTerms = true;
-        email = "admin@reinitialized.net";
+
+        defaults = {
+          email = "admin@reinitialized.net";
+        };
       };
-
-      # # Enable Caddy service
-      # services.caddy = {
-      #   enable = true;
-      #   email = "admin@reinitialized.net";
-      #   acmeCA = "https://acme-v02.api.letsencrypt.org/directory";
-
-      #   virtualHosts = {
-      #     "jellyfin.reinitialized.me" = {
-      #       serverAliases = [ "www.jellyfin.reinitialized.me" ];
-      #       listenAddresses = [ "10.1.12.2" ];
-      #       #hostName = "media1.svcs.reinitialized.net";
-
-      #       extraConfig = ''
-      #         reverse_proxy http://10.1.11.21:8096
-      #       '';
-      #     };
-      #   };
-      # };
     };
   };
 }
