@@ -62,6 +62,7 @@
                 proxyPass = "http://10.1.11.21:8096";
               };
             };
+          };
 
           "riven.media.reinitialized.me" = {
             enableACME = true;
@@ -70,7 +71,7 @@
 
             locations = {
               "/" = {
-                proxyPass = "http://10.1.11.21:8096";
+                proxyPass = "http://10.1.11.21:3000";
               };
             };
           };
