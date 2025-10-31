@@ -54,13 +54,12 @@ in
   # System-specific configuration
   networking = {
     hostName = "apps1";
+    useDHCP = false;
 
     firewall = {
       allowedTCPPorts = [ 80 ];
       allowedUDPPorts = [ 80 ];
     };
-
-    useDHCP = false;
   };
   systemd.network.networks = {
     "10-eth0" = {

@@ -10,6 +10,7 @@
   # System-specific configuration
   networking = {
     hostName = "rp1";
+    
     firewall = {
       allowedTCPPorts = [ 80 443 ];
       allowedUDPPorts = [ 80 443 ];

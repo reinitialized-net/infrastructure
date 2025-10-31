@@ -11,7 +11,6 @@
   # System-specific configuration
   networking = {
     hostName = "devenv";
-
     useDHCP = false;
   };
   systemd.network.networks = {
