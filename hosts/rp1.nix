@@ -27,10 +27,8 @@
       ];
       routes = [
         {
-          routeConfig = {
-            Gateway = "10.1.12.1";
-            PreferredSource = "10.1.12.2";
-          };
+          Gateway = "10.1.12.1";
+          PreferredSource = "10.1.12.2";
         }
       ];
       dns = [ "1.1.1.1" "8.8.8.8" ];
