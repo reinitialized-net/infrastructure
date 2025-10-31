@@ -9,7 +9,10 @@
   };
   # 2) Configure Networking
   networking = {
-    networkmanager.enable = true;
+    networkmanager = {
+      enable = true;
+    };
+    useNetworkd = true;
     firewall = {
       enable = true;
       allowedTCPPorts = [ 22 ];
