@@ -6,7 +6,9 @@ This repository defines the infrastructure for Reinitialized.net using Nix. The 
 ### Key Components
 - **`flake.nix`**: Entry point for the Nix Flake. Defines inputs and outputs for the project.
 - **`hardware/`**: Contains hardware-specific configurations, such as `qemu.nix` for virtualized environments.
-- **`profiles/`**: Defines reusable profiles for containers and virtual servers, e.g., `standard.nix`.
+- **`modules/`**: Defines reusable modules for containers and virtual servers, e.g., `standard.nix`, `docker.nix`.
+- **`hosts/`**: Contains host-specific configurations, e.g., `apps1.nix`, `devenv.nix`.
+- **`secrets/`**: Contains secret configuration files, e.g., `hudu.nix`.
 - **`.vscode/`**: VS Code workspace settings, including recommended extensions for Nix development.
 
 ## Developer Workflows
@@ -41,7 +43,7 @@ This repository defines the infrastructure for Reinitialized.net using Nix. The 
 
 ### Nix Modules
 - Use `lib.mkDefault` to set default values for options.
-- Follow the structure in `profiles/standard.nix` for defining reusable modules:
+- Follow the structure in `modules/standard.nix` for defining reusable modules:
   - Configure time, networking, services, packages, users, and security settings.
   - Use `systemd.services` for custom service definitions.
 
@@ -68,10 +70,10 @@ This repository defines the infrastructure for Reinitialized.net using Nix. The 
 
 ## Examples
 
-### Adding a New Profile
-1. Create a new file in `profiles/` (e.g., `profiles/example.nix`).
-2. Follow the structure in `profiles/standard.nix`.
-3. Import the profile in `flake.nix` or another module as needed.
+### Adding a New Module
+1. Create a new file in `modules/` (e.g., `modules/example.nix`).
+2. Follow the structure in `modules/standard.nix`.
+3. Import the module in `flake.nix` or another configuration as needed.
 
 ### Modifying Hardware Configurations
 1. Update the relevant file in `hardware/` (e.g., `hardware/qemu.nix`).
@@ -82,4 +84,8 @@ This repository defines the infrastructure for Reinitialized.net using Nix. The 
 
 ---
 
-For further questions or clarifications, refer to the NixOS documentation or consult the team.
+REMEMBER:
+- You are an agent - please keep going until the user’s query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved.
+- If you are not sure about file content or codebase structure pertaining to the user’s request, use your tools to read files and gather the relevant information: do NOT guess or make up an answer.
+- You MUST plan extensively before each function call, and reflect extensively on the outcomes of the previous function calls. DO NOT do this entire process by making function calls only, as this can impair your ability to solve the problem and think insightfully.
+- Before answering any question, always say 'I have read the copilot instructions and will follow them.'
