@@ -17,6 +17,7 @@
       enable = true;
       allowedTCPPorts = [ 22 ];
     };
+    useDHCP = true;
   };
   # 3) Configure Services
   services = {

@@ -11,6 +11,8 @@
   # System-specific configuration
   networking = {
     hostName = "devenv";
+
+    useDHCP = false;
   };
   systemd.network.networks = {
     "10-eth0" = {
@@ -25,7 +27,10 @@
           Gateway = "10.1.200.1";
         }
       ];
-      dns = [ "1.1.1.1" "8.8.8.8" ];
+      dns = [ 
+        "1.1.1.1" 
+        "8.8.8.8" 
+      ];
     };
   };
 

@@ -59,6 +59,27 @@ in
       allowedTCPPorts = [ 80 ];
       allowedUDPPorts = [ 80 ];
     };
+
+    useDHCP = false;
+  };
+  systemd.network.networks = {
+    "10-eth0" = {
+      matchConfig = {
+        Name = "eth0";
+      };
+      address = [
+        "10.1.11.2/24"
+      ];
+      routes = [
+        {
+          Gateway = "10.1.11.1";
+        }
+      ];
+      dns = [ 
+        "1.1.1.1" 
+        "8.8.8.8" 
+      ];
+    };
   };
   #services.openssh.listenAddresses = [ ];
 
