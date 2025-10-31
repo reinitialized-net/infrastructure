@@ -1,5 +1,5 @@
 # hardware/qemu.nix
-{ config, lib, pkgs, modulesPath, ... }:
+{ lib, modulesPath, ... }:
 {
   imports = 
     [
@@ -30,11 +30,6 @@
 
       autoResize = true;
     };
-  };
-
-  networking = {
-    useDHCP = lib.mkDefault true;
-    hostName = lib.mkDefault "nixos-qemu";
   };
 
   nixpkgs = {

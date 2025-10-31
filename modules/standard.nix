@@ -1,6 +1,6 @@
 # modules/standard.nix
 # Standard Configuration Module for all Containers/Virtual Servers
-{ pkgs, inputs, ...}:
+{ pkgs, lib, inputs, ...}:
 {
   # 1) Configure time
   time = {
@@ -10,14 +10,17 @@
   # 2) Configure Networking
   networking = {
     networkmanager = {
-      enable = true;
+      enable = lib.mkDefault true;
     };
-    useNetworkd = true;
+    useNetworkd = lib.mkDefault true;
+    useDHCP = lib.mkDefault true;
+
     firewall = {
-      enable = true;
+      enable = lib.mkDefault true;
       allowedTCPPorts = [ 22 ];
     };
-    useDHCP = true;
+    
+    hostName = lib.mkDefault "standard";
   };
   # 3) Configure Services
   services = {
