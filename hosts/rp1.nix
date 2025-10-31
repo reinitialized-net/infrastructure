@@ -25,13 +25,15 @@
         prefixLength = 29;
       }
     ];
-    defaultGateway = "10.1.12.1";
     nameservers = [ 
       "1.1.1.1"
       "8.8.8.8" 
     ];
-    firewall.allowedTCPPorts = [ 80 443 ];
-    firewall.allowedUDPPorts = [ 80 443 ];
+    
+    firewall = {
+      allowedTCPPorts = [ 80 443 ];
+      allowedUDPPorts = [ 80 443 ];
+    };
   };
 
   # Setup Nginx container
