@@ -1,5 +1,5 @@
 # hosts/rp1.nix
-## 
+## Handles reverse proxy service in an isolated environment.
 { ... }:
 {
   imports = [
@@ -10,6 +10,7 @@
   # System-specific configuration
   networking = {
     hostName = "rp1";
+
     interfaces.eth0.ipv4.addresses = [
       {
         address = "10.1.12.2";
@@ -38,6 +39,7 @@
     ephemeral = true;
     autoStart = true;
     privateNetwork = false;
+
     bindMounts = {
       "/var/lib/acme" = {
         hostPath = "/mnt/containers/nginx/var/lib/acme";
