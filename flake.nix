@@ -28,15 +28,30 @@
           modules = modules;
         };
     in {
+      # Standard Configuration: Used for standing up new hosts
+      nixosConfiguration.standard = createVS {
+        modules = [
+          ./hardware/qemu.nix
+          ./modules/standard.nix
+        ];
+      };
+      # devenv: NixOS-based Development Environment
       nixosConfigurations.devenv = createVS {
         modules = [
           ./hosts/devenv.nix
           inputs.vscode-server.nixosModules.default
         ];
       };
+      # rp1: Primary Reverse Proxy
       nixosConfigurations.rp1 = createVS {
         modules = [
           ./hosts/rp1.nix
+        ];
+      };
+      # apps1: Core Applications Host
+      nixosConfigurations.apps1 = createVS {
+        modules = [
+          ./hosts/apps1.nix
         ];
       };
     };

@@ -66,7 +66,6 @@
               };
             };
           };
-
           "riven.media.reinitialized.me" = {
             enableACME = true;
             forceSSL = true;
@@ -75,6 +74,18 @@
             locations = {
               "/" = {
                 proxyPass = "http://10.1.11.21:3000";
+              };
+            };
+          };
+
+          "docs.reinitialized.net" = {
+            enableACME = true;
+            forceSSL = true;
+            listenAddresses = [ "10.1.12.2" ];
+
+            locations = {
+              "/" = {
+                proxyPass = "http://10.1.11.21:3000"; 
               };
             };
           };
