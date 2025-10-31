@@ -100,6 +100,8 @@
     randomizedDelaySec = "45min";
   };
   
-  system.stateVersion = "25.05"; # LEAVE ALONE.
+  system = {
+    stateVersion = "25.05";
+  };
 }
 
