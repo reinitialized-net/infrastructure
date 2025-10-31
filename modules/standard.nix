@@ -85,9 +85,12 @@
   };
   # 7) Nix Settings
   nix.settings = {
-		auto-optimise-store = true;
+    # Enable automatic optimizations
+    auto-optimise-store = true;
     # Enable flakes since they are soonTM
-		experimental-features = [ "nix-command" "flakes" ];
+    experimental-features = [ "nix-command" "flakes" ];
+    # Disable signature checks for now (look into proper fix)
+    require-sigs = false;
 	};
   # 8) Enable Automatic Security Upgrades
   system.autoUpgrade = {
