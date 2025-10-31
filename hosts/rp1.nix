@@ -10,29 +10,30 @@
   # System-specific configuration
   networking = {
     hostName = "rp1";
-
-    interfaces.eth0.ipv4.addresses = [
-      {
-        address = "10.1.12.2";
-        prefixLength = 29;
-      }
-      {
-        address = "10.1.12.3";
-        prefixLength = 29;
-      }
-      {
-        address = "10.1.12.4";
-        prefixLength = 29;
-      }
-    ];
-    nameservers = [ 
-      "1.1.1.1"
-      "8.8.8.8" 
-    ];
-    
     firewall = {
       allowedTCPPorts = [ 80 443 ];
       allowedUDPPorts = [ 80 443 ];
+    };
+  };
+  systemd.network.networks = {
+    "10-eth0" = {
+      matchConfig = {
+        Name = "eth0";
+      };
+      address = [
+        "10.1.12.2/29"
+        "10.1.12.3/29"
+        "10.1.12.4/29"
+      ];
+      routes = [
+        {
+          routeConfig = {
+            Gateway = "10.1.12.1";
+            PreferredSource = "10.1.12.2";
+          };
+        }
+      ];
+      dns = [ "1.1.1.1" "8.8.8.8" ];
     };
   };
 
