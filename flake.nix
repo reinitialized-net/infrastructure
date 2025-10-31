@@ -29,7 +29,7 @@
         };
     in {
       # Standard Configuration: Used for standing up new hosts
-      nixosConfiguration.standard = createVS {
+      nixosConfigurations.standard = createVS {
         modules = [
           ./hardware/qemu.nix
           ./modules/standard.nix
