@@ -11,17 +11,22 @@
   # System-specific configuration
   networking = {
     hostName = "devenv";
-
-    interfaces.eth0.ipv4.addresses = [
-      {
-        address = "10.1.200.2";
-        prefixLength = 29;
-      }
-    ];
-    nameservers = [ 
-      "1.1.1.1"
-      "8.8.8.8" 
-    ];
+  };
+  systemd.network.networks = {
+    "10-eth0" = {
+      matchConfig = {
+        Name = "eth0";
+      };
+      address = [
+        "10.1.200.2/24"
+      ];
+      routes = [
+        {
+          Gateway = "10.1.200.1";
+        }
+      ];
+      dns = [ "1.1.1.1" "8.8.8.8" ];
+    };
   };
 
   ## Web-based IDE
