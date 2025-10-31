@@ -2,7 +2,7 @@
 ## Contains all essential reinitialized.net applications and services
 { ... }:
 let
-  secrets = (import ../secrets/hudu.nix);
+  secrets = import (builtins.path { path = ../secrets/hudu.nix; });
   huduEnv = {
     SECRET_KEY_BASE = secrets.SECRET_KEY_BASE;
     PASSWORD_KEY = secrets.PASSWORD_KEY;
