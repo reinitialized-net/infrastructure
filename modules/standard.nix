@@ -1,17 +1,17 @@
 # modules/standard.nix
-# Standard Configuration Module for all Containers/Virtual Servers
+# Standard Configuration module for all Containers/Virtual Servers
 { pkgs, lib, inputs, ...}:
 {
-  # 1) Configure time
+  # Configure time
   time = {
     timeZone = "America/Chicago";
     hardwareClockInLocalTime = true;
   };
-  # 2) Configure Networking
+  # Configure Networking
   networking = {
-    networkmanager = {
-      enable = lib.mkDefault false;
-    };
+    hostName = lib.mkDefault "standard";
+    
+    networkmanager.enable = lib.mkDefault false;
     useNetworkd = lib.mkDefault true;
     useDHCP = lib.mkDefault true;
 
@@ -19,10 +19,8 @@
       enable = lib.mkDefault true;
       allowedTCPPorts = [ 22 ];
     };
-    
-    hostName = lib.mkDefault "standard";
   };
-  # 3) Configure Services
+  # Configure Services
   services = {
     openssh = {
       enable = true;
@@ -33,7 +31,7 @@
       };
     };
   };
-  # 4) Configure Packages & Programs
+  # Configure Packages & Programs
   environment.systemPackages = with pkgs; [
     vim
     bash
@@ -45,7 +43,7 @@
       defaultEditor = true;
     };
   };
-  # 5) Configure Users
+  # Configure Users
   users = {
     mutableUsers = false; 
     allowNoPasswordLogin = true; # Required since we block interactive login for root to force usage of sudo.
@@ -78,7 +76,7 @@
       };
     };
   };
-  # 6) Security Settings
+  # Security Settings
   security = {
     # Replace sudo with sudo-rs
     sudo.enable = false;
@@ -87,7 +85,7 @@
       wheelNeedsPassword = false;
     };
   };
-  # 7) Nix Settings
+  # Nix Settings
   nix.settings = {
     # Enable automatic optimizations
     auto-optimise-store = true;
@@ -96,15 +94,15 @@
     # Disable signature checks for now (look into proper fix)
     require-sigs = false;
 	};
-  # 8) Enable Automatic Security Upgrades
-  system.autoUpgrade = {
-    enable = true;
-    flake = inputs.self.outPath;
-    dates = "02:00";
-    randomizedDelaySec = "45min";
-  };
-  
   system = {
+    # Enable automatic security updates
+    autoUpgrade = {
+      enable = true;
+      flake = inputs.self.outPath;
+      dates = "02:00";
+      randomizedDelaySec = "45min";
+    };
+    # Set system.stateVersion (!!!NEVER CHANGE THIS!!!)
     stateVersion = "25.05";
   };
 }
