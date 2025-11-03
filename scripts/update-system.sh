@@ -12,7 +12,7 @@ FLAKE_OUTPUT=$2
 # nixos-rebuild switch --use-remote-sudo --flake path:./#${FLAKE_OUTPUT} --target-host rnetadmin@${IP_ADDRESS}
 
 # Copy the local repository to the remote host
-scp -r "$(pwd)" rnetadmin@${IP_ADDRESS}:/tmp/infrastructure
+rsync -avz --delete "$(pwd)/" rnetadmin@${IP_ADDRESS}:/tmp/infrastructure
 
 # Log into the NixOS machine and apply the flake from the copied repo
 sshpass ssh -o StrictHostKeyChecking=no rnetadmin@$IP_ADDRESS -i ~/.ssh/rnetadmin << EOF
