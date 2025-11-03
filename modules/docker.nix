@@ -7,12 +7,18 @@
     docker = {
       enable = true;
 
-      daemon.settings = {
-        icc = false; # Disable inter-container communication
-        no-new-privileges = true; # Prevent privilege escalation
+      daemon = {
+        settings = {
+          # Disable inter-container communication on default bridge
+          icc = false;
+          # Reduce privilege escalation risks
+          no-new-privileges = true;
+        };
       };
     };
-    oci-containers.backend = "docker";
+    oci-containers = {
+      backend = "docker";
+    };
   };
   boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
   # Mount secondary drive for Docker volumes
@@ -28,7 +34,9 @@
   };
   # Create dedicated user for managing Docker
   users = {
-    groups.docker = {};
+    groups = {
+      docker = {};
+    };
 
     users = {
       containers = {
