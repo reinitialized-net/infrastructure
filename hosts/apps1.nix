@@ -2,46 +2,7 @@
 ## Contains all essential reinitialized.net applications and services
 { ... }:
 let
-  secrets = import (builtins.path { path = ../secrets/hudu.nix; });
-  huduEnv = {
-    SECRET_KEY_BASE = secrets.SECRET_KEY_BASE;
-    PASSWORD_KEY = secrets.PASSWORD_KEY;
-    DOMAIN = secrets.DOMAIN;
-    URL = secrets.URL;
-    SUBDOMAINS = secrets.SUBDOMAINS;
-    TWO_FACTOR_KEY = secrets.TWO_FACTOR_KEY;
-
-    PUID = secrets.PUID;
-    PGID = secrets.PGID;
-    ONLY_SUBDOMAINS = secrets.ONLY_SUBDOMAINS;
-    VALIDATION = secrets.VALIDATION;
-    STAGING = secrets.STAGING;
-
-    DB_HOST = secrets.DB_HOST;
-    DB_USERNAME = secrets.DB_USERNAME;
-    DB_PASSWORD = secrets.DB_PASSWORD;
-    DB_NAME = secrets.DB_NAME;
-    POSTGRES_HOST_AUTH_METHOD = secrets.POSTGRES_HOST_AUTH_METHOD;
-
-    SMTP_DOMAIN = secrets.SMTP_DOMAIN;
-    SMTP_ADDRESS = secrets.SMTP_ADDRESS;
-    SMTP_PORT = secrets.SMTP_PORT;
-    SMTP_STARTTLS_AUTO = secrets.SMTP_STARTTLS_AUTO;
-    SMTP_USERNAME = secrets.SMTP_USERNAME;
-    SMTP_PASSWORD = secrets.SMTP_PASSWORD;
-    SMTP_AUTHENTICATION = secrets.SMTP_AUTHENTICATION;
-    SMTP_OPENSSL_VERIFY_MODE = secrets.SMTP_OPENSSL_VERIFY_MODE;
-    SMTP_FROM_ADDRESS = secrets.SMTP_FROM_ADDRESS;
-
-    USE_LOCAL_FILESYSTEM = secrets.USE_LOCAL_FILESYSTEM;
-    AUTHENTICATE_UPLOADS = secrets.AUTHENTICATE_UPLOADS;
-
-    RAILS_ENV = secrets.RAILS_ENV;
-    RACK_ENV = secrets.RACK_ENV;
-    RAILS_MAX_THREADS = secrets.RAILS_MAX_THREADS;
-
-    REDIS_URL = secrets.REDIS_URL;
-  };
+  huduEnv = import ../secrets/hudu.nix;
 in
 {
   imports = [
@@ -50,39 +11,39 @@ in
     ../modules/docker.nix
     ../modules/standard.nix
   ];
-
-  # System-specific configuration
+  # Network Configuration
   networking = {
     hostName = "apps1";
+    # Disable DHCP for static configuration
     useDHCP = false;
-
+    # Set Firewall rules
     firewall = {
       allowedTCPPorts = [ 80 ];
       allowedUDPPorts = [ 80 ];
     };
   };
+  ## We use systemd-networkd for network configuration
   systemd.network.networks = {
-    "10-eth0" = {
-      matchConfig = {
-        Name = "eth0";
-      };
+    "eth0" = {
       address = [
         "10.1.11.2/24"
-      ];
-      routes = [
-        {
-          Gateway = "10.1.11.1";
-        }
       ];
       dns = [ 
         "1.1.1.1" 
         "8.8.8.8" 
+      ]; 
+      gateway = [ 
+        "10.1.11.1"
       ];
+      matchConfig = {
+        Path = "pci-0000:06:12.0";
+      };
     };
   };
   #services.openssh.listenAddresses = [ ];
 
   virtualisation.oci-containers.containers = {
+    ## Hudu
     postgres1 = {
       autoStart = true;
       environment = huduEnv;
@@ -154,7 +115,6 @@ in
 
         virtualHosts = {
           "_" = {
-            forceSSL = true;
             default = true;
             listen = [
               { 
@@ -167,7 +127,6 @@ in
               }
             ];
             root = "/var/www/hudu2/public";
-            index = "index.html";
             locations = {
               # Deny access to dotfiles
               "/." = {
@@ -176,7 +135,7 @@ in
                 '';
               };
               # Deny access to .rb and .log files
-              "/~* ^.+\.(rb|log)$" = {
+              "~* ^.+\\.(rb|log)$" = {
                 extraConfig = ''
                   deny all;
                 '';
@@ -186,9 +145,6 @@ in
                 proxyPass = "http://127.0.0.1:3000/cable";
                 proxyWebsockets = true;
                 extraConfig = ''
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
                   proxy_set_header Host $host;
                   proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
                   proxy_read_timeout 240s;
@@ -238,7 +194,7 @@ in
                   proxy_buffers 32 4k;
                   proxy_headers_hash_bucket_size 128;
                   proxy_headers_hash_max_size 1024;
-                  proxy_pass http://hudu1:3000;
+                  proxy_pass http://127.0.0.1:3000;
                 '';
               };
             };
