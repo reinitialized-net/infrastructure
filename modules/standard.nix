@@ -10,7 +10,7 @@
   # 2) Configure Networking
   networking = {
     networkmanager = {
-      enable = lib.mkDefault true;
+      enable = lib.mkDefault false;
     };
     useNetworkd = lib.mkDefault true;
     useDHCP = lib.mkDefault true;

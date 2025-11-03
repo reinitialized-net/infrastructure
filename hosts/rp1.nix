@@ -19,7 +19,7 @@
   systemd.network.networks = {
     "10-eth0" = {
       matchConfig = {
-        Name = "eth0";
+        MacAddress = "BC:24:11:04:45:6D";
       };
       address = [
         "10.1.12.2/29"
