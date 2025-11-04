@@ -47,17 +47,22 @@ in
     postgres1 = {
       autoStart = true;
       environment = huduEnv;
-      log-driver = "json-file";
       image = "docker.io/library/postgres:18-alpine";
+      networks = [ 
+        "backend"
+      ];
       volumes = [
         "postgres1_data:/var/lib/postgresql/data"
       ];
     };
     redis1 = {
       autoStart = true;
-      environment = huduEnv;
       cmd = [ "redis-server" ];
+      environment = huduEnv;
       image = "docker.io/library/redis:8-alpine";
+      networks = [ 
+        "backend"
+      ];
       volumes = [
         "redis1_data:/var/lib/redis/data"
       ];
@@ -69,7 +74,10 @@ in
         "redis1"
       ];
       environment = huduEnv;
-      image = "docker.io/hudu/hudu:latest";
+      image = "hududocker/hudu:latest";
+      networks = [ 
+        "backend"
+      ];
       ports = [ "127.0.0.1:3000:3000" ];
       volumes = [
         "hudu_data:/var/www/hudu2/public/uploads/"
@@ -79,17 +87,20 @@ in
     };
     hudu2 = {
       autoStart = true;
-      cmd = [ "bundle exec sidekiq -C config/sidekiq.yml" ];
+      cmd = [ "bundle" "exec" "sidekiq" "-C" "config/sidekiq.yml" ];
       dependsOn = [
         "postgres1"
         "redis1"
       ];
       environment = huduEnv;
-      image = "docker.io/hudu/hudu:latest";
+      image = "hududocker/hudu:latest";
+      networks = [ 
+        "backend"
+      ];
       volumes = [
         "hudu_data:/var/www/hudu2/public/uploads/"
         "hudu_data:/var/www/hudu2/uploads"
-        "hudu_data:/app"
+        ".:/app"
       ];
     };
   };
