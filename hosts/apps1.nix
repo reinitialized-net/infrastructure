@@ -13,8 +13,9 @@ in
   ];
   # Network Configuration
   networking = {
+    # Set Hostname
     hostName = "apps1";
-    # Disable DHCP for static configuration
+    # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
     # Set Firewall rules
     firewall = {

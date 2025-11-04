@@ -10,7 +10,7 @@
   networking = {
     # Set Hostname
     hostName = "rp1";
-    # Disable DHCP for static configuration
+    # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
     # Set Firewall rules
     firewall = {
