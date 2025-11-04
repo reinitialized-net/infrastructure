@@ -6,11 +6,13 @@
     ../hardware/qemu.nix
     ../modules/standard.nix
   ];
-
-  # System-specific configuration
+  # Network Configuration
   networking = {
+    # Set Hostname
     hostName = "rp1";
-    
+    # Disable DHCP for static configuration
+    useDHCP = false;
+    # Set Firewall rules
     firewall = {
       allowedTCPPorts = [ 80 443 ];
       allowedUDPPorts = [ 80 443 ];
