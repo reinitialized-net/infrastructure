@@ -17,24 +17,24 @@
     };
   };
   systemd.network.networks = {
-    "10-eth0" = {
-      matchConfig = {
-        MacAddress = "BC:24:11:04:45:6D";
-      };
+    "eth0" = {
       address = [
         "10.1.12.2/29"
         "10.1.12.3/29"
         "10.1.12.4/29"
       ];
+      dns = [ 
+        "1.1.1.1" 
+        "8.8.8.8" 
+      ];
+      matchConfig = {
+        Path = "pci-0000:06:12.0";
+      };
       routes = [
         {
           Gateway = "10.1.12.1";
           PreferredSource = "10.1.12.2";
         }
-      ];
-      dns = [ 
-        "1.1.1.1" 
-        "8.8.8.8" 
       ];
     };
   };
@@ -89,7 +89,7 @@
 
             locations = {
               "/" = {
-                proxyPass = "http://10.1.11.21:3000"; 
+                proxyPass = "http://10.1.11.2:3000"; 
               };
             };
           };
