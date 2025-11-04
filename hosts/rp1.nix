@@ -27,15 +27,18 @@
         "1.1.1.1" 
         "8.8.8.8" 
       ];
+      gateway = [
+        "10.1.12.1"
+      ];
       matchConfig = {
         Path = "pci-0000:06:12.0";
       };
-      routes = [
-        {
-          Gateway = "10.1.12.1";
-          PreferredSource = "10.1.12.2";
-        }
-      ];
+      # routes = [
+      #   {
+      #     Gateway = "10.1.12.1";
+      #     PreferredSource = "10.1.12.2";
+      #   }
+      # ];
     };
   };
 
