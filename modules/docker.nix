@@ -10,7 +10,7 @@
       daemon = {
         settings = {
           # Disable inter-container communication on default bridge
-          icc = false;
+          icc = true;
           # Reduce privilege escalation risks
           no-new-privileges = true;
         };
