@@ -80,7 +80,6 @@ in
       ];
       ports = [ 
         "127.0.0.1:3000:3000"
-        "10.1.11.2:3000:3000"
       ];
       volumes = [
         "hudu_data:/var/www/hudu2/public/uploads/"
