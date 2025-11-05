@@ -103,7 +103,6 @@ in
       volumes = [
         "hudu_data:/var/www/hudu2/public/uploads/"
         "hudu_data:/var/www/hudu2/uploads"
-        ".:/app"
       ];
     };
   };

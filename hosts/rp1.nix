@@ -94,7 +94,7 @@
 
             locations = {
               "/" = {
-                proxyPass = "http://10.1.11.2:3000"; 
+                proxyPass = "http://10.1.11.2:80"; 
               };
             };
           };

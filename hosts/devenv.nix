@@ -7,29 +7,30 @@
     ../modules/docker.nix
     ../hardware/qemu.nix
   ];
-
-  # System-specific configuration
+  # Network Configuration
   networking = {
+    # Set Hostname
     hostName = "devenv";
+    # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
+    # Set Firewall rules
   };
+  ## We use systemd-networkd for network configuration
   systemd.network.networks = {
-    "10-eth0" = {
-      matchConfig = {
-        MacAddress = "BC:24:11:D0:A9:66";
-      };
+    "eth0" = {
       address = [
         "10.1.200.2/24"
-      ];
-      routes = [
-        {
-          Gateway = "10.1.200.1";
-        }
       ];
       dns = [ 
         "1.1.1.1" 
         "8.8.8.8" 
+      ]; 
+      gateway = [ 
+        "10.1.200.1"
       ];
+      matchConfig = {
+        Path = "pci-0000:06:12.0";
+      };
     };
   };
 
@@ -53,6 +54,8 @@
 
     nixd
     nixfmt-rfc-style
+
+    nmap
   ];
 
   # Create develop user
