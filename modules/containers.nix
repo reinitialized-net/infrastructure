@@ -21,9 +21,9 @@
     };
   };
   boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
-  # Mount secondary drive for Docker volumes
+  # Mount secondary drive for Containers
   fileSystems = {
-    "/var/lib/docker/volumes" = {
+    "/mnt/data" = {
       device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
       fsType = "ext4";
       options = [ "defaults" ];
@@ -32,6 +32,10 @@
       autoFormat = true;
     };
   };
+  # Symlink /var/lib/docker/volumes to /mnt/data
+  systemd.tmpfiles.rules = [
+    "L+ /var/lib/docker/volumes /mnt/data"
+  ];
   # Create dedicated user for managing Docker
   users = {
     groups = {

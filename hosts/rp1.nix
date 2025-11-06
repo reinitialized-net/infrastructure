@@ -35,12 +35,6 @@
       matchConfig = {
         Path = "pci-0000:06:12.0";
       };
-      # routes = [
-      #   {
-      #     Gateway = "10.1.12.1";
-      #     PreferredSource = "10.1.12.2";
-      #   }
-      # ];
     };
   };
 
