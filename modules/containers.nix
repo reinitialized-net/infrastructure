@@ -6,7 +6,6 @@
   virtualisation = {
     docker = {
       enable = true;
-
       daemon = {
         settings = {
           # Disable inter-container communication on default bridge
@@ -32,9 +31,9 @@
       autoFormat = true;
     };
   };
-  # Symlink /var/lib/docker/volumes to /mnt/data
+  # Symlink /var/lib/docker/volumes to /mnt/data/docker/volumes
   systemd.tmpfiles.rules = [
-    "L+ /var/lib/docker/volumes /mnt/data"
+    "L+ /var/lib/docker/volumes /mnt/data/docker/volumes"
   ];
   # Create dedicated user for managing Docker
   users = {
@@ -53,20 +52,16 @@
       };
     };
   };
-  # Ensure the backend network exists
-  systemd.services.docker-init = {
-    description = "Ensure Docker backend network exists";
-    after = [ "docker.service" ];
-    wantedBy = [ "multi-user.target" ];
-    script = ''
-      #!/usr/bin/env bash
-      if ! ${pkgs.docker}/bin/docker network inspect backend &>/dev/null; then
-        ${pkgs.docker}/bin/docker network create backend
-      fi
-    '';
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
+  system = {
+    activationScripts = {
+      # Ensure Docker network 'backend' exists
+      ensureDockerNetwork = {
+        text = ''
+          if ! ${pkgs.docker}/bin/docker network inspect backend &>/dev/null; then
+            ${pkgs.docker}/bin/docker network create backend
+          fi
+        '';
+      };
     };
   };
 }
