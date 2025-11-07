@@ -23,26 +23,27 @@
   # Mount secondary drive for Containers
   fileSystems = {
     "/mnt/data" = {
+      autoResize = true;
+      autoFormat = true;
+
       device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
       fsType = "ext4";
       options = [ "defaults" ];
-
-      autoResize = true;
-      autoFormat = true;
+    };
+    "/var/lib/docker/volumes" = {
+      depends = [ "/mnt/data" ];
+      device = "/mnt/data/docker/volumes";
+      fsType = "none";
+      options = [ "bind" ];
     };
   };
-  # Symlink /var/lib/docker/volumes to /mnt/data/docker/volumes
-  systemd.tmpfiles.rules = [
-    "L+ /var/lib/docker/volumes /mnt/data/docker/volumes"
-  ];
   # Create dedicated user for managing Docker
   users = {
     groups = {
       docker = {};
     };
-
     users = {
-      containers = {
+      docker = {
         isSystemUser = true;
         shell = pkgs.bash;
         home = "/var/lib/docker";
