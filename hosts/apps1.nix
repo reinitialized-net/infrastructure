@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ ... }:
+{ lib, ... }:
 let
   huduEnv = import ../secrets/hudu.nix;
 in
@@ -14,29 +14,40 @@ in
   networking = {
     # Set Hostname
     hostName = "apps1";
-    # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
+    # Disable DHCP for static configusration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
     # Set Firewall rules
     firewall = {
-      allowedTCPPorts = [ 80 ];
-      allowedUDPPorts = [ 80 ];
+      allowedTCPPorts = [ 
+        80
+        53
+        5380
+      ];
+      allowedUDPPorts = [ 
+        80 
+        53
+      ];
     };
   };
   ## We use systemd-networkd for network configuration
-  systemd.network.networks = {
-    "eth0" = {
-      address = [
-        "10.1.11.2/24"
-      ];
-      dns = [ 
-        "1.1.1.1" 
-        "8.8.8.8" 
-      ]; 
-      gateway = [ 
-        "10.1.11.1"
-      ];
-      matchConfig = {
-        Path = "pci-0000:06:12.0";
+  systemd = {
+    network = {
+      networks = {
+        "eth0" = {
+          address = [
+            "10.1.11.2/24"
+          ];
+          dns = [ 
+            "1.1.1.1" 
+            "8.8.8.8" 
+          ]; 
+          gateway = [ 
+            "10.1.11.1"
+          ];
+          matchConfig = {
+            Path = "pci-0000:06:12.0";
+          };
+        };
       };
     };
   };
@@ -115,35 +126,23 @@ in
   };
   ## NixOS-based Containers
   containers = {
-    # technitium = {
-    #   ephemeral = true;
-    #   autoStart = true;
-    #   privateNetwork =  false;
-
-    #   bindMounts = {
-
-    #   };
-
-    #   config = { ... }: {
-    #     services.technitium-dns-server = {
-    #       enable = true;
-          
-    #     };
-    #   };
-    # };
-
-    nginx = {
+    # Nginx for Hudu
+    nginx1 = {
       ephemeral = true;
       autoStart = true;
       privateNetwork = false;
 
       bindMounts = {
         "/var/www/hudu2/config" = {
-          hostPath = "/var/www/hudu2/config";
+          hostPath = "/mnt/data/nix/nginx1";
           isReadOnly =  false;
         };
       };
       config = { ... }: {
+        # Create config folder
+        systemd.tmpfiles.rules = [
+          "d /var/www/hudu2/config 0755 nginx nginx - -"
+        ];
         # Setup Nginx service
         services.nginx = {
           enable = true;
@@ -189,6 +188,43 @@ in
               };
             };
           };
+        };
+      };
+    };
+    # Technitium DNS
+    technitium1 = {
+      ephemeral = true;
+      autoStart = true;
+      privateNetwork =  false;
+
+      bindMounts = {
+        "/var/lib/technitium-dns-server" = {
+          hostPath = "/mnt/data/nix/technitium1";
+          isReadOnly =  false;
+        };
+      };
+
+      config = { ... }: {
+        systemd.services.technitium-dns-server = {
+          serviceConfig = {
+            # Turn off DynamicUser to resolve permission issues
+            DynamicUser = lib.mkForce false;
+            # Create state directory for Technitium DNS server
+            StateDirectory = "technitium-dns-server";
+          };
+        };
+        # Enable Technitium DNS server
+        services.technitium-dns-server = {
+          enable = true;
+          openFirewall = true;
+          
+          firewallTCPPorts = [
+            53
+            5380
+          ];
+          firewallUDPPorts = [
+            53
+          ];
         };
       };
     };
