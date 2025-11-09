@@ -11,14 +11,10 @@
   networking = {
     hostName = lib.mkDefault "standard";
     
+    firewall.enable = lib.mkDefault true;
     networkmanager.enable = lib.mkDefault false;
     useNetworkd = lib.mkDefault true;
     useDHCP = lib.mkDefault true;
-
-    firewall = {
-      enable = lib.mkDefault true;
-      allowedTCPPorts = [ 22 ];
-    };
   };
   # Configure Services
   services = {
