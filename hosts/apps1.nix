@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ lib, ... }:
+{ stateVersion, lib, ... }:
 let
   huduEnv = import ../secrets/hudu.nix;
 in
@@ -125,6 +125,12 @@ in
     };
   };
   ## NixOS-based Containers
+  ### Create required folders
+  systemd.tmpfiles.rules = [
+    "d /mnt/data/nix/nginx1 0755 root root - -"
+    "d /mnt/data/nix/technitium1 0755 root root - -"
+  ];
+  ### Container Configuration
   containers = {
     # Nginx for Hudu
     nginx1 = {
@@ -139,10 +145,6 @@ in
         };
       };
       config = { ... }: {
-        # Create config folder
-        systemd.tmpfiles.rules = [
-          "d /var/www/hudu2/config 0755 nginx nginx - -"
-        ];
         # Setup Nginx service
         services.nginx = {
           enable = true;
@@ -183,12 +185,35 @@ in
                 };
                 # Rails app fallback
                 "@rails" = {
-                  proxyPass = "http://127.0.0.1:3000";
+                  extraConfig = ''
+                    client_body_buffer_size 128k;
+                    proxy_next_upstream error timeout invalid_header http_500 http_502 http_503;
+                    send_timeout 5m;
+                    proxy_read_timeout 240;
+                    proxy_send_timeout 240;
+                    proxy_connect_timeout 240;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Host $host;
+                    proxy_set_header X-Forwarded-Ssl off;
+                    proxy_redirect  http://  $scheme://;
+                    proxy_http_version 1.1;
+                    proxy_set_header Connection "";
+                    proxy_cache_bypass $cookie_session;
+                    proxy_no_cache $cookie_session;
+                    proxy_buffers 32 4k;
+                    proxy_headers_hash_bucket_size 128;
+                    proxy_headers_hash_max_size 1024;
+                    proxy_pass http://127.0.0.1:3000;
+                  '';
                 };
               };
             };
           };
         };
+        # Set StateVersion (DO NOT TOUCH)
+        system.stateVersion = stateVersion;
       };
     };
     # Technitium DNS
@@ -226,7 +251,11 @@ in
             53
           ];
         };
+        # Set StateVersion (DO NOT TOUCH)
+        system.stateVersion = stateVersion;
       };
     };
   };
+  # Set StateVersion (DO NOT TOUCH)
+  system.stateVersion = stateVersion;
 }

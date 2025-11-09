@@ -1,6 +1,6 @@
 # hosts/devenv.nix
 ## Defines configuration for the development environment VS.
-{ pkgs, ...}:
+{ stateVersion, pkgs, ...}:
 {
   imports = [
     ../modules/standard.nix
@@ -80,4 +80,6 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
     ];
   };
+  # Set system.stateVersion (DO NOT TOUCH)
+  system.stateVersion = stateVersion;
 }

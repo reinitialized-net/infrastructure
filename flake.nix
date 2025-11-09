@@ -7,25 +7,28 @@
 
   outputs = { self, nixpkgs, vscode-server, ... }@inputs:
     let
+      # Global Variables
+      ## Define stateVersion (DO NOT MODIFY)
+      stateVersion = "25.05";
+      ## Define system architecture
       system = "x86_64-linux";
-      # pkgs = import nixpkgs { 
-      #   inherit system;
-      # };
-      nixosSystem = nixpkgs.lib.nixosSystem;
-
-      ## Helper function for creating configurations
+      # Global Functions
+      ## Helper function for generating Virtual Server configurations
       createVS = 
         {
           modules ? [ ]
         }:
-        nixosSystem {
+        nixpkgs.libs.nixosSystem {
           inherit system;
-
           specialArgs = {
             inherit inputs;
           };
-
-          modules = modules;
+          modules = modules ++ [
+            {
+              # Inject stateVersion variable
+              stateVersion = stateVersion;
+            }
+          ];
         };
     in {
       # Standard Configuration: Used for standing up new hosts

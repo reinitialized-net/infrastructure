@@ -43,7 +43,8 @@
   # Configure Users
   users = {
     mutableUsers = false; 
-    allowNoPasswordLogin = true; # Required since we block interactive login for root to force usage of sudo.
+    # Required since we block interactive login for root to force usage of sudo.
+    allowNoPasswordLogin = true; 
     defaultUserShell = pkgs.bashInteractive;
 
     groups = {
@@ -99,8 +100,6 @@
       dates = "02:00";
       randomizedDelaySec = "45min";
     };
-    # Set system.stateVersion (!!!NEVER CHANGE THIS!!!)
-    stateVersion = "25.05";
   };
 }
 
