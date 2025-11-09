@@ -11,6 +11,7 @@
   networking = {
     hostName = lib.mkDefault "standard";
     
+    nftables.enable = lib.mkDefault true;
     firewall.enable = lib.mkDefault true;
     networkmanager.enable = lib.mkDefault false;
     useNetworkd = lib.mkDefault true;
