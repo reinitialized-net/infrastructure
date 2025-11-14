@@ -14,7 +14,7 @@
       };
     in {
       # setupSystem: Used for standing up new hosts
-      nixosConfigurations.deploy = makeConfig "setupSystem" {};
+      nixosConfigurations.setupSystem = makeConfig "setupSystem" {};
       # devenv: NixOS-based Development Environment
       nixosConfigurations.devenv = makeConfig "devenv" {
         modules = [
