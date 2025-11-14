@@ -256,6 +256,4 @@ in
       };
     };
   };
-  # Set StateVersion (DO NOT TOUCH)
-  system.stateVersion = stateVersion;
 }
