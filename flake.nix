@@ -14,7 +14,7 @@
       };
     in {
       # Standard Configuration: Used for standing up new hosts
-      nixosConfigurations.standard = makeConfig "standard";
+      nixosConfigurations.standard = makeConfig "standard" {};
       # devenv: NixOS-based Development Environment
       nixosConfigurations.devenv = makeConfig "devenv" {
         modules = [
@@ -22,10 +22,10 @@
         ];
       };
       # rp1: Primary Reverse Proxy
-      nixosConfigurations.rp1 = makeConfig "rp1";
+      nixosConfigurations.rp1 = makeConfig "rp1" {};
       # apps1: Core Applications Host
-      nixosConfigurations.apps1 = makeConfig "apps1";
+      nixosConfigurations.apps1 = makeConfig "apps1" {};
       # apps2: Applications Host
-      nixosConfigurations.apps2 = makeConfig "apps2";
+      nixosConfigurations.apps2 = makeConfig "apps2" {};
     };
 }

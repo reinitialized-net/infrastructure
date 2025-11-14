@@ -1,30 +1,24 @@
 { nixpkgs, inputs }:
-
 host: {
   system ? "x86_64-linux",
   modules ? [],
   hardware ? "qemu",
 }:
-
 let
-  # Define systemState for all configurations (DO NOT CHANGE)
-  systemState = "25.05";
-  # Bring in hardware module
-  hardwareModule = import ./hardware/${hardware}.nix;
-  # Bring in host module
-  hostModule = import ./hosts/${host}.nix;
+  # Define defaultStateVersion (DO NOT CHANGE)
+  defaultStateVersion = "25.05";
 in nixpkgs.lib.nixosSystem {
   inherit system;
   specialArgs = {
     inherit inputs;
+    inherit defaultStateVersion;
   };
   # Declare modules
   modules = modules ++ [
-    hardwareModule
-    hostModule
+    import ../hardware/${hardware}.nix
+    import ../hosts/${host}.nix
     {
-      ## Inject global stateVersion
-      stateVersion = systemState;
+      system.stateVersion = defaultStateVersion;
     }
   ];
 }
