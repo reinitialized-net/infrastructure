@@ -5,7 +5,7 @@ host: {
   hardware ? "qemu",
 }:
 let
-  # Define defaultStateVersion (DO NOT CHANGE)
+  # Standardize system.stateVersion (DO NOT CHANGE)
   defaultStateVersion = "25.05";
 
 in nixpkgs.lib.nixosSystem {

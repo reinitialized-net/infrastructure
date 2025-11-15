@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ stateVersion, lib, ... }:
+{ defaultStateVersion, lib, ... }:
 let
   huduEnv = import ../secrets/hudu.nix;
 in
@@ -212,7 +212,7 @@ in
           };
         };
         # Set StateVersion (DO NOT TOUCH)
-        system.stateVersion = stateVersion;
+        system.stateVersion = defaultStateVersion;
       };
     };
     # Technitium DNS
@@ -251,7 +251,7 @@ in
           ];
         };
         # Set StateVersion (DO NOT TOUCH)
-        system.stateVersion = stateVersion;
+        system.stateVersion = defaultStateVersion;
       };
     };
   };
