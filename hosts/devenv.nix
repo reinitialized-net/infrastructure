@@ -1,6 +1,6 @@
 # hosts/devenv.nix
 ## Defines configuration for the development environment VS.
-{ stateVersion, pkgs, ...}:
+{ pkgs, ...}:
 {
   # Network Configuration
   networking = {
@@ -75,6 +75,4 @@
       "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
     ];
   };
-  # Set system.stateVersion (DO NOT TOUCH)
-  system.stateVersion = stateVersion;
 }

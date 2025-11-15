@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ stateVersion, lib, ... }:
+{ defaultStateVersion, lib, ... }:
 {
   # Network Configuration
   networking = {

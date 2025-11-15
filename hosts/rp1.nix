@@ -1,6 +1,6 @@
 # hosts/rp1.nix
 ## Handles reverse proxy service in an isolated environment.
-{ stateVersion, ... }:
+{ ... }:
 {
   # Network Configuration
   networking = {
@@ -100,6 +100,4 @@
       };
     };
   };
-  # Set system.stateVersion (DO NOT TOUCH)
-  system.stateVersion = stateVersion;
 }
