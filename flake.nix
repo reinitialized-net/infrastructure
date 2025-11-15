@@ -13,8 +13,8 @@
         inherit nixpkgs inputs;
       };
     in {
-      # setupSystem: Used for standing up new hosts
-      nixosConfigurations.setupSystem = makeConfig "setupSystem" {};
+      # initOS: Used for standing up new hosts
+      nixosConfigurations.initOS = makeConfig "initOS" {};
       # devenv: NixOS-based Development Environment
       nixosConfigurations.devenv = makeConfig "devenv" {
         modules = [
