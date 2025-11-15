@@ -5,10 +5,9 @@ let
   huduEnv = import ../secrets/hudu.nix;
 in
 {
+  # Import additional functionality
   imports = [
-    ../hardware/qemu.nix
     ../modules/containers.nix
-    ../modules/standard.nix
   ];
   # Network Configuration
   networking = {
