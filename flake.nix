@@ -19,12 +19,17 @@
       nixosConfigurations.devenv = makeConfig "devenv" {
         modules = [
           inputs.vscode-server.nixosModules.default
+          ./modules/containers.nix
         ];
       };
       # rp1: Primary Reverse Proxy
       nixosConfigurations.rp1 = makeConfig "rp1" {};
       # apps1: Core Applications Host
-      nixosConfigurations.apps1 = makeConfig "apps1" {};
+      nixosConfigurations.apps1 = makeConfig "apps1" {
+        modules = [
+          ./modules/containers.nix
+        ];
+      };
       # apps2: Applications Host
       nixosConfigurations.apps2 = makeConfig "apps2" {};
     };

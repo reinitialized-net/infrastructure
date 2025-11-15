@@ -2,11 +2,6 @@
 ## Defines configuration for the development environment VS.
 { stateVersion, pkgs, ...}:
 {
-  imports = [
-    ../modules/standard.nix
-    ../modules/docker.nix
-    ../hardware/qemu.nix
-  ];
   # Network Configuration
   networking = {
     # Set Hostname

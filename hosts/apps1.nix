@@ -5,10 +5,6 @@ let
   huduEnv = import ../secrets/hudu.nix;
 in
 {
-  # Import additional functionality
-  imports = [
-    ../modules/containers.nix
-  ];
   # Network Configuration
   networking = {
     # Set Hostname

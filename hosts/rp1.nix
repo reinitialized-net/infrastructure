@@ -2,10 +2,6 @@
 ## Handles reverse proxy service in an isolated environment.
 { stateVersion, ... }:
 {
-  imports = [
-    ../hardware/qemu.nix
-    ../modules/standard.nix
-  ];
   # Network Configuration
   networking = {
     # Set Hostname

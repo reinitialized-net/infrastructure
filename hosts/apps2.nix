@@ -2,13 +2,10 @@
 ## Contains all essential reinitialized.net applications and services
 { stateVersion, lib, ... }:
 {
-  imports = [
-    ../hardware/qemu.nix
-  ];
   # Network Configuration
   networking = {
     # Set Hostname
-    hostName = "apps1";
+    hostName = "apps2";
     # Disable DHCP for static configusration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
     # Set Firewall rules
