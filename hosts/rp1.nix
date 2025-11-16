@@ -10,8 +10,22 @@
     useDHCP = false;
     # Set Firewall rules
     firewall = {
-      allowedTCPPorts = [ 80 443 ];
-      allowedUDPPorts = [ 80 443 ];
+      whitelist = [
+        # Allow HTTP
+        {
+          port = 80;
+          protocol = "tcp_udp";
+          ipType = "ipv4";
+          source = [ "0.0.0.0/0" ];
+        }
+        # Allow HTTPs
+        {
+          port = 443;
+          protocol = "tcp_udp";
+          ipType = "ipv4";
+          source = [ "0.0.0.0/0" ];
+        }
+      ];
     };
   };
   systemd.network.networks = {

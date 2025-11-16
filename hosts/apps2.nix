@@ -10,14 +10,14 @@
     useDHCP = false;
     # Set Firewall rules
     firewall = {
-      allowedTCPPorts = [ 
-        80
-        53
-        5380
-      ];
-      allowedUDPPorts = [ 
-        80 
-        53
+      whitelist = [
+        # # Allow DNS
+        # {
+        #   port = 53;
+        #   protocol = "tcp_udp";
+        #   ipType = "ipv4";
+        #   source = [ "10.1.11.0/24" ];
+        # }
       ];
     };
   };
