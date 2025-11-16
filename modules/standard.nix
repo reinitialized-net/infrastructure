@@ -10,10 +10,17 @@
   # Configure Networking
   networking = {
     hostName = lib.mkDefault "standard";
-    
-    nftables.enable = lib.mkDefault true;
-    firewall.enable = lib.mkDefault true;
-    networkmanager.enable = lib.mkDefault false;
+    nftables = {
+      enable = lib.mkDefault true;
+    };
+    firewall = {
+      enable = lib.mkDefault true;
+      allowPing = lib.mkDefault true;
+      pingLimit = lib.mkDefault "2/second";
+    };
+    networkmanager = {
+      enable = lib.mkDefault false;
+    };
     useNetworkd = lib.mkDefault true;
     useDHCP = lib.mkDefault true;
   };
