@@ -45,5 +45,9 @@
           ./modules/containers.nix
         ];
       };
+
+      # Expose extensions for nixd auto-complete
+      ## extensions/firewall.nix
+      nixosModules.firewall = ./extensions/firewall.nix;
     };
 }
