@@ -13,12 +13,12 @@ let
         description = "The port number to allow.";
       };
       protocol = mkOption {
-        type = types.enum [ "tcp" "udp" ];
+        type = types.enum [ "tcp" "udp" "tcp_udp" ];
         description = "The protocol for the port.";
         default = "tcp";
       };
       ipType = mkOption {
-        type = types.enum [ "ipv4" "ipv6" ];
+        type = types.enum [ "ipv4" "ipv6" "ipv46" ];
         description = "The IP type for the rule.";
         default = "ipv4";
       };
@@ -44,7 +44,25 @@ in
         # Actions for nftables
         networking.firewall.extraInputRules = lib.concatMapStringsSep "\n"
           (entry: lib.concatMapStringsSep "\n"
-            (addr: let ipPrefix = if entry.ipType == "ipv4" then "ip saddr" else "ip6 saddr"; in "${ipPrefix} ${addr} ${entry.protocol} dport ${toString entry.port} accept")
+            (addr: let
+              protocolRules = if entry.ipType == "ipv46" then
+                "ip saddr ${addr} ${entry.protocol} dport ${toString entry.port} accept\nip6 saddr ${addr} ${entry.protocol} dport ${toString entry.port} accept"
+              else if entry.ipType == "ipv4" then
+                "ip saddr ${addr} ${entry.protocol} dport ${toString entry.port} accept"
+              else
+                "ip6 saddr ${addr} ${entry.protocol} dport ${toString entry.port} accept";
+              finalRules = if entry.protocol == "tcp_udp" then
+                lib.concatMapStringsSep "\n"
+                  (proto: if entry.ipType == "ipv46" then
+                    "ip saddr ${addr} ${proto} dport ${toString entry.port} accept\nip6 saddr ${addr} ${proto} dport ${toString entry.port} accept"
+                  else if entry.ipType == "ipv4" then
+                    "ip saddr ${addr} ${proto} dport ${toString entry.port} accept"
+                  else
+                    "ip6 saddr ${addr} ${proto} dport ${toString entry.port} accept")
+                  ["tcp" "udp"]
+              else
+                protocolRules;
+            in finalRules)
             entry.source
           )
           config.networking.firewall.whitelist;
@@ -53,7 +71,25 @@ in
         # Actions for iptables
         networking.firewall.extraCommands = lib.concatMapStringsSep "\n"
           (entry: lib.concatMapStringsSep "\n"
-            (addr: let ipPrefix = if entry.ipType == "ipv4" then "-4" else "-6"; in " -A INPUT ${ipPrefix} -p ${entry.protocol} -s ${addr} --dport ${toString entry.port} -j ACCEPT")
+            (addr: let
+              protocolRules = if entry.ipType == "ipv46" then
+                " -A INPUT -4 -p ${entry.protocol} -s ${addr} --dport ${toString entry.port} -j ACCEPT\n -A INPUT -6 -p ${entry.protocol} -s ${addr} --dport ${toString entry.port} -j ACCEPT"
+              else if entry.ipType == "ipv4" then
+                " -A INPUT -4 -p ${entry.protocol} -s ${addr} --dport ${toString entry.port} -j ACCEPT"
+              else
+                " -A INPUT -6 -p ${entry.protocol} -s ${addr} --dport ${toString entry.port} -j ACCEPT";
+              finalRules = if entry.protocol == "tcp_udp" then
+                lib.concatMapStringsSep "\n"
+                  (proto: if entry.ipType == "ipv46" then
+                    " -A INPUT -4 -p ${proto} -s ${addr} --dport ${toString entry.port} -j ACCEPT\n -A INPUT -6 -p ${proto} -s ${addr} --dport ${toString entry.port} -j ACCEPT"
+                  else if entry.ipType == "ipv4" then
+                    " -A INPUT -4 -p ${proto} -s ${addr} --dport ${toString entry.port} -j ACCEPT"
+                  else
+                    " -A INPUT -6 -p ${proto} -s ${addr} --dport ${toString entry.port} -j ACCEPT")
+                  ["tcp" "udp"]
+              else
+                protocolRules;
+            in finalRules)
             entry.sourceAddresses
           )
           config.networking.firewall.whitelist;
