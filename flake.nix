@@ -19,35 +19,22 @@
       nixosConfigurations.devenv = makeConfig "devenv" {
         modules = [
           inputs.vscode-server.nixosModules.default
-
-          ./extensions/firewall.nix
           ./modules/containers.nix
         ];
       };
       # rp1: Primary Reverse Proxy
-      nixosConfigurations.rp1 = makeConfig "rp1" {
-        modules = [
-          ./extensions/firewall.nix
-          ./modules/containers.nix
-        ];
-      };
+      nixosConfigurations.rp1 = makeConfig "rp1" {};
       # apps1: Core Applications Host
       nixosConfigurations.apps1 = makeConfig "apps1" {
         modules = [
-          ./extensions/firewall.nix
           ./modules/containers.nix
         ];
       };
       # apps2: Applications Host
       nixosConfigurations.apps2 = makeConfig "apps2" {
         modules = [
-          ./extensions/firewall.nix
           ./modules/containers.nix
         ];
       };
-
-      # Expose extensions for nixd auto-complete
-      ## extensions/firewall.nix
-      nixosModules.firewall = ./extensions/firewall.nix;
     };
 }

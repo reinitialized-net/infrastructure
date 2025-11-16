@@ -16,8 +16,9 @@ in nixpkgs.lib.nixosSystem {
   };
   # Declare modules
   modules = modules ++ [
-    ../hardware/${hardware}.nix
+    ../extensions/firewall.nix
     ../modules/standard.nix
+    ../hardware/${hardware}.nix
     ../hosts/${host}.nix
     {
       system.stateVersion = defaultStateVersion;
