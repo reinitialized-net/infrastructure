@@ -9,19 +9,42 @@ in
   networking = {
     # Set Hostname
     hostName = "apps1";
-    # Disable DHCP for static configusration (WILL OVERRIDE IF ENABLED)
+    # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
     # Set Firewall rules
     firewall = {
-      allowedTCPPorts = [ 
-        80
-        53
-        5380
+      whitelist = [
+        # Allow DNS
+        {
+          port = 53;
+          protocol = "tcp_udp";
+          ipType = "ipv4";
+          source = [ "0.0.0.0/0" ];
+        }
+        # Allow HTTP
+        {
+          port = 80;
+          protocol = "tcp_udp";
+          ipType = "ipv4";
+          source = [ "10.1.12.0/29" ];
+        }
+        # Allow Technitium DNS WebUI
+        {
+          port = 5380;
+          protocol = "tcp";
+          ipType = "ipv4";
+          source = [ "10.1.12.0/29" ];
+        }
       ];
-      allowedUDPPorts = [ 
-        80 
-        53
-      ];
+      # allowedTCPPorts = [ 
+      #   80
+      #   53
+      #   5380
+      # ];
+      # allowedUDPPorts = [ 
+      #   80 
+      #   53
+      # ];
     };
   };
   ## We use systemd-networkd for network configuration
