@@ -1,6 +1,6 @@
 # extensions/firewall.nix
 ## Extends networking.firewall options
-{ lib, config, ...}:
+{ lib, config, pkgs, ...}:
 let
   inherit (lib) 
     mkOption 
@@ -40,7 +40,7 @@ in
   };
   config = lib.mkIf (config.networking.firewall.enable) (
     lib.mkMerge [
-      (lib.mkIf (config.networking.firewall.package == "nftables") {
+      (lib.mkIf (config.networking.firewall.package == pkgs.nftables) {
         # Actions for nftables
         networking.firewall.extraInputRules = lib.concatMapStringsSep "\n"
           (entry: lib.concatMapStringsSep "\n"
@@ -67,7 +67,7 @@ in
           )
           config.networking.firewall.whitelist;
       })
-      (lib.mkIf (config.networking.firewall.package == "iptables") {
+      (lib.mkIf (config.networking.firewall.package == pkgs.iptables) {
         # Actions for iptables
         networking.firewall.extraCommands = lib.concatMapStringsSep "\n"
           (entry: lib.concatMapStringsSep "\n"
