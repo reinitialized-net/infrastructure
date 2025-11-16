@@ -19,7 +19,7 @@ in
           port = 53;
           protocol = "tcp_udp";
           ipType = "ipv4";
-          source = [ "0.0.0.0/0" ];
+          source = [ "10.1.0.0/16" ];
         }
         # Allow HTTP
         {
@@ -36,15 +36,6 @@ in
           source = [ "10.1.12.0/29" ];
         }
       ];
-      # allowedTCPPorts = [ 
-      #   80
-      #   53
-      #   5380
-      # ];
-      # allowedUDPPorts = [ 
-      #   80 
-      #   53
-      # ];
     };
   };
   ## We use systemd-networkd for network configuration
