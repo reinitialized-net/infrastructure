@@ -20,8 +20,8 @@ sudo -i && \
 ```bash
 mkfs.fat -F 32 /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part1 &&\
     mkfs.ext4 /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part2 &&\
-    mount /dev/disk/by-id/scsi-0QEMU-QEMU-HARDDISK_drive-scsi0-part2 /mnt &&\
+    mount /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part2 /mnt &&\
     mkdir /mnt/boot &&\
-    mount /dev/disk/by-id/scsi-0QEMU-QEMU-HARDDISK_drive-scsi0-part1 /mnt/boot &&\
+    mount /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part1 /mnt/boot &&\
     nixos-install --flake github:Reinitialized/infrastructure#CHANGEME
 ```
