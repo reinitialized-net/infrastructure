@@ -55,7 +55,7 @@
   ## NixOS Containers
   ### Create required folders
   systemd.tmpfiles.rules = [
-    "d /mnt/data/nix/technitium1 0755 root root - -"
+    "d /mnt/data/nix/technitium2 0755 root root - -"
   ];
   ### Define Container configuration
   containers = {
