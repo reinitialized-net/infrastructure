@@ -7,24 +7,20 @@
     # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
   };
-  systemd = {
-    network = {
-      networks = {
-        "eth0" = {
-          address = [
-            "10.1.200.2/24"
-          ];
-          dns = [ 
-            "10.1.11.2"
-            "1.1.1.1"
-          ]; 
-          gateway = [ 
-            "10.1.200.1"
-          ];
-          matchConfig = {
-            Path = "pci-0000:06:12.0";
-          };
-        };
+  systemd.network.networks = {
+    "eth0" = {
+      address = [
+        "10.1.200.2/24"
+      ];
+      dns = [ 
+        "10.1.11.2"
+        "1.1.1.1"
+      ]; 
+      gateway = [ 
+        "10.1.200.1"
+      ];
+      matchConfig = {
+        Path = "pci-0000:06:12.0";
       };
     };
   };
@@ -59,20 +55,16 @@
     autoFormat = true;
   };
 
-  users = {
-    users = {
-      develop = {
-        extraGroups = [ "docker" "wheel" ];
-        shell = pkgs.bashInteractive;
+  users.users.develop = {
+    extraGroups = [ "docker" "wheel" ];
+    shell = pkgs.bashInteractive;
 
-        isNormalUser = true;
-        home = "/home/develop";
-        initialPassword = "!";
+    isNormalUser = true;
+    home = "/home/develop";
+    initialPassword = "!";
 
-        openssh.authorizedKeys.keys = [
-          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
-        ];
-      };
-    };
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
+    ];
   };
 }
