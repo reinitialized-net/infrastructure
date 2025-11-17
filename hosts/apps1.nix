@@ -12,39 +12,37 @@ in
     # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
     # Set Firewall rules
-    firewall = {
-      whitelist = [
-        # Allow DNS
-        {
-          port = 53;
-          protocol = "tcp_udp";
-          ipType = "ipv4";
-          source = [ 
-            "10.1.0.0/16"
-            "192.168.11.0/24"
-            "172.16.0.0/24"
-           ];
-        }
-        # Allow HTTP
-        {
-          port = 80;
-          protocol = "tcp_udp";
-          ipType = "ipv4";
-          source = [ "10.1.12.0/29" ];
-        }
-        # Allow Technitium DNS WebUI
-        {
-          port = 5380;
-          protocol = "tcp";
-          ipType = "ipv4";
-          source = [ 
-            "10.1.0.0/16"
-            "192.168.11.0/24"
-            "172.16.0.0/24"
-           ];
-        }
-      ];
-    };
+    firewall.whitelist = [
+      # Allow DNS
+      {
+        port = 53;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [ 
+          "10.1.0.0/16"
+          "192.168.11.0/24"
+          "172.16.0.0/24"
+        ];
+      }
+      # Allow HTTP
+      {
+        port = 80;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [ "10.1.12.0/29" ];
+      }
+      # Allow Technitium DNS WebUI
+      {
+        port = 5380;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ 
+          "10.1.0.0/16"
+          "192.168.11.0/24"
+          "172.16.0.0/24"
+        ];
+      }
+    ];
   };
   ## We use systemd-networkd for network configuration
   systemd.network.networks = {
@@ -64,7 +62,6 @@ in
       };
     };
   };
-
   # Hosted Services
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
