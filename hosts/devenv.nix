@@ -24,13 +24,9 @@
       };
     };
   };
-
-  services = {
-    # Enable support for VS Code Remote - SSH
-    vscode-server = {
-      enable = true;
-    };
-  };
+  # Enable support for VS Code Remote - SSH
+  services.vscode-server.enable = true;
+  # Install desired packages
   environment.systemPackages = with pkgs; [
     vim
     git
@@ -39,12 +35,15 @@
     fastfetch
     docker-compose
 
+    nmap
+    dig
+    coreutils
+    pciutils
+    usbutils
+
     nixd
     nixfmt-rfc-style
-
-    nmap
   ];
-
   # Create develop user
   fileSystems."/home/develop" = {
     device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi2";
@@ -54,7 +53,6 @@
     autoResize = true;
     autoFormat = true;
   };
-
   users.users.develop = {
     extraGroups = [ "docker" "wheel" ];
     shell = pkgs.bashInteractive;
