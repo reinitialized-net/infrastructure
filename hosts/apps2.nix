@@ -38,7 +38,7 @@
   systemd.network.networks = {
     "eth0" = {
       address = [
-        "10.1.11.2/24"
+        "10.1.11.3/24"
       ];
       dns = [ 
         "127.0.0.1"
