@@ -47,28 +47,23 @@ in
     };
   };
   ## We use systemd-networkd for network configuration
-  systemd = {
-    network = {
-      networks = {
-        "eth0" = {
-          address = [
-            "10.1.11.2/24"
-          ];
-          dns = [ 
-            "1.1.1.1" 
-            "8.8.8.8" 
-          ]; 
-          gateway = [ 
-            "10.1.11.1"
-          ];
-          matchConfig = {
-            Path = "pci-0000:06:12.0";
-          };
-        };
+  systemd.network.networks = {
+    "eth0" = {
+      address = [
+        "10.1.11.2/24"
+      ];
+      dns = [ 
+        "1.1.1.1" 
+        "8.8.8.8" 
+      ]; 
+      gateway = [ 
+        "10.1.11.1"
+      ];
+      matchConfig = {
+        Path = "pci-0000:06:12.0";
       };
     };
   };
-  #services.openssh.listenAddresses = [ ];
 
   # Hosted Services
   ## Docker-based Containers
@@ -162,17 +157,11 @@ in
         };
       };
       config = { ... }: {
-        networking = {
-          firewall = {
-            enable = false;
-          };
-        };
-        system = {
-          # Set container StateVersion (DO NOT TOUCH)
-          stateVersion = defaultStateVersion;
-        };
-        
-        # Setup Nginx service
+        # Let host handle firewall
+        networking.firewall.enable = false;
+        # Set Container StateVersion (DO NOT TOUCH)
+        system.stateVersion = defaultStateVersion;
+        # Configure Nginx service
         services = {
           nginx = {
             enable = true;
@@ -257,32 +246,18 @@ in
       };
 
       config = { ... }: {
-        networking = {
-          firewall = {
-            enable = false;
-          };
-        };
-        system = {
-          # Set container StateVersion (DO NOT TOUCH)
-          stateVersion = defaultStateVersion;
-        };
-
-        services = {
-          technitium-dns-server = {
-            enable = true;
-          };
-        };
-        systemd = {
-          services = {
-            technitium-dns-server = {
-              serviceConfig = {
-                # Turn off DynamicUser to resolve permission issues
-                DynamicUser = lib.mkForce false;
-                # Create state directory for Technitium DNS server
-                StateDirectory = "technitium-dns-server";
-              };
-            };
-          };
+        # Let host handle firewall
+        networking.firewall.enable = false;
+        # Set Container StateVersion (DO NOT TOUCH)
+        system.stateVersion = defaultStateVersion;
+        # Enable Technitium DNS Server
+        services.technitium-dns-server.enable = true;
+        # Adjust systemd service to prevent DynamicUser permission issues (TODO: look into proper fix)
+        systemd.services.technitium-dns-server.serviceConfig = {
+          # Turn off DynamicUser to resolve permission issues
+          DynamicUser = lib.mkForce false;
+          # Create state directory for Technitium DNS server
+          StateDirectory = "technitium-dns-server";
         };
       };
     };
