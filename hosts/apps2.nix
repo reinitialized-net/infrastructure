@@ -5,7 +5,7 @@
   # Network Configuration
   networking = {
     # Set Hostname
-    hostName = "apps1";
+    hostName = "apps2";
     # Disable DHCP for static configuration (WILL OVERRIDE IF ENABLED)
     useDHCP = false;
     # Set Firewall rules
@@ -60,14 +60,14 @@
   ### Define Container configuration
   containers = {
     # Technitium DNS
-    technitium1 = {
+    technitium2 = {
       ephemeral = true;
       autoStart = true;
       privateNetwork =  false;
 
       bindMounts = {
         "/var/lib/technitium-dns-server" = {
-          hostPath = "/mnt/data/nix/technitium1";
+          hostPath = "/mnt/data/nix/technitium2";
           isReadOnly =  false;
         };
       };
