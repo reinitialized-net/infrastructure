@@ -1,4 +1,4 @@
-{ nixpkgs, inputs }:
+{ inputs, nixpkgs, nixpkgsUnstable }:
 host: {
   modules ? [],
   system ? "x86_64-linux",
@@ -7,12 +7,10 @@ host: {
 let
   # Standardize system.stateVersion (DO NOT CHANGE)
   defaultStateVersion = "25.05";
-
 in nixpkgs.lib.nixosSystem {
   inherit system;
   specialArgs = {
-    inherit inputs;
-    inherit defaultStateVersion;
+    inherit defaultStateVersion inputs nixpkgs nixpkgsUnstable;
   };
   # Declare modules
   modules = modules ++ [

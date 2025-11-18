@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ defaultStateVersion, lib, ... }:
+{ defaultStateVersion, lib, pkgs, pkgsUnstable, ...}: 
 let
   huduEnv = import ../secrets/hudu.nix;
 in
@@ -62,6 +62,11 @@ in
       };
     };
   };
+  ## Customize systemPackages
+  environment.systemPackages = [
+    ### Install newer version of technitium-dns-server from unstable
+    pkgsUnstable.technitium-dns-server
+  ];
   # Hosted Services
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {

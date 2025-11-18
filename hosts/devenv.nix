@@ -1,6 +1,6 @@
 # hosts/devenv.nix
 ## Defines configuration for the development environment VS.
-{ pkgs, ...}:
+{ defaultStateVersion, lib, pkgs, pkgsUnstable, ...}:  
 {
   networking = {
     hostName = "devenv";
