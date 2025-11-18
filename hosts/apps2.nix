@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ defaultStateVersion, lib, pkgs, pkgsUnstable, ...}: 
+{ defaultStateVersion, lib, pkgs, pkgsUnstable, ...}:
 {
   # Network Configuration
   networking = {
@@ -52,11 +52,6 @@
       };
     };
   };
-  ## Customize systemPackages
-  environment.systemPackages = [
-    ### Install newer version of technitium-dns-server from unstable
-    pkgsUnstable.technitium-dns-server
-  ];
   ## NixOS Containers
   ### Create required folders
   systemd.tmpfiles.rules = [
@@ -78,18 +73,36 @@
       };
 
       config = { ... }: {
-        # Let host handle firewall
-        networking.firewall.enable = false;
-        # Set Container StateVersion (DO NOT TOUCH)
-        system.stateVersion = defaultStateVersion;
-        # Enable Technitium DNS Server
-        services.technitium-dns-server.enable = true;
-        # Adjust systemd service to prevent DynamicUser permission issues (TODO: look into proper fix)
-        systemd.services.technitium-dns-server.serviceConfig = {
-          # Turn off DynamicUser to resolve permission issues
-          DynamicUser = lib.mkForce false;
-          # Create state directory for Technitium DNS server
-          StateDirectory = "technitium-dns-server";
+        networking = {
+          firewall = {
+            # Let host handle firewall
+            enable = false;
+          };
+        };
+        system = {
+          # Set container StateVersion (DO NOT TOUCH)
+          stateVersion = defaultStateVersion;
+        };
+        services = {
+          technitium-dns-server = {
+            # Enable Technitium DNS Server
+            enable = true;
+            # Set package to unstable for newer version
+            # TODO: investigate maintaining our own package if this becomes a pattern
+            package = pkgsUnstable.technitium-dns-server;
+          };
+        };
+        systemd = {
+          services = {
+            technitium-dns-server = {
+              serviceConfig = {
+                # Turn off DynamicUser to resolve permission issues
+                DynamicUser = lib.mkForce false;
+                # Create state directory for Technitium DNS server
+                StateDirectory = "technitium-dns-server";
+              };
+            };
+          };
         };
       };
     };

@@ -62,11 +62,6 @@ in
       };
     };
   };
-  ## Customize systemPackages
-  environment.systemPackages = [
-    ### Install newer version of technitium-dns-server from unstable
-    pkgsUnstable.technitium-dns-server
-  ];
   # Hosted Services
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
@@ -248,18 +243,36 @@ in
       };
 
       config = { ... }: {
-        # Let host handle firewall
-        networking.firewall.enable = false;
-        # Set Container StateVersion (DO NOT TOUCH)
-        system.stateVersion = defaultStateVersion;
-        # Enable Technitium DNS Server
-        services.technitium-dns-server.enable = true;
-        # Adjust systemd service to prevent DynamicUser permission issues (TODO: look into proper fix)
-        systemd.services.technitium-dns-server.serviceConfig = {
-          # Turn off DynamicUser to resolve permission issues
-          DynamicUser = lib.mkForce false;
-          # Create state directory for Technitium DNS server
-          StateDirectory = "technitium-dns-server";
+        networking = {
+          firewall = {
+            # Let host handle firewall
+            enable = false;
+          };
+        };
+        system = {
+          # Set container StateVersion (DO NOT TOUCH)
+          stateVersion = defaultStateVersion;
+        };
+        services = {
+          technitium-dns-server = {
+            # Enable Technitium DNS Server
+            enable = true;
+            # Set package to unstable for newer version
+            # TODO: investigate maintaining our own package if this becomes a pattern
+            package = pkgsUnstable.technitium-dns-server;
+          };
+        };
+        systemd = {
+          services = {
+            technitium-dns-server = {
+              serviceConfig = {
+                # Turn off DynamicUser to resolve permission issues
+                DynamicUser = lib.mkForce false;
+                # Create state directory for Technitium DNS server
+                StateDirectory = "technitium-dns-server";
+              };
+            };
+          };
         };
       };
     };
