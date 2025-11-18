@@ -34,7 +34,7 @@
         "type": "github"
       }
     },
-    "nixpkgs-unstable": {
+    "nixpkgsUnstable": {
       "locked": {
         "lastModified": 1763283776,
         "narHash": "sha256-Y7TDFPK4GlqrKrivOcsHG8xSGqQx3A6c+i7novT85Uk=",
@@ -67,8 +67,8 @@
     "root": {
       "inputs": {
         "nixpkgs": "nixpkgs",
-        "nixpkgs-unstable": "nixpkgs-unstable",
-        "vscode-server": "vscode-server"
+        "nixpkgsUnstable": "nixpkgsUnstable",
+        "vscodeServer": "vscodeServer"
       }
     },
     "systems": {
@@ -86,7 +86,7 @@
         "type": "github"
       }
     },
-    "vscode-server": {
+    "vscodeServer": {
       "inputs": {
         "flake-utils": "flake-utils",
         "nixpkgs": "nixpkgs_2"

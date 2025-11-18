@@ -2,16 +2,16 @@
   description = "Reinitialized Infrastructure";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
-    nixpkgs-unstable.url = "github:NixOS/nixpkgs/nixos-unstable";
-    vscode-server.url = "github:nix-community/nixos-vscode-server";
+    nixpkgsUnstable.url = "github:NixOS/nixpkgs/nixos-unstable";
+    vscodeServer.url = "github:nix-community/nixos-vscode-server";
   };
 
-  outputs = { nixpkgs, nixpkgs-unstable, ... }@inputs:
+  outputs = { nixpkgs, nixpkgsUnstable, ... }@inputs:
     let
       # Global Functions
       ## Import makeConfig
       makeConfig = import ./library/makeConfig.nix {
-        inherit inputs nixpkgs nixpkgs-unstable;
+        inherit inputs nixpkgs nixpkgsUnstable;
       };
     in {
       # initOS: Used for standing up new hosts
@@ -19,7 +19,7 @@
       # devenv: NixOS-based Development Environment
       nixosConfigurations.devenv = makeConfig "devenv" {
         modules = [
-          inputs.vscode-server.nixosModules.default
+          inputs.vscodeServer.nixosModules.default
           ./modules/containers.nix
         ];
       };
