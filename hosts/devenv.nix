@@ -1,6 +1,6 @@
 # hosts/devenv.nix
 ## Defines configuration for the development environment VS.
-{ defaultStateVersion, lib, pkgs, pkgsUnstable, ...}:  
+{ pkgs, ...}:  
 {
   networking = {
     hostName = "devenv";
@@ -33,7 +33,6 @@
     curl
     btop
     fastfetch
-    docker-compose
 
     nmap
     dig
