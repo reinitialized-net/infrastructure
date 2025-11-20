@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ defaultStateVersion, lib, pkgs, pkgsUnstable, ...}: 
+{ defaultStateVersion, lib, pkgsUnstable, ...}: 
 let
   huduEnv = import ../secrets/hudu.nix;
 in
@@ -159,69 +159,67 @@ in
         # Set Container StateVersion (DO NOT TOUCH)
         system.stateVersion = defaultStateVersion;
         # Configure Nginx service
-        services = {
-          nginx = {
-            enable = true;
-            recommendedProxySettings = true;
-            recommendedTlsSettings = true;
+        services.nginx = {
+          enable = true;
+          recommendedProxySettings = true;
+          recommendedTlsSettings = true;
 
-            virtualHosts = {
-              "_" = {
-                default = true;
-                listen = [
-                  { 
-                    addr = "0.0.0.0";
-                    port = 80;
-                  }
-                ];
-                root = "/var/www/hudu2/public";
-                locations = {
-                  # Deny access to dotfiles
-                  "/." = {
-                    extraConfig = ''
-                      deny all;
-                    '';
-                  };
-                  # Deny access to .rb and .log files
-                  "~* ^.+\\.(rb|log)$" = {
-                    extraConfig = ''
-                      deny all;
-                    '';
-                  };
-                  # WebSocket cable proxy
-                  "/cable" = {
-                    proxyPass = "http://127.0.0.1:3000/cable";
-                    proxyWebsockets = true;
-                  };
-                  # Try files, fallback to @rails
-                  "/" = {
-                    tryFiles = "$uri @rails";
-                  };
-                  # Rails app fallback
-                  "@rails" = {
-                    extraConfig = ''
-                      client_body_buffer_size 128k;
-                      proxy_next_upstream error timeout invalid_header http_500 http_502 http_503;
-                      send_timeout 5m;
-                      proxy_read_timeout 240;
-                      proxy_send_timeout 240;
-                      proxy_connect_timeout 240;
-                      proxy_set_header Host $host;
-                      proxy_set_header X-Real-IP $remote_addr;
-                      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-                      proxy_set_header X-Forwarded-Host $host;
-                      proxy_set_header X-Forwarded-Ssl off;
-                      proxy_redirect  http://  $scheme://;
-                      proxy_http_version 1.1;
-                      proxy_set_header Connection "";
-                      proxy_cache_bypass $cookie_session;
-                      proxy_no_cache $cookie_session;
-                      proxy_buffers 32 4k;
-                      proxy_headers_hash_bucket_size 128;
-                      proxy_headers_hash_max_size 1024;
-                      proxy_pass http://127.0.0.1:3000;
-                    '';
-                  };
+          virtualHosts = {
+            "_" = {
+              default = true;
+              listen = [
+                { 
+                  addr = "0.0.0.0";
+                  port = 80;
+                }
+              ];
+              root = "/var/www/hudu2/public";
+              locations = {
+                # Deny access to dotfiles
+                "/." = {
+                  extraConfig = ''
+                    deny all;
+                  '';
+                };
+                # Deny access to .rb and .log files
+                "~* ^.+\\.(rb|log)$" = {
+                  extraConfig = ''
+                    deny all;
+                  '';
+                };
+                # WebSocket cable proxy
+                "/cable" = {
+                  proxyPass = "http://127.0.0.1:3000/cable";
+                  proxyWebsockets = true;
+                };
+                # Try files, fallback to @rails
+                "/" = {
+                  tryFiles = "$uri @rails";
+                };
+                # Rails app fallback
+                "@rails" = {
+                  extraConfig = ''
+                    client_body_buffer_size 128k;
+                    proxy_next_upstream error timeout invalid_header http_500 http_502 http_503;
+                    send_timeout 5m;
+                    proxy_read_timeout 240;
+                    proxy_send_timeout 240;
+                    proxy_connect_timeout 240;
+                    proxy_set_header Host $host;
+                    proxy_set_header X-Real-IP $remote_addr;
+                    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                    proxy_set_header X-Forwarded-Host $host;
+                    proxy_set_header X-Forwarded-Ssl off;
+                    proxy_redirect  http://  $scheme://;
+                    proxy_http_version 1.1;
+                    proxy_set_header Connection "";
+                    proxy_cache_bypass $cookie_session;
+                    proxy_no_cache $cookie_session;
+                    proxy_buffers 32 4k;
+                    proxy_headers_hash_bucket_size 128;
+                    proxy_headers_hash_max_size 1024;
+                    proxy_pass http://127.0.0.1:3000;
+                  '';
                 };
               };
             };
@@ -243,36 +241,21 @@ in
       };
 
       config = { ... }: {
-        networking = {
-          firewall = {
-            # Let host handle firewall
-            enable = false;
-          };
+        # Let host handle firewall
+        networking.firewall.enable = true;
+        # Set container StateVersion (DO NOT TOUCH)
+        system.stateVersion = defaultStateVersion;
+        services.technitium-dns-server = {
+          # Enable Technitium DNS Server
+          enable = true;
+          # Set package to unstable for newer version
+          package = pkgsUnstable.technitium-dns-server;
         };
-        system = {
-          # Set container StateVersion (DO NOT TOUCH)
-          stateVersion = defaultStateVersion;
-        };
-        services = {
-          technitium-dns-server = {
-            # Enable Technitium DNS Server
-            enable = true;
-            # Set package to unstable for newer version
-            # TODO: investigate maintaining our own package if this becomes a pattern
-            package = pkgsUnstable.technitium-dns-server;
-          };
-        };
-        systemd = {
-          services = {
-            technitium-dns-server = {
-              serviceConfig = {
-                # Turn off DynamicUser to resolve permission issues
-                DynamicUser = lib.mkForce false;
-                # Create state directory for Technitium DNS server
-                StateDirectory = "technitium-dns-server";
-              };
-            };
-          };
+        systemd.services.technitium-dns-server.serviceConfig = {
+          # Turn off DynamicUser to resolve permission issues
+          DynamicUser = lib.mkForce false;
+          # Create state directory for Technitium DNS server
+          StateDirectory = "technitium-dns-server";
         };
       };
     };

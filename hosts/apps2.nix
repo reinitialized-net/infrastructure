@@ -1,6 +1,6 @@
 # hosts/apps1.nix
 ## Contains all essential reinitialized.net applications and services
-{ defaultStateVersion, lib, pkgs, pkgsUnstable, ...}:
+{ defaultStateVersion, lib, pkgsUnstable, ...}:
 {
   # Network Configuration
   networking = {
@@ -73,36 +73,21 @@
       };
 
       config = { ... }: {
-        networking = {
-          firewall = {
-            # Let host handle firewall
-            enable = false;
-          };
+        # Let host handle firewall
+        networking.firewall.enable = true;
+        # Set container StateVersion (DO NOT TOUCH)
+        system.stateVersion = defaultStateVersion;
+        services.technitium-dns-server = {
+          # Enable Technitium DNS Server
+          enable = true;
+          # Set package to unstable for newer version
+          package = pkgsUnstable.technitium-dns-server;
         };
-        system = {
-          # Set container StateVersion (DO NOT TOUCH)
-          stateVersion = defaultStateVersion;
-        };
-        services = {
-          technitium-dns-server = {
-            # Enable Technitium DNS Server
-            enable = true;
-            # Set package to unstable for newer version
-            # TODO: investigate maintaining our own package if this becomes a pattern
-            package = pkgsUnstable.technitium-dns-server;
-          };
-        };
-        systemd = {
-          services = {
-            technitium-dns-server = {
-              serviceConfig = {
-                # Turn off DynamicUser to resolve permission issues
-                DynamicUser = lib.mkForce false;
-                # Create state directory for Technitium DNS server
-                StateDirectory = "technitium-dns-server";
-              };
-            };
-          };
+        systemd.services.technitium-dns-server.serviceConfig = {
+          # Turn off DynamicUser to resolve permission issues
+          DynamicUser = lib.mkForce false;
+          # Create state directory for Technitium DNS server
+          StateDirectory = "technitium-dns-server";
         };
       };
     };
