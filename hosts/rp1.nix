@@ -1,6 +1,6 @@
 # hosts/rp1.nix
 ## Handles reverse proxy service in an isolated environment.
-{ ... }:
+{ pkgs, ... }:
 {
   # Network Configuration
   networking = {
@@ -64,15 +64,50 @@
       # Setup Nginx service
       services.nginx = {
         enable = true;
+        package = (pkgs.angieQuic.override {
+          withStream = true;
+        });
         recommendedProxySettings = true;
         recommendedTlsSettings = true;
 
         virtualHosts = {
-          "media.reinitialized.me" = {
+          "one.dns.reinitialized.net" = {
             enableACME = true;
             forceSSL = true;
             listenAddresses = [ "10.1.12.2" ];
+            locations = {
+              "/" = {
+                proxyPass = "http://10.1.11.2:5380";
+              };
+            };
+          };
+          "two.dns.reinitialized.net" = {
+            enableACME = true;
+            forceSSL = true;
+            listenAddresses = [ "10.1.12.3" ];
+            locations = {
+              "/" = {
+                proxyPass = "http://10.1.11.3:5380";
+              };
+            };
+          };
 
+          "docs.reinitialized.net" = {
+            enableACME = true;
+            forceSSL = true;
+            listenAddresses = [ "10.1.12.4" ];
+
+            locations = {
+              "/" = {
+                proxyPass = "http://10.1.11.2:80"; 
+              };
+            };
+          };
+
+          "media.reinitialized.me" = {
+            enableACME = true;
+            forceSSL = true;
+            listenAddresses = [ "10.1.12.4" ];
             locations = {
               "/" = {
                 proxyPass = "http://10.1.11.21:8096";
@@ -82,23 +117,10 @@
           "riven.media.reinitialized.me" = {
             enableACME = true;
             forceSSL = true;
-            listenAddresses = [ "10.1.12.2" ];
-
+            listenAddresses = [ "10.1.12.4" ];
             locations = {
               "/" = {
                 proxyPass = "http://10.1.11.21:3000";
-              };
-            };
-          };
-
-          "docs.reinitialized.net" = {
-            enableACME = true;
-            forceSSL = true;
-            listenAddresses = [ "10.1.12.2" ];
-
-            locations = {
-              "/" = {
-                proxyPass = "http://10.1.11.2:80"; 
               };
             };
           };

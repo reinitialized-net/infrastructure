@@ -18,11 +18,7 @@ in
         port = 53;
         protocol = "tcp_udp";
         ipType = "ipv4";
-        source = [ 
-          "10.1.0.0/16"
-          "192.168.11.0/24"
-          "172.16.0.0/24"
-        ];
+        source = [ "0.0.0.0/0" ];
       }
       # Allow HTTP
       {
@@ -36,11 +32,14 @@ in
         port = 5380;
         protocol = "tcp";
         ipType = "ipv4";
-        source = [ 
-          "10.1.0.0/16"
-          "192.168.11.0/24"
-          "172.16.0.0/24"
-        ];
+        source = [ "10.1.12.2" ];
+      }
+      # Allow Technitium DNS WebUI Secure for Clustering
+      {
+        port = 53443;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "10.1.11.3/24" ];
       }
     ];
   };

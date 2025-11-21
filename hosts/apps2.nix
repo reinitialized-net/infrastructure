@@ -15,22 +15,21 @@
         port = 53;
         protocol = "tcp_udp";
         ipType = "ipv4";
-        source = [ 
-          "10.1.0.0/16"
-          "192.168.11.0/24"
-          "172.16.0.0/24"
-        ];
+        source = [ "0.0.0.0/0" ];
       }
       # Allow Technitium DNS WebUI
       {
         port = 5380;
         protocol = "tcp";
         ipType = "ipv4";
-        source = [ 
-          "10.1.0.0/16"
-          "192.168.11.0/24"
-          "172.16.0.0/24"
-        ];
+        source = [ "10.1.12.3/29" ];
+      }
+      # Allow Technitium DNS WebUI Secure for Clustering
+      {
+        port = 53443;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "10.1.11.2/24" ];
       }
     ];
   };
@@ -40,9 +39,9 @@
       address = [
         "10.1.11.3/24"
       ];
-      dns = [ 
-        "127.0.0.1"
-        "10.1.11.3" 
+      dns = [
+        "10.1.11.2"
+        "127.0.0.1" 
       ]; 
       gateway = [ 
         "10.1.11.1"
