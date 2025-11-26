@@ -2,27 +2,23 @@
 ## Extends networking.firewall options
 { lib, config, pkgs, ...}:
 let
-  inherit (lib) 
-    mkOption 
-    types;
-
-  whitelistEntry = with types; submodule {
+  whitelistEntry = with lib.types; submodule {
     options = {
-      port = mkOption {
+      port = lib.mkOption {
         type = int;
         description = "The port number to allow.";
       };
-      protocol = mkOption {
+      protocol = lib.mkOption {
         type = types.enum [ "tcp" "udp" "tcp_udp" ];
         description = "The protocol for the port.";
         default = "tcp";
       };
-      ipType = mkOption {
+      ipType = lib.mkOption {
         type = types.enum [ "ipv4" "ipv6" "ipv46" ];
         description = "The IP type for the rule.";
         default = "ipv4";
       };
-      source = mkOption {
+      source = lib.mkOption {
         type = types.listOf types.str;
         description = "List of source IP addresses or CIDR blocks allowed to access the port.";
         default = [ "0.0.0.0/0" ];
@@ -31,12 +27,10 @@ let
   };
 in
 {
-  options = {
-    networking.firewall.whitelist = mkOption {
-      type = types.listOf whitelistEntry;
-      description = "List of firewall whitelist entries to allow specific ports and protocols.";
-      default = [ ];
-    };
+  options.networking.firewall.whitelist = lib.mkOption {
+    type = lib.types.listOf whitelistEntry;
+    description = "Granular port whitelisting with source IP restrictions.";
+    default = [ ];
   };
   config = lib.mkIf (config.networking.firewall.enable) (
     lib.mkMerge [
