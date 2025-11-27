@@ -28,7 +28,7 @@ in
         protocol = "tcp_udp";
         ipType = "ipv4";
         source = [ 
-          "10.1.12.2/29"
+          "10.1.12.4/29"
         ];
       }
       # Allow Technitium DNS WebUI
@@ -37,7 +37,8 @@ in
         protocol = "tcp";
         ipType = "ipv4";
         source = [ 
-          "10.1.12.2/29"
+          #"10.1.12.2/29"
+          "0.0.0.0/0"
         ];
       }
       # Allow Technitium DNS WebUI Secure for Clustering

@@ -9,10 +9,12 @@ let
   defaultStateVersion = "25.05";
 in nixpkgs.lib.nixosSystem {
   inherit system;
+
   specialArgs = {
     inherit defaultStateVersion inputs nixpkgs;
     pkgsUnstable = nixpkgsUnstable.legacyPackages.${system};
   };
+
   # Declare modules
   modules = modules ++ [
     ../extensions/firewall.nix
