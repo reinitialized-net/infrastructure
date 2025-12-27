@@ -1,9 +1,0 @@
-{
-    "recommendations": [
-        "github.copilot",
-        "github.copilot-chat",
-        "github.vscode-pull-request-github",
-        "jnoortheen.nix-ide",
-        "arrterian.nix-env-selector"
-    ]
-}
