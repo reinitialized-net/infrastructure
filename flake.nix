@@ -1,0 +1,25 @@
+{
+  description = "Reinitialized Infrastructure";
+
+  inputs = {
+    nixpkgsMaster.url = "github:NixOS/nixpkgs/master";
+    nixpkgsUnstable.url = "github:NixOS/nixpkgs/nixos-unstable";
+    nixpkgsStable.url = "github:NixOS/nixpkgs/nixos-25.11";
+
+    vscodeServer = {
+      url = "github:nix-community/nixos-vscode-server";
+      inputs.nixpkgs.follows = "nixpkgsStable";
+    };
+  };
+
+  outputs =
+    inputs:
+    let
+      library = import "${inputs.self}/library" {
+        inherit (inputs) self;
+      };
+    in
+    {
+
+    };
+} 
