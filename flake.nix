@@ -20,6 +20,7 @@
       };
     in
     {
+      lib = library;
 
     };
-} 
+}
