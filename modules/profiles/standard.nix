@@ -46,7 +46,7 @@
 
     users = {
       root = {
-        initialPassword = lib.mkForce "Abcd#1234!"; # temporary credential for debugging
+        initialHashedPassword = lib.mkForce null;
         shell = lib.mkForce pkgs.bashInteractive;
       };
       rnetadmin = {
