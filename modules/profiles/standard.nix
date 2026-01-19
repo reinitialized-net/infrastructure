@@ -44,20 +44,22 @@
 
     groups.rnetadmin = lib.mkDefault {};
 
-    root = {
-      hashedPassword = lib.mkForce null;
-      shell = lib.mkForce pkgs.bashInteractive;
-    };
-    rnetadmin = {
-      hashedPassword = lib.mkDefault "$y$j9T$.yOf2YVTlRo1.Su3fsi/V.$WcJPRjl3o8KE2GTw12jqoTNSd.rn6/Wogx.j5hfjCIC";
+    users = {
+      root = {
+        hashedPassword = lib.mkForce null;
+        shell = lib.mkForce pkgs.bashInteractive;
+      };
+      rnetadmin = {
+        hashedPassword = lib.mkDefault "$y$j9T$.yOf2YVTlRo1.Su3fsi/V.$WcJPRjl3o8KE2GTw12jqoTNSd.rn6/Wogx.j5hfjCIC";
 
-      isSystemUser = lib.mkForce true;
-      createHome = lib.mkForce true;
-      group = lib.mkForce "rnetadmin";
-      extraGroups = lib.mkDefault [ "wheel" ];
-      shell = lib.mkForce pkgs.bashInteractive;
+        isSystemUser = lib.mkForce true;
+        createHome = lib.mkForce true;
+        group = lib.mkForce "rnetadmin";
+        extraGroups = lib.mkDefault [ "wheel" ];
+        shell = lib.mkForce pkgs.bashInteractive;
 
-      openssh.authorizedKeys.keys = lib.mkDefault [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5pCeT2IuImFk0Rc2qcxudr8hVTgWvQDcwkXi0Hybru rnetadmin" ];
+        openssh.authorizedKeys.keys = lib.mkDefault [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5pCeT2IuImFk0Rc2qcxudr8hVTgWvQDcwkXi0Hybru rnetadmin" ];
+      };
     };
   };
 
