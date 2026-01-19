@@ -10,10 +10,15 @@ let
   toString = builtins.toString;
   # Generate scsiN lines for each disk
   scsiLines = builtins.concatStringsSep "\n" (
-    builtins.imap (i: disk: "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,iothread=1,serial=drive-scsi${toString i},ssd=1") disks
+    builtins.genList (i:
+      let
+        disk = builtins.elemAt disks i;
+      in
+      "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,iothread=1,serial=drive-scsi${toString i},ssd=1"
+    ) (builtins.length disks)
   );
   # Use the first disk for efidisk0 and tpmstate0 for compatibility
-  firstDisk = disks[0] || (if builtins.length disks > 0 then builtins.elemAt disks 0 else null);
+  firstDisk = if builtins.length disks > 0 then builtins.elemAt disks 0 else null;
 in
 ''
   acpi: 1

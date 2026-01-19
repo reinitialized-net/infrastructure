@@ -61,6 +61,8 @@ let
           ukiFile = config.system.boot.loader.ukiFile or "uki-linux-${efiArch}.img";
           ukiPath = "${config.system.build.uki}/${ukiFile}";
         in {
+          name = "vm-${toString vmId}-disk-1";
+
           partitions = {
             "esp" = {
               contents = {
@@ -89,7 +91,7 @@ let
                 Label = "nixos";
                 Format = "ext4";
                 GrowFileSystem = true;
-                SizeMinBytes = "${toString (disks[0].size - 1)}G";
+                SizeMinBytes = "${toString ((builtins.elemAt disks 0).size - 1)}G";
               };
             };
           };
