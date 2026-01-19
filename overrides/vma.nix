@@ -18,7 +18,7 @@
 }).overrideAttrs (super:  {
   src = pkgs.fetchurl {
     url = "https://download.qemu.org/qemu-10.1.3.tar.xz";
-    hash = "sha256-nXXzMcGly5tuuP2fZPVj7C6rNGyCLLl/izXNgtPxFHk=";
+    hash = "sha256-+6p6DXqaHetWlbElkWdG7Cj+DeYnXURU8+O7r4szm1M=";
   };
   patches = [
     "${pkgs.fetchFromGitHub {
