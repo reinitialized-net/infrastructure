@@ -88,7 +88,7 @@ let
                   title NixOS
                   linux /EFI/nixos/kernel.efi
                   initrd /EFI/nixos/initrd
-                  options init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams}
+                  options root=/dev/sda2 init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams}
                 '';
               };
               repartConfig = {

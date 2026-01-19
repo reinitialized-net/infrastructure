@@ -43,10 +43,11 @@
 
     growPartition = lib.mkDefault true;
 
-    # Minimal kernel parameters
+    # Kernel parameters - tty0 must be last for Proxmox VNC console visibility
     kernelParams = [
-      "console=tty0"
       "console=ttyS0,115200"
+      "console=tty0"
+      "boot.shell_on_fail"
     ];
   };
 
