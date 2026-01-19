@@ -63,8 +63,6 @@ let
           efiArch = pkgs.stdenv.hostPlatform.efiArch;
           ukiFile = config.system.boot.loader.ukiFile or "uki-linux-${efiArch}.img";
           ukiPath = "${config.system.build.uki}/${ukiFile}";
-          bootPartuuid = "8d1d7c3e-1d2a-4f0e-b7a0-0a0e3f1f4a10";
-          rootPartuuid = "b1b2d2d0-3a3f-4c5b-9d9c-3b99d7c8e1f2";
         in {
           name = "vm-${toString vmId}-disk-1";
 
@@ -82,8 +80,8 @@ let
                 Type = "esp";
                 Label = "boot";
                 Format = "vfat";
-                UUID = bootPartuuid;
                 SizeMaxBytes = "1G";
+                UUID = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
               };
             };
             "root" = {
@@ -95,7 +93,6 @@ let
                 Type = "root";
                 Label = "nixos";
                 Format = "ext4";
-                UUID = rootPartuuid;
                 GrowFileSystem = true;
                 SizeMinBytes = "${toString ((builtins.elemAt disks 0).size - 1)}G";
               };
