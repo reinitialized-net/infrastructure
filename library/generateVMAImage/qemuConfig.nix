@@ -3,11 +3,17 @@
   memory,
   host,
   vmId,
-  disk,
+  disks,
   networking,
 }:
 let
   toString = builtins.toString;
+  # Generate scsiN lines for each disk
+  scsiLines = builtins.concatStringsSep "\n" (
+    builtins.imap (i: disk: "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,iothread=1,serial=drive-scsi${toString i},ssd=1") disks
+  );
+  # Use the first disk for efidisk0 and tpmstate0 for compatibility
+  firstDisk = disks[0] || (if builtins.length disks > 0 then builtins.elemAt disks 0 else null);
 in
 ''
   acpi: 1
@@ -31,14 +37,14 @@ in
   tablet: 0
   net0: virtio=00:00:00:00:00:00,bridge=${networking.bridge},firewall=${toString networking.firewall}${if networking ? vlan then ",tag=${toString networking.vlan}" else ""}
 
-  scsi0: ${disk.storage}:vm-${toString vmId}-disk-1,size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,iothread=1,serial=drive-scsi0,ssd=1
-  efidisk0: ${disk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
-  tpmstate0: ${disk.storage}:vm-${toString vmId}-disk-2,version=v2.0
+  ${scsiLines}
+  efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
+  tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-2,version=v2.0
 
   # Proxmox qmdump mapping:
   # - For block-backed storages (zfspool zvol, LVM-thin), restore streams must be RAW bytes.
   # - Keep `efidisk0` (OVMF VARS) and `tpmstate0` raw for compatibility.
-  #qmdump#map:scsi0:drive-scsi0:${disk.storage}:raw:
-  #qmdump#map:efidisk0:drive-efidisk0:${disk.storage}:raw:
-  #qmdump#map:tpmstate0:drive-tpmstate0:${disk.storage}:raw:
+  #qmdump#map:scsi0:drive-scsi0:${firstDisk.storage}:raw:
+  #qmdump#map:efidisk0:drive-efidisk0:${firstDisk.storage}:raw:
+  #qmdump#map:tpmstate0:drive-tpmstate0:${firstDisk.storage}:raw:
 ''

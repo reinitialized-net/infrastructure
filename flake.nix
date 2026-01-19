@@ -20,7 +20,20 @@
       };
     in
     {
-      lib = library;
+      packages = library.forAllSystems (system:
+      {
+          standard = library.generateVMAImage "standard" {
+            inherit system;
 
+            vmId = 100;
+            disks = [
+              {
+                storage = "hotData";
+                size = 25;
+              }
+            ];
+          };
+        }
+      );
     };
 }
