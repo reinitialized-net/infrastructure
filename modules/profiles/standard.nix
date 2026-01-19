@@ -12,7 +12,7 @@
     hostName = lib.mkDefault "nixos-qemu";
 
     nftables.enable = lib.mkDefault true;
-    networkManager.enable = lib.mkForce false;
+    networkmanager.enable = lib.mkForce false;
     useNetworkd = lib.mkForce true;
     useDHCP = lib.mkDefault false;
 
