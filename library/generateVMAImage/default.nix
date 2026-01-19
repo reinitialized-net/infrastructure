@@ -50,6 +50,9 @@ let
         qemuConfig = import "${self}/library/generateVMAImage/qemuConfig.nix" {
           inherit cores memory host vmId disks networking;
         };
+        systemClosure = pkgs.closureInfo {
+          rootPaths = [ config.system.build.toplevel ];
+        };
       in {
         system.stateVersion = lib.mkForce defaultStateVersion;
 
@@ -60,14 +63,15 @@ let
           efiArch = pkgs.stdenv.hostPlatform.efiArch;
           ukiFile = config.system.boot.loader.ukiFile or "uki-linux-${efiArch}.img";
           ukiPath = "${config.system.build.uki}/${ukiFile}";
+          bootPartuuid = "8d1d7c3e-1d2a-4f0e-b7a0-0a0e3f1f4a10";
+          rootPartuuid = "b1b2d2d0-3a3f-4c5b-9d9c-3b99d7c8e1f2";
         in {
           name = "vm-${toString vmId}-disk-1";
 
           partitions = {
             "esp" = {
               contents = {
-                "/EFI/BOOT/BOOT${lib.toUpper (lib.toUpper efiArch)}.EFI".source =
-                  "${pkgs.systemd}/lib/systemd/boot/efi/systemd-boot${efiArch}.efi";
+                UUID = bootPartuuid;
                 "/EFI/Linux/${ukiFile}".source =
                   "${ukiPath}";
                 # systemd-boot configuration
@@ -78,14 +82,17 @@ let
               repartConfig = {
                 Type = "esp";
                 Label = "boot";
-                UUID = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
+                FileSystemLabel = "boot";
                 Format = "vfat";
-                SizeMinBytes = "1G";
+                UUID = rootPartuuid;
                 SizeMaxBytes = "1G";
               };
             };
             "root" = {
               storePaths = [ config.system.build.toplevel ];
+              contents = {
+                "/nix-path-registration".source = "${systemClosure}/registration";
+              };
               repartConfig = {
                 Type = "root";
                 Label = "nixos";
@@ -96,6 +103,16 @@ let
             };
           };
         };
+
+        boot.postBootCommands = lib.mkAfter ''
+          if [ -f /nix-path-registration ]; then
+            set -euo pipefail
+            ${config.nix.package.out}/bin/nix-store --load-db < /nix-path-registration
+            touch /etc/NIXOS
+            ${config.nix.package.out}/bin/nix-env -p /nix/var/nix/profiles/system --set /run/current-system
+            rm -f /nix-path-registration
+          fi
+        '';
 
         system.build.VMA = pkgs.runCommand "buildVMA-${toString vmId}" {
           buildInputs = [
