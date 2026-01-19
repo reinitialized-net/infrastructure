@@ -46,7 +46,7 @@
 
     users = {
       root = {
-        hashedPassword = lib.mkForce null;
+        #hashedPassword = lib.mkForce null;
         shell = lib.mkForce pkgs.bashInteractive;
       };
       rnetadmin = {

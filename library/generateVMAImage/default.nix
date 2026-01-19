@@ -50,49 +50,86 @@ let
         qemuConfig = import "${self}/library/generateVMAImage/qemuConfig.nix" {
           inherit cores memory host vmId disks networking;
         };
-        systemClosure = pkgs.closureInfo {
+        # Create closure info for Nix database registration
+        closureInfo = pkgs.closureInfo {
           rootPaths = [ config.system.build.toplevel ];
         };
+        efiArch = pkgs.stdenv.hostPlatform.efiArch;
       in {
         system.stateVersion = lib.mkForce defaultStateVersion;
 
         image.baseName = lib.mkDefault "vzdump-qemu-vm${toString vmId}";
-        image.extension = lib.mkDefault "vma.zst";
 
-        image.repart = let
-          efiArch = pkgs.stdenv.hostPlatform.efiArch;
-          ukiFile = config.system.boot.loader.ukiFile or "uki-linux-${efiArch}.img";
-          ukiPath = "${config.system.build.uki}/${ukiFile}";
-        in {
+        image.repart = {
+          compression.enable = lib.mkDefault false;
           name = "vm-${toString vmId}-disk-1";
 
           partitions = {
-            "esp" = {
+            "10-esp" = {
               contents = {
-                "/EFI/Linux/${ukiFile}".source =
-                  "${ukiPath}";
+                "/EFI/BOOT/BOOT${lib.toUpper efiArch}.EFI".source =
+                  "${pkgs.systemd}/lib/systemd/boot/efi/systemd-boot${efiArch}.efi";
+                "/EFI/Linux/${config.system.boot.loader.ukiFile}".source =
+                  "${config.system.build.uki}/${config.system.boot.loader.ukiFile}";
                 # systemd-boot configuration
-                "/loader/loader.conf".source = (pkgs.writeText "$out" ''
+                "/loader/loader.conf".source = pkgs.writeText "loader.conf" ''
                   timeout 3
-                '');
+                  default ${config.system.boot.loader.ukiFile}
+                  editor no
+                '';
               };
               repartConfig = {
                 Type = "esp";
                 Label = "boot";
                 Format = "vfat";
+                SizeMinBytes = "512M";
                 SizeMaxBytes = "1G";
-                UUID = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
               };
             };
-            "root" = {
+            "20-root" = {
               storePaths = [ config.system.build.toplevel ];
               contents = {
-                "/nix-path-registration".source = "${systemClosure}/registration";
+                # Registration file for nix-store --load-db on first boot
+                "/nix-path-registration".source = "${closureInfo}/registration";
+                # Essential NixOS marker - switch-to-configuration checks for this
+                "/etc/NIXOS".source = pkgs.writeText "NIXOS" "";
               };
               repartConfig = {
                 Type = "root";
                 Label = "nixos";
                 Format = "ext4";
+                # Create all essential directories for a functional NixOS system
+                MakeDirectories = lib.concatStringsSep " " [
+                  # Nix-related directories
+                  "/nix/var"
+                  "/nix/var/nix"
+                  "/nix/var/nix/db"
+                  "/nix/var/nix/gcroots"
+                  "/nix/var/nix/profiles"
+                  "/nix/var/nix/temproots"
+                  "/nix/var/nix/userpool"
+                  "/nix/var/nix/daemon-socket"
+                  "/nix/var/log"
+                  "/nix/var/log/nix"
+                  "/nix/var/log/nix/drvs"
+                  # Standard FHS directories
+                  "/bin"
+                  "/sbin"
+                  "/usr"
+                  "/usr/bin"
+                  "/var"
+                  "/var/empty"
+                  "/var/lib"
+                  "/var/log"
+                  "/var/tmp"
+                  "/tmp"
+                  "/home"
+                  "/root"
+                  "/run"
+                  "/mnt"
+                  "/etc"
+                  "/etc/nixos"
+                ];
                 GrowFileSystem = true;
                 SizeMinBytes = "${toString ((builtins.elemAt disks 0).size - 1)}G";
               };
@@ -100,13 +137,25 @@ let
           };
         };
 
-        boot.postBootCommands = lib.mkAfter ''
+        # First-boot initialization script - canonical NixOS pattern
+        # This registers the Nix store paths and sets up the system profile
+        boot.postBootCommands = ''
+          # On the first boot, register Nix store paths and set up the system profile
           if [ -f /nix-path-registration ]; then
             set -euo pipefail
+            echo "Performing first-boot NixOS initialization..."
+
+            # Register the contents of the initial Nix store
             ${config.nix.package.out}/bin/nix-store --load-db < /nix-path-registration
+
+            # nixos-rebuild requires a "system" profile and /etc/NIXOS marker
             touch /etc/NIXOS
             ${config.nix.package.out}/bin/nix-env -p /nix/var/nix/profiles/system --set /run/current-system
+
+            # Prevent this from running on subsequent boots
             rm -f /nix-path-registration
+            
+            echo "First-boot initialization complete."
           fi
         '';
 
@@ -129,7 +178,7 @@ EOF
           backupBase="vzdump-qemu-${toString vmId}"
           
           # Copy (not symlink) into the build directory for vma tooling.
-          ${pkgs.coreutils}/bin/cp --reflink=auto --preserve=mode,timestamps "$imageOut/${config.image.repart.name}.raw" ./disk.raw
+          ${pkgs.coreutils}/bin/cp --reflink=auto --preserve=mode,timestamps "$imageOut/${config.image.baseName}.${config.image.extension}" ./disk.raw
 
           # Populate efidisk0 with OVMF VARS (UEFI NVRAM template) and pad to 4M.
           # Note: Proxmox stores firmware code separately; efidisk0 is the VARS/NVRAM image.
