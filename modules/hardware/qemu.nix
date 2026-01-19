@@ -4,11 +4,11 @@
   pkgs,
   ...
 }: {
-  # UEFI boot configuration for Proxmox VMA images using UKI
-  # Note: systemd-boot is embedded in UKI; no separate loader config needed
+  # UEFI boot configuration for Proxmox VMA images
   boot = {
     loader = {
       systemd-boot.enable = lib.mkForce false;
+      grub.enable = lib.mkForce false;
       efi.canTouchEfiVariables = lib.mkForce false;
     };
 
