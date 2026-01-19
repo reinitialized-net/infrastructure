@@ -28,7 +28,7 @@
   # Define fileSystems
   fileSystems = {
     "/" = lib.mkForce {
-      label = "os";
+      label = "nixos";
       fsType = "ext4";
 
       autoResize = true;
@@ -40,7 +40,6 @@
       neededForBoot = true;
     };
   };
-  # 
   nixpkgs.hostPlatform = lib.mkForce "${system}";
   services.qemuGuest.enable = lib.mkForce true;
 }

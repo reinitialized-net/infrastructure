@@ -46,9 +46,6 @@ in
   efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
   tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-2,version=v2.0
 
-  # Proxmox qmdump mapping:
-  # - For block-backed storages (zfspool zvol, LVM-thin), restore streams must be RAW bytes.
-  # - Keep `efidisk0` (OVMF VARS) and `tpmstate0` raw for compatibility.
   #qmdump#map:scsi0:drive-scsi0:${firstDisk.storage}:raw:
   #qmdump#map:efidisk0:drive-efidisk0:${firstDisk.storage}:raw:
   #qmdump#map:tpmstate0:drive-tpmstate0:${firstDisk.storage}:raw:
