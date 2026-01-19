@@ -13,29 +13,26 @@
     };
 
     initrd = {
-      # Use traditional busybox initrd for reliability and emergency shell access
       systemd.enable = lib.mkForce false;
+      
+      # Include default modules for broader hardware support
+      includeDefaultModules = true;
 
-      # Modules available in initrd
+      # Modules available in initrd (standard QEMU/KVM set)
       availableKernelModules = [
-        # VirtIO transport (must load before device drivers)
+        "ahci"
+        "xhci_pci"
         "virtio_pci"
-        # VirtIO SCSI for Proxmox virtio-scsi-single controller
+        "virtio_blk"
         "virtio_scsi"
-        # SCSI disk support
         "sd_mod"
-        # Filesystem support
-        "ext4"
-        "vfat"
-        "nls_cp437"
-        "nls_iso8859_1"
+        "sr_mod"
       ];
 
-      # Force-load these modules early in initrd
+      # Force-load virtio-scsi stack
       kernelModules = [
         "virtio_pci"
         "virtio_scsi"
-        "sd_mod"
       ];
 
       supportedFilesystems = [ "ext4" "vfat" ];
@@ -43,11 +40,11 @@
 
     growPartition = lib.mkDefault true;
 
-    # Kernel parameters - tty0 must be last for Proxmox VNC console visibility
     kernelParams = [
       "console=ttyS0,115200"
       "console=tty0"
       "boot.shell_on_fail"
+      "boot.debug1"
     ];
   };
 
