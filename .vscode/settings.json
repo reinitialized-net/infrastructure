@@ -16,5 +16,8 @@
     "nixEnvSelector.nixFile": "${workspaceFolder}/flake.nix",
 
     "chat.agent.maxRequests": 100,
+    "chat.tools.terminal.autoApprove": {
+        "nix": true
+    },
 }
 
