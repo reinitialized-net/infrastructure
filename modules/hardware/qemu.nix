@@ -28,13 +28,13 @@
   # Define fileSystems
   fileSystems = {
     "/" = lib.mkForce {
-      device = "/dev/disk/by-partuuid/b1b2d2d0-3a3f-4c5b-9d9c-3b99d7c8e1f2";
+      device = "/dev/disk/by-label/nixos";
       fsType = "ext4";
 
       autoResize = true;
     };
     "/boot" = lib.mkForce {
-      device = "/dev/disk/by-partuuid/8d1d7c3e-1d2a-4f0e-b7a0-0a0e3f1f4a10";
+      device = "/dev/disk/by-label/boot";
       fsType = "vfat";
 
       neededForBoot = true;

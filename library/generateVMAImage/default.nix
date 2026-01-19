@@ -71,7 +71,6 @@ let
           partitions = {
             "esp" = {
               contents = {
-                UUID = bootPartuuid;
                 "/EFI/Linux/${ukiFile}".source =
                   "${ukiPath}";
                 # systemd-boot configuration
@@ -82,9 +81,8 @@ let
               repartConfig = {
                 Type = "esp";
                 Label = "boot";
-                FileSystemLabel = "boot";
                 Format = "vfat";
-                UUID = rootPartuuid;
+                UUID = bootPartuuid;
                 SizeMaxBytes = "1G";
               };
             };
@@ -97,6 +95,7 @@ let
                 Type = "root";
                 Label = "nixos";
                 Format = "ext4";
+                UUID = rootPartuuid;
                 GrowFileSystem = true;
                 SizeMinBytes = "${toString ((builtins.elemAt disks 0).size - 1)}G";
               };
