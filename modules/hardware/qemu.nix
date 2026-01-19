@@ -1,59 +1,70 @@
 {
   system,
   lib,
+  pkgs,
   ...
 }: {
-  # Configure systemd-boot for UEFI booting in QEMU
+  # UEFI boot configuration for Proxmox VMA images using UKI
+  # Note: systemd-boot is embedded in UKI; no separate loader config needed
   boot = {
     loader = {
-      systemd-boot.enable = lib.mkForce true;
-      efi.canTouchEfiVariables = lib.mkForce true;
+      systemd-boot.enable = lib.mkForce false;
+      efi.canTouchEfiVariables = lib.mkForce false;
     };
+
     initrd = {
-      systemd.enable = lib.mkForce true;
+      # Use traditional busybox initrd for reliability and emergency shell access
+      systemd.enable = lib.mkForce false;
+
+      # Modules available in initrd
       availableKernelModules = [
-        "virtio_net"
+        # VirtIO transport (must load before device drivers)
         "virtio_pci"
-        "virtio_mmio"
+        # VirtIO SCSI for Proxmox virtio-scsi-single controller
         "virtio_scsi"
-        "virtio_blk"
-        "scsi_mod"
+        # SCSI disk support
         "sd_mod"
-        "sr_mod"
-        "uas"
+        # Filesystem support
+        "ext4"
+        "vfat"
+        "nls_cp437"
+        "nls_iso8859_1"
       ];
+
+      # Force-load these modules early in initrd
       kernelModules = [
-        "virtio_balloon"
-        "virtio_console"
-        "virtio_rng"
-        "virtio_gpu"
         "virtio_pci"
-        "virtio_mmio"
         "virtio_scsi"
-        "virtio_blk"
-        "scsi_mod"
         "sd_mod"
-        "sr_mod"
-        "kvm-intel"
       ];
+
       supportedFilesystems = [ "ext4" "vfat" ];
     };
+
     growPartition = lib.mkDefault true;
+
+    # Minimal kernel parameters
+    kernelParams = [
+      "console=tty0"
+      "console=ttyS0,115200"
+    ];
   };
-  # Define fileSystems using GPT partition labels (by-partlabel)
-  # Note: repartConfig.Label sets the GPT partition label, not filesystem label
+
+  # Use /dev/sda partitions directly - more reliable than by-partlabel in initrd
+  # Partition 1 = ESP (boot), Partition 2 = root (nixos)
   fileSystems = {
     "/" = lib.mkForce {
-      device = "/dev/disk/by-partlabel/nixos";
+      device = "/dev/sda2";
       fsType = "ext4";
       autoResize = true;
     };
     "/boot" = lib.mkForce {
-      device = "/dev/disk/by-partlabel/boot";
+      device = "/dev/sda1";
       fsType = "vfat";
       neededForBoot = true;
     };
   };
-  nixpkgs.hostPlatform = lib.mkForce "${system}";
+
+  nixpkgs.hostPlatform = lib.mkForce system;
   services.qemuGuest.enable = lib.mkForce true;
 }
