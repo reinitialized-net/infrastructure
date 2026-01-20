@@ -18,7 +18,8 @@
     "chat.agent.maxRequests": 100,
     "chat.tools.terminal.autoApprove": {
         "nix": true,
-        "sfdisk": true
+        "sfdisk": true,
+        "tee": true
     },
 }
 

@@ -6,13 +6,13 @@
   # UEFI boot configuration for Proxmox VMA images
   boot = {
     loader = {
-      systemd-boot.enable = lib.mkForce false;
+      systemd-boot.enable = lib.mkForce true;
       grub.enable = lib.mkForce false;
       efi.canTouchEfiVariables = lib.mkForce false;
     };
 
     initrd = {
-      systemd.enable = lib.mkForce false;
+      systemd.enable = lib.mkDefault true;
       
       # Include default modules for broader hardware support
       includeDefaultModules = true;
@@ -44,7 +44,6 @@
     ];
   };
 
-  # Use /dev/sda partitions directly - more reliable than by-partlabel in initrd
   # Partition 1 = ESP (boot), Partition 2 = root (nixos)
   fileSystems = {
     "/" = lib.mkForce {

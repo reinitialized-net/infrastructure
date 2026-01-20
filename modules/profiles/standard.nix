@@ -50,7 +50,7 @@
         shell = lib.mkForce pkgs.bashInteractive;
       };
       rnetadmin = {
-        hashedPassword = lib.mkDefault "$y$j9T$.yOf2YVTlRo1.Su3fsi/V.$WcJPRjl3o8KE2GTw12jqoTNSd.rn6/Wogx.j5hfjCIC";
+        hashedPassword = lib.mkDefault ""; # TODO: change to generate unique key per generated VM or use default
 
         isSystemUser = lib.mkForce true;
         createHome = lib.mkForce true;
