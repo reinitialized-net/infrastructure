@@ -41,7 +41,6 @@
     kernelParams = [
       "console=ttyS0,115200"
       "console=tty0"
-      "boot.shell_on_fail"
     ];
   };
 

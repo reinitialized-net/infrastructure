@@ -51,10 +51,6 @@ let
           inherit cores memory host vmId disks networking;
         };
       in {
-        ## DEBUGGING
-        systemd.enableEmergencyMode = true;
-        ## DEBUGGING
-
         system.stateVersion = lib.mkForce defaultStateVersion;
         image.baseName = lib.mkDefault "vzdump-qemu-vm${toString vmId}";
         image.extension = lib.mkDefault "vma.zst";
