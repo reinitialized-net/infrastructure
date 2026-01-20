@@ -28,124 +28,80 @@
 let
   vmaConfiguration = lib.nixosSystem {
     inherit system;
+
     specialArgs = {
       inherit self
-      system
-      nixpkgs;
+        system
+        nixpkgs;
     };
+
     modules = modules ++ [
       "${modulesPath}/image/repart.nix"
       "${self}/modules/hardware/${hardware}.nix"
       "${self}/modules/profiles/standard.nix"
       (if host == "standard" then {} else "${self}/modules/hosts/${host}.nix")
       ({
-        config,
         lib,
         pkgs,
-        ...
+        config,
+        ...  
       }: let
         vma = import "${self}/overrides/vma.nix" { inherit pkgs; };
         qemuConfig = import "${self}/library/generateVMAImage/qemuConfig.nix" {
           inherit cores memory host vmId disks networking;
         };
-        closureInfo = pkgs.closureInfo {
-          rootPaths = [ config.system.build.toplevel ];
-        };
-        efiArch = pkgs.stdenv.hostPlatform.efiArch;
       in {
-        # Emergency access configuration
-        users.users.root.password = "";
-        services.getty.autologinUser = "root";
+        ## DEBUGGING
         systemd.enableEmergencyMode = true;
+        ## DEBUGGING
 
         system.stateVersion = lib.mkForce defaultStateVersion;
-
         image.baseName = lib.mkDefault "vzdump-qemu-vm${toString vmId}";
+        image.extension = lib.mkDefault "vma.zst";
 
-        image.repart = {
-          compression.enable = lib.mkDefault false;
+        image.repart = let
+          efiArch = pkgs.stdenv.hostPlatform.efiArch;
+          ukiFile = config.system.boot.loader.ukiFile or "uki-linux-${efiArch}.efi";
+          ukiPath = "${config.system.build.uki}/${ukiFile}";
+        in {
           name = "vm-${toString vmId}-disk-1";
 
           partitions = {
             "10-esp" = {
               contents = {
-                # systemd-boot EFI binary
-                "/EFI/BOOT/BOOT${lib.toUpper efiArch}.EFI".source =
+                "/EFI/BOOT/BOOT${lib.toUpper (lib.toUpper efiArch)}.EFI".source =
                   "${pkgs.systemd}/lib/systemd/boot/efi/systemd-boot${efiArch}.efi";
-                # Linux kernel
-                "/EFI/nixos/kernel.efi".source =
-                  "${config.boot.kernelPackages.kernel}/${config.system.boot.loader.kernelFile}";
-                # Initrd
-                "/EFI/nixos/initrd".source =
-                  "${config.system.build.initialRamdisk}/${config.system.boot.loader.initrdFile}";
-                # Boot loader configuration
-                "/loader/loader.conf".source = pkgs.writeText "loader.conf" ''
+                "/EFI/Linux/${ukiFile}".source =
+                  "${ukiPath}";
+                # systemd-boot configuration
+                "/loader/loader.conf".source = (pkgs.writeText "$out" ''
                   timeout 3
-                  default nixos.conf
-                '';
-                # NixOS boot entry
-                "/loader/entries/nixos.conf".source = pkgs.writeText "nixos.conf" ''
-                  title NixOS
-                  linux /EFI/nixos/kernel.efi
-                  initrd /EFI/nixos/initrd
-                  options root=/dev/sda2 init=${config.system.build.toplevel}/init ${toString config.boot.kernelParams}
-                '';
+                '');
               };
               repartConfig = {
                 Type = "esp";
-                Label = "ESP";
+                Label = "BOOT";
+                UUID = "c12a7328-f81f-11d2-ba4b-00a0c93ec93b";
                 Format = "vfat";
-                SizeMinBytes = "512M";
+                SizeMinBytes = "1G";
                 SizeMaxBytes = "1G";
               };
             };
             "20-root" = {
-              storePaths = [ config.system.build.toplevel ];
-              contents = {
-                # Registration file for nix-store --load-db on first boot
-                "/nix-path-registration".source = "${closureInfo}/registration";
-                # Essential NixOS marker - switch-to-configuration checks for this
-                "/etc/NIXOS".source = pkgs.writeText "NIXOS" "";
-              };
+              storePaths = [ 
+                config.system.build.toplevel
+                config.system.build.kernel  
+              ];
               repartConfig = {
                 Type = "root";
                 Label = "nixos";
                 Format = "ext4";
-                MakeDirectories = lib.concatStringsSep " " [
-                  "/nix/var/nix/db"
-                  "/nix/var/nix/gcroots"
-                  "/nix/var/nix/profiles"
-                  "/nix/var/nix/temproots"
-                  "/nix/var/nix/userpool"
-                  "/nix/var/nix/daemon-socket"
-                  "/nix/var/log/nix/drvs"
-                  "/var/empty"
-                  "/var/lib"
-                  "/var/log"
-                  "/var/tmp"
-                  "/tmp"
-                  "/home"
-                  "/root"
-                  "/run"
-                  "/etc/nixos"
-                ];
                 GrowFileSystem = true;
                 SizeMinBytes = "${toString ((builtins.elemAt disks 0).size - 1)}G";
               };
             };
           };
         };
-
-        # First-boot Nix store registration
-        boot.postBootCommands = ''
-          if [ -f /nix-path-registration ]; then
-            set -euo pipefail
-            ${config.nix.package.out}/bin/nix-store --load-db < /nix-path-registration
-            touch /etc/NIXOS
-            ${config.nix.package.out}/bin/nix-env -p /nix/var/nix/profiles/system --set /run/current-system
-            rm -f /nix-path-registration
-          fi
-        '';
 
         system.build.VMA = pkgs.runCommand "buildVMA-${toString vmId}" {
           buildInputs = [ pkgs.zstd vma ];

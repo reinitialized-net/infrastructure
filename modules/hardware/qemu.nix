@@ -1,7 +1,6 @@
 {
   system,
   lib,
-  pkgs,
   ...
 }: {
   # UEFI boot configuration for Proxmox VMA images
@@ -20,29 +19,18 @@
 
       # Modules available in initrd
       availableKernelModules = [
-        # Storage
+        "uhci_hcd"
+        "ehci_pci"
         "ahci"
-        "xhci_pci"
         "virtio_pci"
-        "virtio_blk"
         "virtio_scsi"
         "sd_mod"
         "sr_mod"
-        # USB and input for keyboard
-        "uhci_hcd"
-        "ehci_pci"
-        "xhci_hcd"
-        "usbhid"
-        "hid_generic"
-        "hid"
       ];
 
       # Force-load virtio-scsi stack and input
       kernelModules = [
-        "virtio_pci"
-        "virtio_scsi"
-        "usbhid"
-        "hid_generic"
+        "kvm-intel"
       ];
 
       supportedFilesystems = [ "ext4" "vfat" ];
@@ -53,8 +41,6 @@
     kernelParams = [
       "console=ttyS0,115200"
       "console=tty0"
-      "rootdelay=10"
-      "scsi_mod.scan=sync"
       "boot.shell_on_fail"
     ];
   };
@@ -63,12 +49,12 @@
   # Partition 1 = ESP (boot), Partition 2 = root (nixos)
   fileSystems = {
     "/" = lib.mkForce {
-      device = "/dev/sda2";
+      device = "/dev/disk/by-label/nixos";
       fsType = "ext4";
       autoResize = true;
     };
     "/boot" = lib.mkForce {
-      device = "/dev/sda1";
+      device = "/dev/disk/by-label/BOOT";
       fsType = "vfat";
       neededForBoot = true;
     };
