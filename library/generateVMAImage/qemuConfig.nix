@@ -5,15 +5,32 @@
   vmId,
   disks,
   networking,
+  enableProtection,
 }:
 let
   toString = builtins.toString;
+  
+  # Generate SCSI disk lines
   scsiLines = builtins.concatStringsSep "\n" (
     builtins.genList (i:
-      let disk = builtins.elemAt disks i;
+      let
+        disk = builtins.elemAt disks i;
       in "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,serial=drive-scsi${toString i},ssd=1"
     ) (builtins.length disks)
   );
+  
+  # Generate network interface lines
+  netLines = builtins.concatStringsSep "\n" (
+    builtins.genList (i:
+      let 
+        net = builtins.elemAt networking i;
+        # Build the network configuration string
+        vlanPart = if net ? vlan && net.vlan != null then ",tag=${toString net.vlan}" else "";
+        macPart = if net ? macAddress && net.macAddress != null then net.macAddress else "00:00:00:00:00:00";
+      in "net${toString i}: virtio=${macPart},bridge=${net.bridge},firewall=${toString net.firewall}${vlanPart}"
+    ) (builtins.length networking)
+  );
+  
   firstDisk = builtins.elemAt disks 0;
 in
 ''
@@ -33,10 +50,10 @@ name: ${host}
 numa: 1
 onboot: 1
 ostype: l26
-protection: 0
+protection: ${if enableProtection then "1" else "0"}
 scsihw: virtio-scsi-single
 tablet: 1
-net0: virtio=00:00:00:00:00:00,bridge=${networking.bridge},firewall=${toString networking.firewall}${if networking ? vlan then ",tag=${toString networking.vlan}" else ""}
+${netLines}
 ${scsiLines}
 efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
 tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-2,version=v2.0

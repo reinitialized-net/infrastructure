@@ -11,19 +11,22 @@
   memory ? 4096,
   system ? "x86_64-linux",
   hardware ? "qemu",
+  enableProtection ? true,
   disks ? [
     {
       storage = "hotData";
       size = 25;
     }
   ],
-  networking ? {
-    hostName = "nixVMA";
-    bridge = "vmbr0";
-    firewall = 0;
-    useDHCP = true;
-    ipAddress = null;
-  }
+  networking ? [
+    {
+      hostName = "nixVMA";
+      bridge = "vmbr0";
+      firewall = 0;
+      vlan = 200;
+      useDHCP = true;
+    }
+  ],
 }:
 let
   vmaConfiguration = lib.nixosSystem {
@@ -48,7 +51,7 @@ let
       }: let
         vma = import "${self}/overrides/vma.nix" { inherit pkgs; };
         qemuConfig = import "${self}/library/generateVMAImage/qemuConfig.nix" {
-          inherit cores memory host vmId disks networking;
+          inherit cores memory host vmId disks networking enableProtection;
         };
       in {
         system.stateVersion = lib.mkForce defaultStateVersion;
