@@ -11,7 +11,7 @@ let
   scsiLines = builtins.concatStringsSep "\n" (
     builtins.genList (i:
       let disk = builtins.elemAt disks i;
-      in "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,iothread=1,serial=drive-scsi${toString i},ssd=1"
+      in "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,serial=drive-scsi${toString i},ssd=1"
     ) (builtins.length disks)
   );
   firstDisk = builtins.elemAt disks 0;
@@ -35,7 +35,7 @@ onboot: 1
 ostype: l26
 protection: 0
 scsihw: virtio-scsi-single
-tablet: 0
+tablet: 1
 net0: virtio=00:00:00:00:00:00,bridge=${networking.bridge},firewall=${toString networking.firewall}${if networking ? vlan then ",tag=${toString networking.vlan}" else ""}
 ${scsiLines}
 efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M

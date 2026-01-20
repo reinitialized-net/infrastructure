@@ -18,8 +18,9 @@
       # Include default modules for broader hardware support
       includeDefaultModules = true;
 
-      # Modules available in initrd (standard QEMU/KVM set)
+      # Modules available in initrd
       availableKernelModules = [
+        # Storage
         "ahci"
         "xhci_pci"
         "virtio_pci"
@@ -27,12 +28,21 @@
         "virtio_scsi"
         "sd_mod"
         "sr_mod"
+        # USB and input for keyboard
+        "uhci_hcd"
+        "ehci_pci"
+        "xhci_hcd"
+        "usbhid"
+        "hid_generic"
+        "hid"
       ];
 
-      # Force-load virtio-scsi stack
+      # Force-load virtio-scsi stack and input
       kernelModules = [
         "virtio_pci"
         "virtio_scsi"
+        "usbhid"
+        "hid_generic"
       ];
 
       supportedFilesystems = [ "ext4" "vfat" ];
@@ -43,8 +53,9 @@
     kernelParams = [
       "console=ttyS0,115200"
       "console=tty0"
+      "rootdelay=10"
+      "scsi_mod.scan=sync"
       "boot.shell_on_fail"
-      "boot.debug1"
     ];
   };
 
