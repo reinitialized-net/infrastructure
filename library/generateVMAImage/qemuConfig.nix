@@ -27,7 +27,7 @@ cpu: cputype=host,hidden=0,phys-bits=host
 hotplug: cpu,disk,memory,network
 kvm: 1
 localtime: 1
-machine: type=q35,viommu=virtio
+machine: type=q35
 memory: ${toString memory}
 name: ${host}
 numa: 1
