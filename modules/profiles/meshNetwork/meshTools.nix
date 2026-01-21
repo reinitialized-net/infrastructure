@@ -70,50 +70,6 @@ in {
         echo "  On receiver: iperf3 -s"
         echo "  On sender:   iperf3 -c <mesh-ip>"
       '')
-
-      (writeScriptBin "mesh-docker-example" ''
-        #!/usr/bin/env bash
-        # Generate example docker-compose.yml for mesh networking
-        set -euo pipefail
-
-        cat <<'EOF'
-# Example docker-compose.yml using mesh network
-
-services:
-  web:
-    image: nginx:alpine
-    networks:
-      - mesh
-    environment:
-      - MESH_NODE_IP=10.100.0.X  # Replace X with node ID
-    # The container can now access other nodes via their mesh IPs:
-    # - Node 1: 10.100.0.1
-    # - Node 2: 10.100.0.2
-    # etc.
-
-  app:
-    image: your-app:latest
-    networks:
-      - mesh
-    environment:
-      # Connect to services on other mesh nodes
-      - DATABASE_HOST=10.100.0.1  # Example: DB on node 1
-      - CACHE_HOST=10.100.0.2     # Example: Redis on node 2
-
-networks:
-  mesh:
-    name: mesh-net
-    external: true  # Use the mesh-net created by NixOS
-
-# To use mesh network environment variables:
-# Source them in your compose file:
-#   env_file: /etc/mesh-network/docker-compose.env
-EOF
-
-        echo
-        echo "💡 TIP: You can source mesh configuration with:"
-        echo "   env_file: /etc/mesh-network/docker-compose.env"
-      '')
     ]
   );
 }
