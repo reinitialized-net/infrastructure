@@ -27,7 +27,7 @@ let
         # Build the network configuration string
         vlanPart = if net ? vlan && net.vlan != null then ",tag=${toString net.vlan}" else "";
         macPart = if net ? macAddress && net.macAddress != null then net.macAddress else "00:00:00:00:00:00";
-      in "net${toString i}: virtio=${macPart},bridge=${net.bridge},firewall=${toString net.firewall}${vlanPart}"
+      in "net${toString i}: virtio=${macPart},bridge=${net.bridge},firewall=${if net.firewall then "1" else "0"}${vlanPart}"
     ) (builtins.length networking)
   );
   

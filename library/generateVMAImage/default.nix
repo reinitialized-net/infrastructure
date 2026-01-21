@@ -20,9 +20,8 @@
   ],
   networking ? [
     {
-      hostName = "nixVMA";
       bridge = "vmbr0";
-      firewall = 0;
+      firewall = false;
       vlan = 200;
       useDHCP = true;
     }
@@ -53,10 +52,28 @@ let
         qemuConfig = import "${self}/library/generateVMAImage/qemuConfig.nix" {
           inherit cores memory host vmId disks networking enableProtection;
         };
+        
+        # Generate random 32-character password for rnetadmin
+        randomPassword = lib.removeSuffix "\n" (builtins.readFile (
+          pkgs.runCommand "generate-password" {} ''
+            ${pkgs.openssl}/bin/openssl rand -base64 24 | tr -d '\n' | head -c 32 > $out
+          ''
+        ));
+        
+        hashedPassword = lib.removeSuffix "\n" (builtins.readFile (
+          pkgs.runCommand "hash-password" {
+            nativeBuildInputs = [ pkgs.mkpasswd ];
+          } ''
+            echo -n "${randomPassword}" | mkpasswd -m sha-512 -s | tr -d '\n' > $out
+          ''
+        ));
       in {
         system.stateVersion = lib.mkForce defaultStateVersion;
         image.baseName = lib.mkDefault "vzdump-qemu-vm${toString vmId}";
         image.extension = lib.mkDefault "vma.zst";
+        
+        # Set the generated password for rnetadmin
+        users.users.rnetadmin.hashedPassword = lib.mkForce hashedPassword;
 
         image.repart = let
           efiArch = pkgs.stdenv.hostPlatform.efiArch;
@@ -143,6 +160,29 @@ EOF
 
           mkdir -p "$out"
           mv "$backupBase.vma.zst" "$out/$backupBase.vma.zst"
+          
+          # Write password information to file
+          cat > "$out/CREDENTIALS.txt" <<CREDS
+==========================================================================
+  IMPORTANT: SAVE THIS PASSWORD IN YOUR DOCUMENTATION
+==========================================================================
+  VM ID: ${toString vmId}
+  Hostname: ${host}
+  Username: rnetadmin
+  Password: ${randomPassword}
+==========================================================================
+  Save this password in your password manager or documentation.
+  Delete this file after saving the credentials securely.
+==========================================================================
+CREDS
+
+          echo ""
+          echo "=========================================================================="
+          echo "  VM built successfully!"
+          echo "  CREDENTIALS FILE: \$out/CREDENTIALS.txt"
+          echo "  ** CHECK THE CREDENTIALS.txt FILE FOR LOGIN PASSWORD **"
+          echo "=========================================================================="
+          echo ""
         '';
       })
     ];

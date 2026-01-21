@@ -26,10 +26,19 @@
             inherit system;
 
             vmId = 100;
+            enableProtection = false;
             disks = [
               {
                 storage = "hotData";
                 size = 25;
+              }
+            ];
+            networking = [
+              {
+                bridge = "vmbr0";
+                firewall = false;
+                vlan = 200;
+                useDHCP = true;
               }
             ];
           };
