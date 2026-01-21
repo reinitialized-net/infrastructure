@@ -47,12 +47,12 @@
   # Partition 1 = ESP (boot), Partition 2 = root (nixos)
   fileSystems = {
     "/" = lib.mkForce {
-      device = "/dev/disk/by-label/nixos";
+      device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part2";
       fsType = "ext4";
       autoResize = true;
     };
     "/boot" = lib.mkForce {
-      device = "/dev/disk/by-label/BOOT";
+      device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part1";
       fsType = "vfat";
       neededForBoot = true;
     };
