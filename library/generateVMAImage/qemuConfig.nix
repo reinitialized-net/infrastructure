@@ -39,15 +39,6 @@ let
     ) (builtins.length networking)
   );
   
-  # Generate qmdump map lines for all SCSI disks
-  scsiMapLines = builtins.concatStringsSep "\n" (
-    builtins.genList (i:
-      let
-        disk = builtins.elemAt disks i;
-      in "#qmdump#map:scsi${toString i}:drive-scsi${toString i}:${disk.storage}:raw:"
-    ) (builtins.length disks)
-  );
-  
   firstDisk = builtins.elemAt disks 0;
 in
 ''
@@ -74,7 +65,7 @@ ${netLines}
 ${scsiLines}
 efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
 tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-${toString (1 + builtins.length disks)},size=4M,version=v2.0
-${scsiMapLines}
+#qmdump#map:scsi0:drive-scsi0:${firstDisk.storage}:raw:
 #qmdump#map:efidisk0:drive-efidisk0:${firstDisk.storage}:raw:
 #qmdump#map:tpmstate0:drive-tpmstate0:${firstDisk.storage}:raw:
 ''
