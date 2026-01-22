@@ -68,20 +68,4 @@ in
       }
     '';
   };
-
-  config = {
-    # Assertions to validate secret configurations
-    assertions = lib.flatten (lib.mapAttrsToList (name: secret:
-      let
-        hasKeys = secret.keys != {};
-        hasFile = secret.file != null;
-      in
-      [
-        {
-          assertion = hasKeys || hasFile;
-          message = "Secret '${name}' must define either 'keys' or 'file' (or both).";
-        }
-      ]
-    ) cfg);
-  };
 }

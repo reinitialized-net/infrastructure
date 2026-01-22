@@ -4,7 +4,7 @@
   },
   "options": {
     "nixos": {
-      "expr": "let flake = builtins.getFlake \"git+file://${./.}\"; pkgs = import flake.inputs.nixpkgsStable { system = builtins.currentSystem; }; in (pkgs.lib.evalModules { modules = [ flake.nixosModules.default ]; }).options"
+      "expr": "let flake = builtins.getFlake \"git+file://${./.}\"; pkgs = import flake.inputs.nixpkgsStable { system = builtins.currentSystem; }; in (pkgs.lib.nixosSystem { system = builtins.currentSystem; modules = [ flake.nixosModules.default ]; }).options"
     }
   }
 }

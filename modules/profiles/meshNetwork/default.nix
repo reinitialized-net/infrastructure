@@ -67,17 +67,12 @@ in {
     };
   };
 
-  config = lib.mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = cfg.nodeId > 0 && cfg.nodeId < 255;
-        message = "meshNetwork.nodeId must be between 1 and 254";
-      }
-      {
-        assertion = builtins.pathExists cfg.privateKeyFile || !config.system.activationScripts ? activatable;
-        message = "meshNetwork.privateKeyFile must exist: ${cfg.privateKeyFile}";
-      }
-    ];
+  config = lib.mkIf cfg.enable (lib.mkMerge [
+    {
+      networking.firewall = {
+        allowedUDPPorts = [ cfg.listenPort ];
+        trustedInterfaces = [ meshInterface ];
+      };
 
     networking.firewall = {
       allowedUDPPorts = [ cfg.listenPort ];
