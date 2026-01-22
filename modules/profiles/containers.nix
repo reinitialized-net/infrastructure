@@ -30,6 +30,12 @@
   boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
 
   fileSystems = {
+    "/var/lib/docker/volumes" = {
+      depends = [ "/mnt/data" ];
+      device = "/mnt/data/docker/volumes";
+      fsType = "none";
+      options = [ "bind" ];
+    };
     "/var/lib/docker" = lib.mkForce {
       device = "/mnt/data/docker";
       depends = [ "/mnt/data/docker/volumes" ];

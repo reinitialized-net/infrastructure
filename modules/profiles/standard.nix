@@ -50,6 +50,7 @@
         shell = lib.mkForce pkgs.bashInteractive;
       };
       rnetadmin = {
+        # If this is used, it needs to be changed. 
         initialHashedPassword = lib.mkDefault "$6$ELaXwtqP5R5l.n5e$wsn7KBDXQKIfCbbDOfOHG4OYJjb/KQmyp4ekmFHcv/oZbJyEkwpoHCjqEDzOBpkGCXdZw1F1CNApXXkiKOhrR.";
 
         isSystemUser = lib.mkForce true;
