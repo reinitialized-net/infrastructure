@@ -50,6 +50,36 @@
               }
             ];
           };
+
+          devenv = library.generateVMAImage "devenv" {
+            inherit system;
+
+            vmId = 101;
+            enableProtection = true;
+            disks = [
+              {
+                storage = "hotData";
+                size = 20;
+              }
+              {
+                storage = "coldData";
+                size = 100;
+              }
+            ];
+            networking = [
+              {
+                bridge = "vmbr0";
+                firewall = false;
+                vlan = 200;
+                useDHCP = true;
+              }
+            ];
+
+            modules = [
+              inputs.vscodeServer.nixosModules.default
+              "${inputs.self}/modules/profiles/containers.nix"
+            ];
+          };
         }
       );
     };

@@ -8,7 +8,7 @@
             },
             "options": {
                 "nixos": {
-                    "expr": "(let flake = builtins.getFlake (toString ./.); nixpkgs = flake.inputs.nixpkgsStable; system = \"x86_64-linux\"; in (nixpkgs.lib.nixosSystem { inherit system; modules = [ flake.nixosModules.default { nixpkgs.hostPlatform = system; } ]; }).options)"
+                    "expr": "(let flake = builtins.getFlake (toString ./.); nixpkgs = flake.inputs.nixpkgsStable; system = \"x86_64-linux\"; in (nixpkgs.lib.nixosSystem { inherit system; modules = [ flake.nixosModules.default flake.inputs.vscodeServer.nixosModules.default { nixpkgs.hostPlatform = system; } ]; }).options)"
                 }
             }
         }

@@ -1,0 +1,63 @@
+{
+  pkgs,
+  lib,
+  ...
+}:{
+  # Networking Configuration
+  networking = {
+    hostName = "devenv";
+    useDHCP = false;
+  };
+  systemd.network.networks = {
+    "eth0" = {
+      address = [
+        "10.1.200.2/24"
+      ];
+      dns = [
+        "10.1.12.3"
+      ];
+      gateway = [
+        "10.1.200.1"
+      ];
+      matchConfig.Path = "pci-0000:06:12.0";
+    };
+  };
+  # Enable VSCode Server - Remote SSH support
+  services.vscode-server.enable = true;
+  # Install development tools
+  environment.systemPackages = with pkgs; [
+    vim
+    git
+    curl
+    btop
+    fastfetch
+
+    nmap
+    dig
+    coreutils
+    pciutils
+    usbutils
+
+    nixd
+    nixfmt-rfc-style
+  ];
+  # Create develop user
+  fileSystems."/home/develop" = lib.mkForce {
+    device = "/mnt/data/develop";
+    depends = [ "/mnt/data" ];
+    fsType = "none";
+    options = [ "bind" ];
+  };
+  users.users.develop = lib.mkForce {
+    extraGroups = [ "docker" "wheel" ];
+    shell = pkgs.bashInteractive;
+
+    isNormalUser = true;
+    home = "/home/develop";
+    initialPassword = "!";
+
+    openssh.authorizedKeys.keys = [
+      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
+    ];
+  };
+}
