@@ -39,6 +39,15 @@ let
     ) (builtins.length networking)
   );
   
+  # Generate qmdump map lines for all SCSI disks
+  scsiMapLines = builtins.concatStringsSep "\n" (
+    builtins.genList (i:
+      let
+        disk = builtins.elemAt disks i;
+      in "#qmdump#map:scsi${toString i}:drive-scsi${toString i}:${disk.storage}:raw:"
+    ) (builtins.length disks)
+  );
+  
   firstDisk = builtins.elemAt disks 0;
 in
 ''
@@ -52,7 +61,7 @@ cpu: cputype=host,hidden=0,phys-bits=host
 hotplug: cpu,disk,memory,network
 kvm: 1
 localtime: 1
-machine: type=q35
+machine: type=q35,enable-s3=1,enable-s4=1
 memory: ${toString memory}
 name: ${host}
 numa: 1
@@ -64,8 +73,8 @@ tablet: 1
 ${netLines}
 ${scsiLines}
 efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
-tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-${toString (1 + builtins.length disks)},version=v2.0
-#qmdump#map:scsi0:drive-scsi0:${firstDisk.storage}:raw:
+tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-${toString (1 + builtins.length disks)},size=4M,version=v2.0
+${scsiMapLines}
 #qmdump#map:efidisk0:drive-efidisk0:${firstDisk.storage}:raw:
 #qmdump#map:tpmstate0:drive-tpmstate0:${firstDisk.storage}:raw:
 ''
