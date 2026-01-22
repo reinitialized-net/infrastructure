@@ -20,6 +20,14 @@
       };
     in
     {
+      nixosModules.default = {
+        imports = [
+          ./modules/profiles/firewall.nix
+          ./modules/profiles/meshNetwork
+          ./modules/profiles/secrets.nix
+        ];
+      };
+
       packages = library.forAllSystems (system:
       {
           standard = library.generateVMAImage "standard" {
