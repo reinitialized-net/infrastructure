@@ -10,12 +10,20 @@
 let
   toString = builtins.toString;
   
-  # Generate SCSI disk lines
+  # Detect if storage is cold (HDD) based on storage name
+  isColdStorage = storage: 
+    builtins.match ".*[Cc]old.*" storage != null;
+  
+  # Generate SCSI disk lines with appropriate optimizations
   scsiLines = builtins.concatStringsSep "\n" (
     builtins.genList (i:
       let
         disk = builtins.elemAt disks i;
-      in "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1,discard=on,serial=drive-scsi${toString i},ssd=1"
+        isCold = isColdStorage disk.storage;
+        # SSD optimizations: discard, ssd flag, io_uring
+        # HDD configuration: no discard, no ssd flag, io_uring still works
+        ssdOpts = if isCold then "" else ",discard=on,ssd=1";
+      in "scsi${toString i}: ${disk.storage}:vm-${toString vmId}-disk-${toString (i+1)},size=${toString disk.size}G,aio=io_uring,backup=1${ssdOpts},serial=drive-scsi${toString i}"
     ) (builtins.length disks)
   );
   
@@ -56,7 +64,7 @@ tablet: 1
 ${netLines}
 ${scsiLines}
 efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
-tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-2,version=v2.0
+tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-${toString (1 + builtins.length disks)},version=v2.0
 #qmdump#map:scsi0:drive-scsi0:${firstDisk.storage}:raw:
 #qmdump#map:efidisk0:drive-efidisk0:${firstDisk.storage}:raw:
 #qmdump#map:tpmstate0:drive-tpmstate0:${firstDisk.storage}:raw:
