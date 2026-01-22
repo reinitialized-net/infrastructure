@@ -140,10 +140,15 @@ in {
       };
     };
 
+    # Enable nftables for Docker integration
+    networking.nftables = lib.mkIf cfg.dockerIntegration {
+      enable = true;
+    };
+
     # Create a Docker network that routes through mesh
     systemd.services.docker-meshNetwork = lib.mkIf (cfg.dockerIntegration && config.virtualisation.docker.enable) {
       description = "Create Docker mesh network";
-      after = [ "docker.service" "wireguard-${meshInterface}.service" ];
+      after = [ "docker.service" "wireguard-${meshInterface}.service" "nftables.service" ];
       wants = [ "wireguard-${meshInterface}.service" ];
       wantedBy = [ "multi-user.target" ];
       
@@ -175,24 +180,25 @@ in {
             backend
         fi
 
-        # Add iptables rules to route Docker traffic through mesh
-        ${pkgs.iptables}/bin/iptables -t nat -C POSTROUTING -s 172.20.0.0/16 -o ${meshInterface} -j MASQUERADE 2>/dev/null || \
-          ${pkgs.iptables}/bin/iptables -t nat -A POSTROUTING -s 172.20.0.0/16 -o ${meshInterface} -j MASQUERADE
+        # Add nftables rules to route Docker traffic through mesh
+        # Create table and chains if they don't exist
+        ${pkgs.nftables}/bin/nft add table inet mesh-docker 2>/dev/null || true
+        ${pkgs.nftables}/bin/nft add chain inet mesh-docker postrouting { type nat hook postrouting priority 100 \; } 2>/dev/null || true
+        ${pkgs.nftables}/bin/nft add chain inet mesh-docker forward { type filter hook forward priority 0 \; } 2>/dev/null || true
 
-        ${pkgs.iptables}/bin/iptables -C FORWARD -i br-mesh -o ${meshInterface} -j ACCEPT 2>/dev/null || \
-          ${pkgs.iptables}/bin/iptables -A FORWARD -i br-mesh -o ${meshInterface} -j ACCEPT
+        # Add NAT rule for mesh traffic
+        ${pkgs.nftables}/bin/nft add rule inet mesh-docker postrouting ip saddr 172.20.0.0/16 oifname "${meshInterface}" masquerade 2>/dev/null || true
 
-        ${pkgs.iptables}/bin/iptables -C FORWARD -i ${meshInterface} -o br-mesh -j ACCEPT 2>/dev/null || \
-          ${pkgs.iptables}/bin/iptables -A FORWARD -i ${meshInterface} -o br-mesh -j ACCEPT
+        # Add forward rules
+        ${pkgs.nftables}/bin/nft add rule inet mesh-docker forward iifname "br-mesh" oifname "${meshInterface}" accept 2>/dev/null || true
+        ${pkgs.nftables}/bin/nft add rule inet mesh-docker forward iifname "${meshInterface}" oifname "br-mesh" accept 2>/dev/null || true
 
-        echo "Docker mesh network configured successfully"
+        echo "Docker mesh network configured successfully with nftables"
       '';
 
       preStop = ''
-        # Cleanup rules
-        ${pkgs.iptables}/bin/iptables -t nat -D POSTROUTING -s 172.20.0.0/16 -o ${meshInterface} -j MASQUERADE 2>/dev/null || true
-        ${pkgs.iptables}/bin/iptables -D FORWARD -i br-mesh -o ${meshInterface} -j ACCEPT 2>/dev/null || true
-        ${pkgs.iptables}/bin/iptables -D FORWARD -i ${meshInterface} -o br-mesh -j ACCEPT 2>/dev/null || true
+        # Cleanup nftables rules
+        ${pkgs.nftables}/bin/nft delete table inet mesh-docker 2>/dev/null || true
         
         # Remove network
         ${pkgs.docker}/bin/docker network rm backend 2>/dev/null || true
