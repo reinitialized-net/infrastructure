@@ -74,20 +74,15 @@ in {
         trustedInterfaces = [ meshInterface ];
       };
 
-    networking.firewall = {
-      allowedUDPPorts = [ cfg.listenPort ];
-      trustedInterfaces = [ meshInterface ];
-    };
+      networking.wireguard.interfaces.${meshInterface} = {
+        ips = [ "10.255.0.${toString cfg.nodeId}/24" ];
+        listenPort = cfg.listenPort;
+        privateKeyFile = cfg.privateKeyFile;
 
-    networking.wireguard.interfaces.${meshInterface} = {
-      ips = [ "10.255.0.${toString cfg.nodeId}/24" ];
-      listenPort = cfg.listenPort;
-      privateKeyFile = cfg.privateKeyFile;
-
-      peers = builtins.map (peer: {
-        publicKey = peer.publicKey;
-        allowedIPs = [ "10.100.0.${toString peer.nodeId}/32" ];
-        endpoint = lib.mkIf (peer.endpoint != null) peer.endpoint;
+        peers = builtins.map (peer: {
+          publicKey = peer.publicKey;
+          allowedIPs = [ "10.100.0.${toString peer.nodeId}/32" ];
+          endpoint = lib.mkIf (peer.endpoint != null) peer.endpoint;
         persistentKeepalive = lib.mkIf (peer.persistentKeepalive != null) peer.persistentKeepalive;
       }) cfg.peers;
 
@@ -213,5 +208,6 @@ in {
       '';
       mode = "0555";
     };
-  };
+    }
+  ]);
 }
