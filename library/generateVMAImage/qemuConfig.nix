@@ -40,6 +40,12 @@ let
   );
   
   firstDisk = builtins.elemAt disks 0;
+  
+  # qmdump maps - ONLY for drives that actually exist in the VMA file
+  # scsi0 = OS disk (included in VMA)
+  # scsi1, scsi2, etc = additional data disks (NOT in VMA, created empty by Proxmox)
+  # efidisk0 = EFI disk (included in VMA)
+  # tpmstate0 = TPM state (included in VMA)
 in
 ''
 acpi: 1
