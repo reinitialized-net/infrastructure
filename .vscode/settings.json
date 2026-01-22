@@ -4,12 +4,12 @@
     "nix.serverSettings": {
         "nixd": {
             "formatting": {
-                "command": ["nixfmt"],
+                "command": ["nixfmt"]
             },
             "options": {
                 "nixos": {
-                    // "expr": "(builtins.getFlake \"${workspaceFolder}\").nixosConfigurations.standard.options"
-                },
+                    "expr": "(let flake = builtins.getFlake (toString ./.); nixpkgs = flake.inputs.nixpkgsStable; system = \"x86_64-linux\"; in (nixpkgs.lib.nixosSystem { inherit system; modules = [ flake.nixosModules.default { nixpkgs.hostPlatform = system; } ]; }).options)"
+                }
             }
         }
     },
