@@ -28,20 +28,13 @@
   ],
 }:
 let
-  vmaConfiguration = lib.nixosSystem {
-    inherit system;
-
-    specialArgs = {
-      inherit self
-        system
-        nixpkgs;
-    };
+  vmaConfiguration = import "${self}/library/makeConfiguration.nix" {
+    inherit defaultStateVersion self nixpkgs;
+  } host {
+    inherit system hardware;
 
     modules = modules ++ [
       "${modulesPath}/image/repart.nix"
-      "${self}/modules/hardware/${hardware}.nix"
-      "${self}/modules/profiles/standard.nix"
-      (if host == "standard" then {} else "${self}/modules/hosts/${host}.nix")
       ({
         lib,
         pkgs,
