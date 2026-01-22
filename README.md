@@ -8,6 +8,7 @@ This documentation covers custom options and features provided by this NixOS inf
 2. [Library Functions](docs/library-functions.md)
    - [generateVMAImage](docs/library-functions.md#generatevmaimage)
    - [makeConfiguration](docs/library-functions.md#makeconfiguration)
+   - [makeUserWithDataHome](docs/library-functions.md#makeuserwith datahome)
 3. [Custom Modules](docs/modules/README.md)
    - [Secrets Management](docs/modules/secrets.md)
    - [Firewall Whitelist](docs/modules/firewall.md)
@@ -21,6 +22,7 @@ This documentation covers custom options and features provided by this NixOS inf
 This flake provides:
 
 - **Proxmox VMA Image Generation**: Build complete Proxmox-compatible VM images with NixOS
+- **User Management**: Create users with properly configured bind-mounted home directories
 - **Secrets Management System**: Centralized, declarative secret configuration
 - **Mesh Network**: WireGuard-based mesh networking for Docker containers
 - **Custom Firewall Rules**: Advanced source IP-based port whitelisting

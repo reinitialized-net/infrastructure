@@ -1,8 +1,27 @@
 {
+  self,
   pkgs,
   lib,
   ...
-}:{
+}: {
+  imports = [
+    ((import "${self}/library/makeUser.nix" {}) {
+      username = "develop";
+      group = "develop";
+      homePermissions = "0700";
+      extraUserAttrs = {
+        extraGroups = [ "docker" "wheel" ];
+        shell = pkgs.bashInteractive;
+        isNormalUser = true;
+
+        initialPassword = "!";
+        openssh.authorizedKeys.keys = [
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
+        ];
+      };
+    })
+  ];
+
   # Networking Configuration
   networking = {
     hostName = "devenv";
@@ -41,23 +60,4 @@
     nixd
     nixfmt-rfc-style
   ];
-  # Create develop user
-  fileSystems."/home/develop" = lib.mkForce {
-    device = "/mnt/data/develop";
-    depends = [ "/mnt/data" ];
-    fsType = "none";
-    options = [ "bind" ];
-  };
-  users.users.develop = lib.mkForce {
-    extraGroups = [ "docker" "wheel" ];
-    shell = pkgs.bashInteractive;
-
-    isNormalUser = true;
-    home = "/home/develop";
-    initialPassword = "!";
-
-    openssh.authorizedKeys.keys = [
-      "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
-    ];
-  };
 }

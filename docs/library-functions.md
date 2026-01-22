@@ -7,6 +7,7 @@ This flake provides library functions for building NixOS configurations and Prox
 - **[`generateVMAImage`](#generatevmaimage)** - Generate Proxmox VMA images with NixOS
 - **[`makeConfiguration`](#makeconfiguration)** - Create standard NixOS system configurations
 - **[`makeDualExport`](#makedualexport)** - Export both VMA package and nixosSystem from single definition
+- **[`makeUser`](#makeuser)** - Create user with bind-mounted home from /mnt/data
 - **[`forAllSystems`](#forallsystems)** - Apply function to all supported architectures
 
 ---
@@ -405,6 +406,180 @@ Returns an attribute set with:
 2. **Testing**: Test configuration changes with nixosSystem before building VMA
 3. **CI/CD**: Build both artifacts from single config definition
 4. **Documentation**: Maintain one configuration that serves multiple purposes
+
+---
+
+### `makeUser`
+
+Creates a user with their home directory bind-mounted from `/mnt/data` and ensures proper permissions are set via systemd-tmpfiles.
+
+This function handles:
+- User and group creation with specified attributes
+- Bind mounting home directory from `/mnt/data`
+- Setting correct ownership and permissions automatically
+- Dependencies to ensure `/mnt/data` is mounted first
+
+#### Signature
+
+```nix
+makeUser :: AttrSet -> Module
+```
+
+#### Parameters
+
+**`username`** (String, required)
+- The username to create
+- Example: `"myapp"`
+
+**`uid`** (Integer, optional)
+- Optional UID for the user
+- If not specified, NixOS will assign automatically
+- Example: `1001`
+
+**`group`** (String, optional)
+- Group name for the user
+- Default: Same as username
+- Example: `"myapp"`
+
+**`gid`** (Integer, optional)
+- Optional GID for the group
+- If not specified, NixOS will assign automatically
+- Example: `1001`
+
+**`homePermissions`** (String, optional)
+- Permissions for the home directory
+- Default: `"0700"` (owner read/write/execute only)
+- Example: `"0750"` (owner rwx, group rx)
+
+**`homeDirectory`** (String, optional)
+- Custom home directory path
+- Default: `/home/${username}`
+- Example: `"/opt/myapp"`
+
+**`dataPath`** (String, optional)
+- Path under `/mnt/data` for the actual storage
+- Default: `/mnt/data/${username}`
+- Example: `"/mnt/data/applications/myapp"`
+
+**`extraUserAttrs`** (AttrSet, optional)
+- Additional attributes to pass to `users.users.<name>`
+- Can include: `extraGroups`, `shell`, `openssh.authorizedKeys`, etc.
+- Default: `{}`
+- Example: `{ extraGroups = [ "docker" ]; shell = pkgs.bashInteractive; }`
+
+**`extraGroupAttrs`** (AttrSet, optional)
+- Additional attributes to pass to `users.groups.<name>`
+- Default: `{}`
+
+#### Returns
+
+A NixOS module that configures:
+- User account
+- Group (if doesn't exist)
+- systemd-tmpfiles rules for directory creation and permissions
+- Bind mount from `/mnt/data` to home directory
+- Assertion to ensure `/mnt/data` is configured
+
+#### Requirements
+
+- The system must have `/mnt/data` configured (use `modules/profiles/mountData.nix`)
+- The function is used as an import in your configuration
+
+#### Example Usage
+
+**Basic user:**
+
+```nix
+{
+  inputs = {
+    reinitialized-infra.url = "github:reinitialized-net/infrastructure";
+  };
+
+  outputs = { self, reinitialized-infra }:
+    let
+      library = reinitialized-infra.lib;
+    in
+    {
+      packages.x86_64-linux.app-server = library.generateVMAImage "app-server" {
+        system = "x86_64-linux";
+        vmId = 200;
+        
+        modules = [
+          "${reinitialized-infra.inputs.self}/modules/profiles/mountData.nix"
+          
+          # Create user with data home
+          (library.makeUser {
+            username = "myapp";
+            uid = 1001;
+            homePermissions = "0700";
+          })
+        ];
+      };
+    };
+}
+```
+
+**User with custom attributes:**
+
+```nix
+imports = [
+  (library.makeUser {
+    username = "webapp";
+    uid = 1002;
+    group = "webapps";
+    gid = 1002;
+    homeDirectory = "/opt/webapp";
+    dataPath = "/mnt/data/applications/webapp";
+    homePermissions = "0750";
+    extraUserAttrs = {
+      extraGroups = [ "docker" "nginx" ];
+      shell = pkgs.bashInteractive;
+      initialHashedPassword = "$6$...";
+      openssh.authorizedKeys.keys = [
+        "ssh-ed25519 AAAA... webapp@example.com"
+      ];
+    };
+  })
+];
+```
+
+**Multiple users:**
+
+```nix
+{
+  modules = [
+    "${reinitialized-infra.inputs.self}/modules/profiles/mountData.nix"
+    
+    # Application user
+    (library.makeUser {
+      username = "api";
+      uid = 1001;
+    })
+    
+    # Database user
+    (library.makeUser {
+      username = "postgres";
+      uid = 1002;
+      homeDirectory = "/var/lib/postgresql";
+      dataPath = "/mnt/data/postgres";
+      homePermissions = "0700";
+      extraUserAttrs = {
+        isSystemUser = true;
+      };
+    })
+  ];
+}
+```
+
+#### How It Works
+
+1. **Directory Creation**: systemd-tmpfiles creates `/mnt/data/${username}` with specified permissions during boot
+2. **Ownership**: The directory is owned by the specified user and group
+3. **Bind Mount**: The directory is bind-mounted to the home directory location
+4. **Mount Dependencies**: The bind mount depends on `/mnt/data` being mounted first
+5. **Assertions**: Validates that `/mnt/data` is configured before proceeding
+
+This ensures proper permissions even if the `/mnt/data` directory is on a filesystem that doesn't preserve permissions well (like some shared storage systems).
 
 ---
 

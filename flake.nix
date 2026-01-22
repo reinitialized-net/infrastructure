@@ -21,16 +21,46 @@
       
       # Define dual-export systems once - call makeDualExport once per system
       dualSystems = {
+        standard = {
+          system = "x86_64-linux";
+          vmId = 100;
+          enableProtection = false;
+          disks = [
+            {
+              storage = "hotData";
+              size = 25;
+            }
+          ];
+          networking = [
+            {
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 200;
+              useDHCP = true;
+            }
+          ];
+        };
         devenv = library.makeDualExport "devenv" {
           system = "x86_64-linux";
           vmId = 203;
           enableProtection = true;
           disks = [
-            { storage = "hotData"; size = 20; }
-            { storage = "coldData"; size = 100; }
+            { 
+              storage = "hotData";
+              size = 20; 
+            }
+            { 
+              storage = "coldData";
+              size = 500;
+            }
           ];
           networking = [
-            { bridge = "vmbr0"; firewall = false; vlan = 200; useDHCP = true; }
+            { 
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 200;
+              useDHCP = true;
+            }
           ];
           modules = [
             inputs.vscodeServer.nixosModules.default
@@ -58,28 +88,6 @@
 
       packages = library.forAllSystems (system:
       {
-          # VMA-only system (no nixosSystem needed)
-          standard = library.generateVMAImage "standard" {
-            inherit system;
-
-            vmId = 100;
-            enableProtection = false;
-            disks = [
-              {
-                storage = "hotData";
-                size = 25;
-              }
-            ];
-            networking = [
-              {
-                bridge = "vmbr0";
-                firewall = false;
-                vlan = 200;
-                useDHCP = true;
-              }
-            ];
-          };
-
           # Reference VMA package from dual export
           devenv = dualSystems.devenv.package;
         }

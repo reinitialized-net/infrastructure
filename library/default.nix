@@ -11,6 +11,9 @@
   makeDualExport = import "${self}/library/makeDualExport.nix" {
     inherit defaultStateVersion self;
   };
+  makeUser = import "${self}/library/makeUser.nix" {
+    inherit defaultStateVersion;
+  };
   forAllSystems = self.inputs.nixpkgsStable.lib.genAttrs [
     "x86_64-linux"
     "aarch64-linux"

@@ -14,6 +14,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 - **[Library Functions](library-functions.md)** - Complete reference for all library functions
   - `generateVMAImage` - Build Proxmox VMA images
   - `makeConfiguration` - Create NixOS configurations
+  - `makeUserWithDataHome` - Create users with bind-mounted homes from /mnt/data
   - `forAllSystems` - Helper function for multi-arch support
 
 ### Modules
@@ -44,6 +45,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
   - Multi-host Docker cluster
   - Secure application with firewall
   - Complete infrastructure setup
+- **[User Management with Data Homes](examples/makeUserWithDataHome.md)** - Creating users with properly configured home directories
 
 ## Documentation by Topic
 
@@ -75,6 +77,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 **Library Functions:**
 - [generateVMAImage](library-functions.md#generatevmaimage)
 - [makeConfiguration](library-functions.md#makeconfiguration)
+- [makeUserWithDataHome](library-functions.md#makeuserwith datahome)
 - [forAllSystems](library-functions.md#forallsystems)
 
 **NixOS Options:**
@@ -99,6 +102,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 | Manage secrets | [Secrets Module](modules/secrets.md) |
 | Create mesh network | [Mesh Network Module](modules/meshNetwork.md) |
 | Mount data disk | [Mount Data Profile](modules/mountData.md) |
+| Create users with data homes | [makeUserWithDataHome](library-functions.md#makeuserwith datahome) |
 
 ### Module Quick Links
 
