@@ -4,6 +4,13 @@ This flake provides library functions for building NixOS configurations and Prox
 
 ## Available Functions
 
+- **[`generateVMAImage`](#generatevmaimage)** - Generate Proxmox VMA images with NixOS
+- **[`makeConfiguration`](#makeconfiguration)** - Create standard NixOS system configurations
+- **[`makeDualExport`](#makedualexport)** - Export both VMA package and nixosSystem from single definition
+- **[`forAllSystems`](#forallsystems)** - Apply function to all supported architectures
+
+---
+
 ### `generateVMAImage`
 
 Generates a Proxmox-compatible VMA (Vzdump) format VM image with a complete NixOS system.
@@ -170,6 +177,7 @@ The function returns a derivation that builds:
 
 2. **Credentials File** - `CREDENTIALS.txt`
    - Contains generated password for `rnetadmin` user
+   - Includes timestamp of when credentials were generated
    - **IMPORTANT**: Save this password securely before deleting the file
    - Format:
      ```
@@ -177,6 +185,8 @@ The function returns a derivation that builds:
      Hostname: app-server
      Username: rnetadmin
      Password: <randomly-generated-32-char-password>
+     
+     Generated: 2026-01-22 11:30:45 UTC
      ```
 
 #### Building the Image
@@ -300,6 +310,101 @@ nixos-rebuild build --flake .#webserver
 # Or activate directly
 nixos-rebuild switch --flake .#webserver
 ```
+
+---
+
+### `makeDualExport`
+
+Creates both a Proxmox VMA package and a NixOS system configuration from a single system definition. This eliminates duplication when you need to maintain both a VMA image (for deployment) and a nixosSystem (for development/testing).
+
+#### Signature
+
+```nix
+makeDualExport :: String -> AttrSet -> { package, nixosSystem }
+```
+
+#### Parameters
+
+**`host`** (String, required)
+- The hostname for the system
+- Used in both the VMA and nixosSystem configurations
+- Example: `"devenv"`
+
+**Configuration AttrSet:**
+
+All parameters from `generateVMAImage` are supported, plus:
+
+**`exportVMA`** (Boolean, optional)
+- Whether to export the VMA package
+- Default: `true`
+- Set to `false` if you only need nixosSystem
+
+**`exportNixOS`** (Boolean, optional)
+- Whether to export the nixosSystem
+- Default: `true`
+- Set to `false` if you only need VMA package
+
+#### Return Value
+
+Returns an attribute set with:
+- **`package`**: The VMA image derivation (for use in `packages`)
+- **`nixosSystem`**: The NixOS configuration (for use in `nixosConfigurations`)
+
+#### Example Usage
+
+```nix
+{
+  outputs = { self, ... }:
+    let
+      library = import ./library { inherit self; };
+      
+      # Define dual-export systems once
+      dualSystems = {
+        devenv = library.makeDualExport "devenv" {
+          system = "x86_64-linux";
+          vmId = 203;
+          cores = 4;
+          memory = 8192;
+          disks = [
+            { storage = "hotData"; size = 20; }
+            { storage = "coldData"; size = 100; }
+          ];
+          networking = [
+            { bridge = "vmbr0"; firewall = false; vlan = 200; useDHCP = true; }
+          ];
+          modules = [
+            ./devenv-config.nix
+          ];
+        };
+      };
+    in
+    {
+      # Reference nixosSystem from dual export
+      nixosConfigurations = {
+        devenv = dualSystems.devenv.nixosSystem;
+      };
+
+      # Reference VMA package from dual export
+      packages = library.forAllSystems (system: {
+        devenv = dualSystems.devenv.package;
+      });
+    };
+}
+```
+
+#### Benefits
+
+- **Single Source of Truth**: Define your system configuration once
+- **No Duplication**: Avoid maintaining separate VMA and nixosSystem configs
+- **Consistent Behavior**: Both outputs use the same modules and settings
+- **Flexible**: Can export both or just one, depending on needs
+
+#### Use Cases
+
+1. **Development VMs**: Build VMA for Proxmox, use nixosSystem for `nixos-rebuild test`
+2. **Testing**: Test configuration changes with nixosSystem before building VMA
+3. **CI/CD**: Build both artifacts from single config definition
+4. **Documentation**: Maintain one configuration that serves multiple purposes
 
 ---
 

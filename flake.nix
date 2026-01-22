@@ -18,6 +18,27 @@
       library = import "${inputs.self}/library" {
         inherit (inputs) self;
       };
+      
+      # Define dual-export systems once - call makeDualExport once per system
+      dualSystems = {
+        devenv = library.makeDualExport "devenv" {
+          system = "x86_64-linux";
+          vmId = 203;
+          enableProtection = true;
+          disks = [
+            { storage = "hotData"; size = 20; }
+            { storage = "coldData"; size = 100; }
+          ];
+          networking = [
+            { bridge = "vmbr0"; firewall = false; vlan = 200; useDHCP = true; }
+          ];
+          modules = [
+            inputs.vscodeServer.nixosModules.default
+            "${inputs.self}/modules/profiles/mountData.nix"
+            "${inputs.self}/modules/profiles/containers.nix"
+          ];
+        };
+      };
     in
     {
       nixosModules.default = {
@@ -28,8 +49,16 @@
         ];
       };
 
+      # Helper to define systems that can export both VMA packages and nixosConfigurations
+      # Usage: Define systems once in dualSystems, then reference both outputs
+      nixosConfigurations = {
+        # Reference nixosSystem from dual export
+        devenv = dualSystems.devenv.nixosSystem;
+      };
+
       packages = library.forAllSystems (system:
       {
+          # VMA-only system (no nixosSystem needed)
           standard = library.generateVMAImage "standard" {
             inherit system;
 
@@ -51,36 +80,8 @@
             ];
           };
 
-          devenv = library.generateVMAImage "devenv" {
-            inherit system;
-
-            vmId = 203;
-            enableProtection = true;
-            disks = [
-              {
-                storage = "hotData";
-                size = 20;
-              }
-              {
-                storage = "coldData";
-                size = 100;
-              }
-            ];
-            networking = [
-              {
-                bridge = "vmbr0";
-                firewall = false;
-                vlan = 200;
-                useDHCP = true;
-              }
-            ];
-
-            modules = [
-              inputs.vscodeServer.nixosModules.default
-              "${inputs.self}/modules/profiles/mountData.nix"
-              "${inputs.self}/modules/profiles/containers.nix"
-            ];
-          };
+          # Reference VMA package from dual export
+          devenv = dualSystems.devenv.package;
         }
       );
     };

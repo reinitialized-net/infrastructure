@@ -164,6 +164,8 @@ EOF
   Hostname: ${host}
   Username: rnetadmin
   Password: ${randomPassword}
+  
+  Generated: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
 ==========================================================================
   Save this password in your password manager or documentation.
   Delete this file after saving the credentials securely.

@@ -8,6 +8,9 @@
   makeConfiguration = import "${self}/library/makeConfiguration.nix" {
     inherit defaultStateVersion self;
   };
+  makeDualExport = import "${self}/library/makeDualExport.nix" {
+    inherit defaultStateVersion self;
+  };
   forAllSystems = self.inputs.nixpkgsStable.lib.genAttrs [
     "x86_64-linux"
     "aarch64-linux"
