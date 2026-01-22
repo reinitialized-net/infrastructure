@@ -7,25 +7,38 @@
   cfg = config.services.meshNetwork;
   meshInterface = "wg-mesh";
   meshSubnet = "10.255.0.0/24"; # Adjust as needed
+  
+  # Check if secrets.meshNetwork is configured
+  hasSecrets = config.secrets ? meshNetwork;
+  secretsCfg = if hasSecrets then config.secrets.meshNetwork else {};
 in {
   options.services.meshNetwork = {
     enable = lib.mkEnableOption "Wireguard mesh network for Docker nodes";
 
     nodeId = lib.mkOption {
       type = lib.types.int;
-      description = "Unique node ID (1-254) for this mesh member";
+      description = ''
+        Unique node ID (1-254) for this mesh member.
+        Can be automatically sourced from secrets.meshNetwork.keys.nodeId if configured.
+      '';
       example = 1;
     };
 
     listenPort = lib.mkOption {
       type = lib.types.port;
       default = 51820;
-      description = "Wireguard listen port";
+      description = ''
+        Wireguard listen port.
+        Can be automatically sourced from secrets.meshNetwork.keys.listenPort if configured.
+      '';
     };
 
     privateKeyFile = lib.mkOption {
       type = lib.types.path;
-      description = "Path to the Wireguard private key file";
+      description = ''
+        Path to the Wireguard private key file.
+        Can be automatically sourced from secrets.meshNetwork.file if configured.
+      '';
       example = "/run/secrets/mesh-privatekey";
     };
 
@@ -57,7 +70,10 @@ in {
         };
       });
       default = [];
-      description = "List of mesh network peers";
+      description = ''
+        List of mesh network peers.
+        Can be automatically sourced from secrets.meshNetwork.keys.peers if configured.
+      '';
     };
 
     dockerIntegration = lib.mkOption {
@@ -67,7 +83,26 @@ in {
     };
   };
 
-  config = lib.mkIf cfg.enable (lib.mkMerge [
+  config = lib.mkMerge [
+    # Auto-configure from secrets if available
+    (lib.mkIf (hasSecrets && secretsCfg.keys ? nodeId) {
+      services.meshNetwork.nodeId = lib.mkDefault secretsCfg.keys.nodeId;
+    })
+    
+    (lib.mkIf (hasSecrets && secretsCfg.keys ? listenPort) {
+      services.meshNetwork.listenPort = lib.mkDefault secretsCfg.keys.listenPort;
+    })
+    
+    (lib.mkIf (hasSecrets && secretsCfg.file != null) {
+      services.meshNetwork.privateKeyFile = lib.mkDefault secretsCfg.file;
+    })
+    
+    (lib.mkIf (hasSecrets && secretsCfg.keys ? peers) {
+      services.meshNetwork.peers = lib.mkDefault secretsCfg.keys.peers;
+    })
+
+    # Main configuration
+    (lib.mkIf cfg.enable (lib.mkMerge [
     {
       networking.firewall = {
         allowedUDPPorts = [ cfg.listenPort ];
@@ -209,5 +244,6 @@ in {
       mode = "0555";
     };
     }
-  ]);
+    ]))
+  ];
 }
