@@ -19,7 +19,11 @@
     "chat.tools.terminal.autoApprove": {
         "nix": true,
         "sfdisk": true,
-        "tee": true
+        "tee": true,
+        "zstd": true,
+        "vma": true,
+        "strings": true,
+        "hexdump": true
     },
 }
 
