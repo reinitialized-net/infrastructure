@@ -170,7 +170,7 @@ Secondary disk management. Provides:
 
 [Read full documentation →](modules/mountData.md)
 
-**Usage:**
+**Usage:****
 ```nix
 {
   imports = [

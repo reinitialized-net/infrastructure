@@ -4,7 +4,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 
 ## Getting Started
 
-- **[README](README.md)** - Main documentation entry point with quick start guide
+- **[README](../README.md)** - Main documentation entry point with quick start guide
 - **[Overview](overview.md)** - Architecture, design philosophy, and file structure
 
 ## Core Documentation

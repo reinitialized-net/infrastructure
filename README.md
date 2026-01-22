@@ -4,17 +4,17 @@ This documentation covers custom options and features provided by this NixOS inf
 
 ## Table of Contents
 
-1. [Overview](overview.md)
-2. [Library Functions](library-functions.md)
-   - [generateVMAImage](library-functions.md#generatevmaimage)
-   - [makeConfiguration](library-functions.md#makeconfiguration)
-3. [Custom Modules](modules/README.md)
-   - [Secrets Management](modules/secrets.md)
-   - [Firewall Whitelist](modules/firewall.md)
-   - [Mesh Network](modules/mesh-network.md)
-   - [Containers Profile](modules/containers.md)
-4. [Profiles](profiles.md)
-5. [Examples](examples.md)
+1. [Overview](docs/overview.md)
+2. [Library Functions](docs/library-functions.md)
+   - [generateVMAImage](docs/library-functions.md#generatevmaimage)
+   - [makeConfiguration](docs/library-functions.md#makeconfiguration)
+3. [Custom Modules](docs/modules/README.md)
+   - [Secrets Management](docs/modules/secrets.md)
+   - [Firewall Whitelist](docs/modules/firewall.md)
+   - [Mesh Network](docs/modules/meshNetwork.md)
+   - [Containers Profile](docs/modules/containers.md)
+4. [Profiles](docs/profiles.md)
+5. [Examples](docs/examples.md)
 
 ## Quick Start
 
@@ -69,8 +69,8 @@ Or use the library functions directly:
 
 ## Documentation Files
 
-- **[overview.md](overview.md)** - Architecture and design overview
-- **[library-functions.md](library-functions.md)** - Detailed library function documentation
-- **[modules/](modules/)** - Custom NixOS module documentation
-- **[profiles.md](profiles.md)** - Available system profiles
-- **[examples.md](examples.md)** - Complete usage examples
+- **[overview.md](docs/overview.md)** - Architecture and design overview
+- **[library-functions.md](docs/library-functions.md)** - Detailed library function documentation
+- **[modules/](docs/modules/)** - Custom NixOS module documentation
+- **[profiles.md](docs/profiles.md)** - Available system profiles
+- **[examples.md](docs/examples.md)** - Complete usage examples
