@@ -144,9 +144,23 @@ EOF
           # TPM state placeholder
           ${pkgs.coreutils}/bin/truncate -s 4M ./tpmstate0.raw
 
+          # Create placeholder disk images for additional SCSI disks (scsi1, scsi2, etc.)
+          # scsi0 is the OS disk (disk.raw), additional disks are empty placeholders
+${lib.concatStringsSep "\n" (lib.genList (i: 
+  if i == 0 then 
+    "          # scsi0 uses the OS disk image (disk.raw)"
+  else
+    "          ${pkgs.coreutils}/bin/truncate -s ${toString (builtins.elemAt disks i).size}G ./scsi${toString i}.raw"
+) (builtins.length disks))}
+
           ${vma}/bin/vma create "$backupBase.vma" \
             -c qemu-server.conf \
-            "drive-scsi0=./disk.raw" \
+${lib.concatStringsSep " \\\n" (lib.genList (i:
+  if i == 0 then
+    "            \"drive-scsi0=./disk.raw\""
+  else
+    "            \"drive-scsi${toString i}=./scsi${toString i}.raw\""
+) (builtins.length disks))} \
             "drive-efidisk0=./efidisk0.raw" \
             "drive-tpmstate0=./tpmstate0.raw"
 

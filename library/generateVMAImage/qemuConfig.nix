@@ -41,11 +41,15 @@ let
   
   firstDisk = builtins.elemAt disks 0;
   
-  # qmdump maps - ONLY for drives that actually exist in the VMA file
-  # scsi0 = OS disk (included in VMA)
-  # scsi1, scsi2, etc = additional data disks (NOT in VMA, created empty by Proxmox)
-  # efidisk0 = EFI disk (included in VMA)
-  # tpmstate0 = TPM state (included in VMA)
+  # Generate qmdump map lines for ALL SCSI disks
+  # All disks are included in the VMA as placeholders and restored by Proxmox
+  scsiMapLines = builtins.concatStringsSep "\n" (
+    builtins.genList (i:
+      let
+        disk = builtins.elemAt disks i;
+      in "#qmdump#map:scsi${toString i}:drive-scsi${toString i}:${disk.storage}:raw:"
+    ) (builtins.length disks)
+  );
 in
 ''
 acpi: 1
@@ -71,7 +75,7 @@ ${netLines}
 ${scsiLines}
 efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
 tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-${toString (1 + builtins.length disks)},size=4M,version=v2.0
-#qmdump#map:scsi0:drive-scsi0:${firstDisk.storage}:raw:
+${scsiMapLines}
 #qmdump#map:efidisk0:drive-efidisk0:${firstDisk.storage}:raw:
 #qmdump#map:tpmstate0:drive-tpmstate0:${firstDisk.storage}:raw:
 ''
