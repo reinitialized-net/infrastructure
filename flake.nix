@@ -54,7 +54,7 @@
           devenv = library.generateVMAImage "devenv" {
             inherit system;
 
-            vmId = 101;
+            vmId = 203;
             enableProtection = true;
             disks = [
               {
@@ -77,6 +77,7 @@
 
             modules = [
               inputs.vscodeServer.nixosModules.default
+              "${inputs.self}/modules/profiles/mountData.nix"
               "${inputs.self}/modules/profiles/containers.nix"
             ];
           };

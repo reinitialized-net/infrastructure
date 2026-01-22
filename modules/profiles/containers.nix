@@ -7,7 +7,7 @@
 }: {
   assertions = [
     {
-      assertion = "";
+      assertion = config.fileSystems."/mnt/data".fsType or null != null;
       message = "${self}/modules/profiles/mountData.nix is not loaded, which is required by ${self}/modules/profiles/containers.nix";
     }
   ];

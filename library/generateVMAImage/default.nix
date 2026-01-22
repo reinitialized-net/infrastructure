@@ -106,7 +106,7 @@ let
                 Label = "nixos";
                 Format = "ext4";
                 GrowFileSystem = true;
-                SizeMinBytes = "${toString ((builtins.elemAt disks 0).size - 1)}G";
+                SizeMaxBytes = "${toString ((builtins.elemAt disks 0).size - 1)}G";
               };
             };
           };
