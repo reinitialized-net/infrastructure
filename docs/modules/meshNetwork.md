@@ -83,9 +83,11 @@ services.meshNetwork.privateKeyFile = /run/secrets/mesh-privatekey;
 
 **Default:** `[]`
 
-**Description:** List of other mesh network nodes to connect to.
+**Description:** List of other mesh network nodes to connect to. If empty and `autoPeers` is enabled, peers will be automatically populated from the centralized topology in `meshTopology.nix`.
 
-**Auto-configuration:** Can be sourced from `secrets.meshNetwork.keys.peers`
+**Auto-configuration:** 
+- Can be sourced from `secrets.meshNetwork.keys.peers`
+- Can be automatically populated from `meshTopology.nix` when `autoPeers = true`
 
 **Peer Options:**
 
@@ -95,6 +97,7 @@ services.meshNetwork.privateKeyFile = /run/secrets/mesh-privatekey;
 - **`persistentKeepalive`** (int, optional, default: 25): Keepalive interval in seconds. Set to `null` to disable.
 
 ```nix
+# Manual peer configuration (autoPeers = false)
 services.meshNetwork.peers = [
   {
     nodeId = 2;
@@ -111,6 +114,26 @@ services.meshNetwork.peers = [
 ];
 ```
 
+#### `autoPeers`
+
+**Type:** `bool`
+
+**Default:** `true`
+
+**Description:** Automatically populate peers from the centralized topology defined in `meshTopology.nix`. When enabled and `peers` is empty, the module will automatically fetch all other nodes from the topology based on this node's `nodeId`.
+
+This eliminates the need to manually configure peers on each node - you only need to maintain the topology in one place.
+
+```nix
+# Enable automatic peer population (default)
+services.meshNetwork.autoPeers = true;
+
+# Disable to use manual peer configuration
+services.meshNetwork.autoPeers = false;
+```
+
+**Note:** When `autoPeers = true` and `peers` is not empty, the manual peer list will be used instead.
+
 #### `dockerIntegration`
 
 **Type:** `bool`
@@ -125,7 +148,11 @@ services.meshNetwork.dockerIntegration = true;
 
 ## Quick Start
 
-### 1. Generate Keys
+### Using Centralized Topology (Recommended)
+
+The easiest way to configure the mesh network is to use the centralized topology in `meshTopology.nix`. This approach eliminates duplication and makes it easy to add new nodes.
+
+#### 1. Generate Keys
 
 On each node:
 
@@ -138,7 +165,86 @@ cat privatekey  # Keep this secret!
 cat publickey   # Share with other nodes
 ```
 
-### 2. Configure Secrets
+#### 2. Add Node to Topology
+
+Edit `modules/profiles/meshNetwork/meshTopology.nix`:
+
+```nix
+nodes = {
+  devenv = {
+    nodeId = 1;
+    hostname = "devenv";
+    endpoint = "10.1.200.2:51820";
+    publicKey = "zKEWyw9tClll136BGRSv2ImwiP6wNpeJ8ZqG6+ETnmY=";
+  };
+  
+  rp1 = {
+    nodeId = 2;
+    hostname = "rp1";
+    endpoint = "10.1.12.2:51820";
+    publicKey = "RCmhMTQbaHCwfYeJYOF0J09aGdZvAWDuIakUY3tomGk=";
+  };
+  
+  # Add your new node here
+  mynewnode = {
+    nodeId = 3;
+    hostname = "mynewnode";
+    endpoint = "10.1.11.5:51820";  # or null if behind NAT
+    publicKey = "YOUR_PUBLIC_KEY_HERE";
+  };
+};
+```
+
+#### 3. Configure Secrets
+
+Create `modules/secrets/<hostname>.nix` with your private key:
+
+```nix
+{
+  lib,
+  ...
+}: {
+  secrets = {
+    meshNetwork = {
+      description = "MeshNetwork secrets";
+      file = lib.mkDefault (builtins.toFile "mesh-privatekey" "YOUR_PRIVATE_KEY_HERE");
+    };
+  };
+}
+```
+
+#### 4. Enable in Host Configuration
+
+In `hosts/<hostname>.nix`:
+
+```nix
+services.meshNetwork = {
+  enable = true;
+  nodeId = 3;  # Must match the nodeId in meshTopology.nix
+  # Peers are automatically populated from topology!
+};
+```
+
+That's it! The module will automatically configure all peers from the topology.
+
+### Manual Configuration (Legacy)
+
+If you prefer to manually configure peers or need custom configuration:
+
+#### 1. Generate Keys
+
+On each node:
+
+```bash
+# Generate key pair
+wg genkey | tee privatekey | wg pubkey > publickey
+
+# View keys
+cat privatekey  # Keep this secret!
+cat publickey   # Share with other nodes
+```
+
+#### 2. Configure Secrets
 
 Create `modules/secrets/mesh.nix`:
 
@@ -173,7 +279,7 @@ Create `modules/secrets/mesh.nix`:
 }
 ```
 
-### 3. Enable the Module
+#### 3. Enable the Module
 
 In your configuration:
 
@@ -181,8 +287,11 @@ In your configuration:
 {
   imports = [ ./modules/secrets/mesh.nix ];
   
-  # Enable mesh network
-  services.meshNetwork.enable = true;
+  # Enable mesh network with manual peer configuration
+  services.meshNetwork = {
+    enable = true;
+    autoPeers = false;  # Disable automatic peer population
+  };
   
   # Configuration is auto-loaded from secrets
   # Or override manually:
@@ -190,6 +299,93 @@ In your configuration:
   # services.meshNetwork.privateKeyFile = /path/to/key;
 }
 ```
+
+## Centralized Topology
+
+### Overview
+
+The `meshTopology.nix` file provides a centralized place to define all mesh network nodes. This eliminates the need to configure peers on every node individually.
+
+**File Location:** `modules/profiles/meshNetwork/meshTopology.nix`
+
+### Structure
+
+```nix
+{ lib }: let
+  meshSubnet = "10.255.0.0/24";
+  
+  nodes = {
+    <hostname> = {
+      nodeId = <unique-id>;
+      hostname = "<hostname>";
+      endpoint = "<ip>:<port>";  # or null
+      publicKey = "<wireguard-public-key>";
+    };
+    # ... more nodes
+  };
+in {
+  inherit meshSubnet nodes;
+  
+  # Utility functions
+  getPeersForNode = nodeId: /* ... */;
+  getNodeByNodeId = nodeId: /* ... */;
+  getNodeByHostname = hostname: /* ... */;
+}
+```
+
+### Available Functions
+
+#### `getPeersForNode`
+
+Returns a list of all peers for a given nodeId, automatically excluding the node itself.
+
+```nix
+# Returns: [ { nodeId = 2; publicKey = "..."; endpoint = "..."; persistentKeepalive = 25; } ... ]
+meshTopology.getPeersForNode 1
+```
+
+This is the function used by the `autoPeers` feature to automatically populate peer configurations.
+
+#### `getNodeByNodeId`
+
+Look up a node's configuration by its nodeId.
+
+```nix
+# Returns: { nodeId = 1; hostname = "devenv"; endpoint = "..."; publicKey = "..."; }
+meshTopology.getNodeByNodeId 1
+```
+
+#### `getNodeByHostname`
+
+Look up a node's configuration by its hostname.
+
+```nix
+# Returns: { nodeId = 1; hostname = "devenv"; endpoint = "..."; publicKey = "..."; }
+meshTopology.getNodeByHostname "devenv"
+```
+
+### Adding a New Node
+
+1. Generate WireGuard keys on the new node
+2. Add entry to `meshTopology.nix`:
+
+```nix
+nodes = {
+  # ... existing nodes ...
+  
+  newnode = {
+    nodeId = 4;  # Must be unique
+    hostname = "newnode";
+    endpoint = "10.1.11.10:51820";
+    publicKey = "NEW_NODE_PUBLIC_KEY";
+  };
+};
+```
+
+3. Create secrets file for the new node: `modules/secrets/newnode.nix`
+4. Enable mesh network in the host config with just `nodeId` - peers auto-populate!
+
+All existing nodes will automatically include the new node in their peer list on next rebuild.
 
 ### 4. Build and Deploy
 

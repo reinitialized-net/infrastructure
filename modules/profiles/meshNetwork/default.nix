@@ -7,7 +7,10 @@
 }: let
   cfg = config.services.meshNetwork;
   meshInterface = "wg-mesh";
-  meshSubnet = "10.255.0.0/24"; # Adjust as needed
+  
+  # Import centralized topology
+  meshTopology = import ./meshTopology.nix { inherit lib; };
+  meshSubnet = meshTopology.meshSubnet;
   
   # Check if secrets.meshNetwork is configured
   hasSecrets = config.secrets ? meshNetwork;
@@ -86,7 +89,17 @@ in {
       default = [];
       description = ''
         List of mesh network peers.
+        If empty and nodeId is set, peers will be automatically generated from meshTopology.
         Can be automatically sourced from secrets.meshNetwork.keys.peers if configured.
+      '';
+    };
+
+    autoPeers = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Automatically populate peers from meshTopology.nix based on nodeId.
+        Set to false to manually configure peers via the peers option.
       '';
     };
 
@@ -106,7 +119,12 @@ in {
         trustedInterfaces = [ meshInterface ];
       };
 
-      networking.wireguard.interfaces.${meshInterface} = {
+      networking.wireguard.interfaces.${meshInterface} = let
+        # Determine final peer list: use autoPeers if enabled and peers is empty, otherwise use configured peers
+        finalPeers = if cfg.autoPeers && cfg.peers == []
+                     then meshTopology.getPeersForNode cfg.nodeId
+                     else cfg.peers;
+      in {
         ips = [ (meshLib.getPeerAllowedIP meshSubnet cfg.nodeId) ];
         listenPort = cfg.listenPort;
         privateKeyFile = secretsCfg.file;
@@ -115,9 +133,9 @@ in {
           publicKey = peer.publicKey;
           allowedIPs = [ (meshLib.getPeerAllowedIP meshSubnet peer.nodeId) ];
           endpoint = lib.mkIf (peer.endpoint != null) peer.endpoint;
-        persistentKeepalive = lib.mkIf (peer.persistentKeepalive != null) peer.persistentKeepalive;
-      }) cfg.peers;
-    };
+          persistentKeepalive = lib.mkIf (peer.persistentKeepalive != null) peer.persistentKeepalive;
+        }) finalPeers;
+      };
 
     # Configure WireGuard interface with networkd for routing
     systemd.network.networks."50-${meshInterface}" = {
