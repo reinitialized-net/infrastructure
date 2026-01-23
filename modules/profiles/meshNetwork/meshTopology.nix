@@ -25,6 +25,12 @@
       endpoint = "10.1.11.2:51820";
       publicKey = "A+iE73jvq8FYY64bv/DbXoOaZPujfKXv/jBp+Mb+Vks=";
     };
+    apps2 = {
+      nodeId = 4;
+      hostname = "apps2";
+      endpoint = "10.1.11.3:51820";
+      publicKey = "N6YAF//4vGLvz3DPoeDdv4Wla9oLqRt+xPywxJ05s2A=";
+    };
   };
   
   # Convert node definition to peer format

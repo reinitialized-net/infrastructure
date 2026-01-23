@@ -44,5 +44,84 @@
   services.meshNetwork = {
     enable = true;
     nodeId = 2;
+    dockerIntegration = false;
+  };
+  # Configure Nginx Reverse Proxy
+  containers.nginx = {
+    ephemeral = true;
+    autoStart = true;
+    privateNetwork = false;
+    
+    bindMounts = {
+      "/var/lib/acme" = {
+        hostPath = "/mnt/containers/nginx/var/lib/acme";
+        isReadOnly = false;
+      };
+    };
+
+    config = { ... }: {
+      # Enable ACME for automatic SSL certificates
+      services.acme = {
+        acceptTerms = true;
+        defaults = {
+          email = "admin@reinitialized.net";
+        };
+      };
+      # Nginx
+      services.nginx = {
+        enable = true;
+        package = (pkgs.angieQuic.override { withStream = true; });
+        recommendedProxySettings = true;
+        recommendedTlsSettings = true;
+
+        virtualHosts = {
+          "docs.reinitialized.net" = {
+            forceSSL = true;
+            enableACME = true;
+            listenAddresses = [ 
+              "10.1.12.4"
+            ];
+
+            locations."/" = {
+              proxyPass = "http://10.255.0.3:3000";
+            };
+          };
+          "media.reinitialized.me" = {
+            forceSSL = true;
+            enableACME = true;
+            listenAddresses = [ 
+              "10.1.12.4"
+            ];
+            
+            locations."/" = {
+              proxyPass = "http://10.255.0.3:3000";
+            };
+          };
+
+          "one.dns.reinitialized.net" = {
+            forceSSL = true;
+            enableACME = true;
+            listenAddresses = [ 
+              "10.1.12.4"
+            ];
+            
+            locations."/" = {
+              proxyPass = "http://10.255.0.3:3000";
+            };
+          };
+          "two.dns.reinitialized.net" = {
+            forceSSL = true;
+            enableACME = true;
+            listenAddresses = [ 
+              "10.1.12.4"
+            ];
+            
+            locations."/" = {
+              proxyPass = "http://10.255.0.3:3000";
+            };
+          };
+        };
+      };
+    };
   };
 }
