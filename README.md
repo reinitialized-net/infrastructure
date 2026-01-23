@@ -8,7 +8,7 @@ This documentation covers custom options and features provided by this NixOS inf
 2. [Library Functions](docs/library-functions.md)
    - [generateVMAImage](docs/library-functions.md#generatevmaimage)
    - [makeConfiguration](docs/library-functions.md#makeconfiguration)
-   - [makeUserWithDataHome](docs/library-functions.md#makeuserwith datahome)
+   - [makeUser](docs/library-functions.md#makeuser)
 3. [Custom Modules](docs/modules/README.md)
    - [Secrets Management](docs/modules/secrets.md)
    - [Firewall Whitelist](docs/modules/firewall.md)
