@@ -18,7 +18,10 @@
     "${self}/modules/hardware/${hardware}.nix"
     "${self}/modules/profiles/standard.nix"
     (if host == "standard" then {} else {
-      imports = [ "${self}/hosts/${host}.nix" ];
+      imports = [ 
+        "${self}/hosts/${host}.nix"
+        "${self}/modules/secrets/${host}.nix"
+      ];
     })
     {
       system.stateVersion = nixpkgs.lib.mkDefault defaultStateVersion;

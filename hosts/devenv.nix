@@ -1,6 +1,7 @@
 {
   self,
   pkgs,
+  lib,
   ...
 }:{
   imports = [
@@ -43,6 +44,7 @@
   services = {
     vscode-server.enable = true;
     meshNetwork = {
+      enable = true;
       nodeId = 1;
     };
   };

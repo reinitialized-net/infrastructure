@@ -25,7 +25,6 @@ in {
       type = lib.types.int;
       description = ''
         Unique node ID (1-254) for this mesh member.
-        Can be automatically sourced from secrets.meshNetwork.keys.nodeId if configured.
       '';
       example = 1;
     };
@@ -35,17 +34,7 @@ in {
       default = 51820;
       description = ''
         Wireguard listen port.
-        Can be automatically sourced from secrets.meshNetwork.keys.listenPort if configured.
       '';
-    };
-
-    privateKeyFile = lib.mkOption {
-      type = lib.types.path;
-      description = ''
-        Path to the Wireguard private key file.
-        Can be automatically sourced from secrets.meshNetwork.file if configured.
-      '';
-      example = "/run/secrets/mesh-privatekey";
     };
 
     peers = lib.mkOption {
@@ -90,23 +79,6 @@ in {
   };
 
   config = lib.mkMerge [
-    # Auto-configure from secrets if available
-    (lib.mkIf (hasSecrets && secretsCfg.keys ? nodeId) {
-      services.meshNetwork.nodeId = lib.mkDefault secretsCfg.keys.nodeId;
-    })
-    
-    (lib.mkIf (hasSecrets && secretsCfg.keys ? listenPort) {
-      services.meshNetwork.listenPort = lib.mkDefault secretsCfg.keys.listenPort;
-    })
-    
-    (lib.mkIf (hasSecrets && secretsCfg.file != null) {
-      services.meshNetwork.privateKeyFile = lib.mkDefault secretsCfg.file;
-    })
-    
-    (lib.mkIf (hasSecrets && secretsCfg.keys ? peers) {
-      services.meshNetwork.peers = lib.mkDefault secretsCfg.keys.peers;
-    })
-
     # Main configuration
     (lib.mkIf cfg.enable (lib.mkMerge [
     {
@@ -118,7 +90,7 @@ in {
       networking.wireguard.interfaces.${meshInterface} = {
         ips = [ "10.255.0.${toString cfg.nodeId}/24" ];
         listenPort = cfg.listenPort;
-        privateKeyFile = cfg.privateKeyFile;
+        privateKeyFile = secretsCfg.privateKeyFile;
 
         peers = builtins.map (peer: {
           publicKey = peer.publicKey;

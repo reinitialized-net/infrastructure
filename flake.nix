@@ -65,6 +65,7 @@
           modules = [
             inputs.vscodeServer.nixosModules.default
             "${inputs.self}/modules/profiles/containers.nix"
+            "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
       };
@@ -72,9 +73,9 @@
     {
       nixosModules.default = {
         imports = [
-          ./modules/profiles/firewall.nix
-          ./modules/profiles/meshNetwork
-          ./modules/profiles/secrets.nix
+          "${inputs.self}/modules/profiles/firewall.nix"
+          "${inputs.self}/modules/profiles/meshNetwork"
+          "${inputs.self}/modules/profiles/secrets.nix"
         ];
       };
 
