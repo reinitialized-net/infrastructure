@@ -90,7 +90,7 @@ in {
       networking.wireguard.interfaces.${meshInterface} = {
         ips = [ "10.255.0.${toString cfg.nodeId}/24" ];
         listenPort = cfg.listenPort;
-        privateKeyFile = secretsCfg.privateKeyFile;
+        privateKeyFile = secretsCfg.file;
 
         peers = builtins.map (peer: {
           publicKey = peer.publicKey;
@@ -98,15 +98,18 @@ in {
           endpoint = lib.mkIf (peer.endpoint != null) peer.endpoint;
         persistentKeepalive = lib.mkIf (peer.persistentKeepalive != null) peer.persistentKeepalive;
       }) cfg.peers;
+    };
 
-      # Post-setup commands to ensure routing
-      postSetup = ''
-        ${pkgs.iproute2}/bin/ip route add ${meshSubnet} dev ${meshInterface} || true
-      '';
-
-      postShutdown = ''
-        ${pkgs.iproute2}/bin/ip route del ${meshSubnet} dev ${meshInterface} || true
-      '';
+    # Configure WireGuard interface with networkd for routing
+    systemd.network.networks."50-${meshInterface}" = {
+      matchConfig.Name = meshInterface;
+      networkConfig = {
+        Address = "10.255.0.${toString cfg.nodeId}/24";
+      };
+      routeConfig = {
+        Destination = meshSubnet;
+        Scope = "link";
+      };
     };
 
     # Docker integration
