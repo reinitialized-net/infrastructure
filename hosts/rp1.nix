@@ -1,5 +1,6 @@
 {
   self,
+  defaultStateVersion,
   pkgs,
   ...
 }:{
@@ -46,6 +47,11 @@
     nodeId = 2;
     dockerIntegration = false;
   };
+  # Ensure container directories exist
+  systemd.tmpfiles.rules = [
+    "d /mnt/containers/nginx/var/lib/acme 0750 root root -"
+  ];
+  
   # Configure Nginx Reverse Proxy
   containers.nginx = {
     ephemeral = true;
@@ -59,9 +65,11 @@
       };
     };
 
-    config = { ... }: {
+    config = { lib, ... }: {
+      system.stateVersion = lib.mkDefault defaultStateVersion;
+      
       # Enable ACME for automatic SSL certificates
-      services.acme = {
+      security.acme = {
         acceptTerms = true;
         defaults = {
           email = "admin@reinitialized.net";
@@ -70,7 +78,7 @@
       # Nginx
       services.nginx = {
         enable = true;
-        package = (pkgs.angieQuic.override { withStream = true; });
+        package = (pkgs.angie.override { withStream = true; });
         recommendedProxySettings = true;
         recommendedTlsSettings = true;
 

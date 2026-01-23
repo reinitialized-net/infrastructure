@@ -1,6 +1,6 @@
 {
   self,
-  defaultStateVersion ? "25.05",
+  defaultStateVersion ? "25.11",
 }: {
   generateVMAImage = import "${self}/library/generateVMAImage" {
     inherit defaultStateVersion self;

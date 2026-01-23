@@ -11,7 +11,8 @@
   
   specialArgs = {
     inherit self
-      system;
+      system
+      defaultStateVersion;
     inherit (nixpkgs) lib;
   };
   modules = modules ++ [
