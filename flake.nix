@@ -47,11 +47,11 @@
           disks = [
             { 
               storage = "hotData";
-              size = 20; 
+              size = 250; 
             }
             { 
               storage = "coldData";
-              size = 100;
+              size = 250;
             }
           ];
           networking = [
