@@ -2,7 +2,7 @@
   self,
   pkgs,
   ...
-}: {
+}:{
   imports = [
     ((import "${self}/library/makeUser.nix" {}) {
       username = "develop";
@@ -20,7 +20,6 @@
       };
     })
   ];
-
   # Networking Configuration
   networking = {
     hostName = "devenv";
@@ -40,8 +39,13 @@
       matchConfig.Path = "pci-0000:06:12.0";
     };
   };
-  # Enable VSCode Server - Remote SSH support
-  services.vscode-server.enable = true;
+  # Configure Services
+  services = {
+    vscode-server.enable = true;
+    meshNetwork = {
+      nodeId = 1;
+    };
+  };
   # Install development tools
   environment.systemPackages = with pkgs; [
     vim

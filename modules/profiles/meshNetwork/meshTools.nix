@@ -4,7 +4,7 @@
   config,
   ...
 }: let
-  meshEnabled = config.services.mesh-network.enable or false;
+  meshEnabled = config.services.meshNetwork.enable or false;
 in {
   environment.systemPackages = lib.mkIf meshEnabled (
     with pkgs; [

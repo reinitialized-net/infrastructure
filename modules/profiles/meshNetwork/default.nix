@@ -1,4 +1,5 @@
 {
+  self,
   lib,
   config,
   pkgs,
@@ -12,6 +13,11 @@
   hasSecrets = config.secrets ? meshNetwork;
   secretsCfg = if hasSecrets then config.secrets.meshNetwork else {};
 in {
+  imports = [ 
+    "${self}/modules/profiles/meshNetwork/meshTools.nix"
+    "${self}/modules/profiles/secrets.nix"  
+  ];
+
   options.services.meshNetwork = {
     enable = lib.mkEnableOption "Wireguard mesh network for Docker nodes";
 

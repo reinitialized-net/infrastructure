@@ -5,15 +5,9 @@
   pkgs,
   ...
 }: {
-  assertions = [
-    {
-      assertion = config.fileSystems."/mnt/data".fsType or null != null;
-      message = "${self}/modules/profiles/mountData.nix is not loaded, which is required by ${self}/modules/profiles/containers.nix";
-    }
-  ];
-
-  imports = [
+  imports = [ 
     "${self}/modules/profiles/meshNetwork"
+    "${self}/modules/profiles/secrets.nix"  
   ];
 
   virtualisation = {

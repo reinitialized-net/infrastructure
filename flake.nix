@@ -64,7 +64,6 @@
           ];
           modules = [
             inputs.vscodeServer.nixosModules.default
-            "${inputs.self}/modules/profiles/mountData.nix"
             "${inputs.self}/modules/profiles/containers.nix"
           ];
         };
