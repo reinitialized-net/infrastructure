@@ -14,7 +14,7 @@
     nftables.enable = lib.mkDefault true;
     networkmanager.enable = lib.mkForce false;
     useNetworkd = lib.mkForce true;
-    useDHCP = lib.mkDefault false;
+    useDHCP = lib.mkDefault true;
 
     firewall = {
       enable = lib.mkForce true;
