@@ -46,6 +46,14 @@
     meshNetwork = {
       enable = true;
       nodeId = 1;
+
+      peers = [
+        {
+          nodeId = 2;
+          endpoint = "10.1.12.2";
+          publicKey = "RCmhMTQbaHCwfYeJYOF0J09aGdZvAWDuIakUY3tomGk=";
+        }
+      ];
     };
   };
   # Install development tools

@@ -36,13 +36,13 @@
               bridge = "vmbr0";
               firewall = false;
               vlan = 200;
-              useDHCP = true;
             }
           ];
         };
+
         devenv = library.makeDualExport "devenv" {
           system = "x86_64-linux";
-          vmId = 203;
+          vmId = 202;
           enableProtection = true;
           disks = [
             { 
@@ -59,7 +59,33 @@
               bridge = "vmbr0";
               firewall = false;
               vlan = 200;
-              useDHCP = true;
+            }
+          ];
+          modules = [
+            inputs.vscodeServer.nixosModules.default
+            "${inputs.self}/modules/profiles/containers.nix"
+            "${inputs.self}/modules/profiles/mountData.nix"
+          ];
+        };
+        rp1 = library.makeDualExport "rp1" {
+          system = "x86_64-linux";
+          vmId = 203;
+          enableProtection = true;
+          disks = [
+            { 
+              storage = "hotData";
+              size = 20; 
+            }
+            { 
+              storage = "coldData";
+              size = 50;
+            }
+          ];
+          networking = [
+            { 
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 12;
             }
           ];
           modules = [
