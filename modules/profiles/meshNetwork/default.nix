@@ -106,10 +106,12 @@ in {
       networkConfig = {
         Address = "10.255.0.${toString cfg.nodeId}/24";
       };
-      routeConfig = {
-        Destination = meshSubnet;
-        Scope = "link";
-      };
+      routes = [
+        {
+          Destination = meshSubnet;
+          Scope = "link";
+        }
+      ];
     };
 
     # Docker integration

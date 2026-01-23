@@ -33,8 +33,8 @@ in {
         # Show mesh network status
         set -euo pipefail
 
-        if [ -f /etc/mesh-network/status.sh ]; then
-          /etc/mesh-network/status.sh
+        if [ -f /etc/meshNetwork/status.sh ]; then
+          /etc/meshNetwork/status.sh
         else
           echo "Mesh network is not enabled or not properly configured."
           exit 1
@@ -55,7 +55,7 @@ in {
         fi
 
         # Get all mesh IPs from Wireguard config
-        ${wireguard-tools}/bin/wg show wg-mesh | grep 'allowed ips' | awk '{print $3}' | cut -d'/' -f1 | while read ip; do
+        sudo ${wireguard-tools}/bin/wg show wg-mesh | grep 'allowed ips' | awk '{print $3}' | cut -d'/' -f1 | while read ip; do
           echo -n "Testing $ip ... "
           if ${iputils}/bin/ping -c 3 -W 2 "$ip" > /dev/null 2>&1; then
             echo "✓ OK ($(${iputils}/bin/ping -c 1 -W 1 "$ip" | grep 'time=' | sed 's/.*time=\([^ ]*\).*/\1/'))"
