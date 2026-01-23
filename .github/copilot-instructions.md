@@ -84,10 +84,10 @@ config.secrets.meshNetwork.file
 
 ```bash
 # Build VMA image for Proxmox import
-nix build .#packages.x86_64-linux.<hostname>
+nix build path:.#packages.x86_64-linux.<hostname>
 
 # Build nixosSystem for testing/development
-nix build .#nixosConfigurations.<hostname>.config.system.build.toplevel
+nix build path:.#nixosConfigurations.<hostname>.config.system.build.toplevel
 
 # Rebuild active system (on NixOS host)
 sudo nixos-rebuild switch --flake path:.#<hostname>
