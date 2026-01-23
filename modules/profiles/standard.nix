@@ -70,6 +70,7 @@
       enable = lib.mkForce true;
       wheelNeedsPassword = lib.mkDefault false;
     };
+    polkit.enable = lib.mkDefault true;
   };
 
   nix.settings = {
