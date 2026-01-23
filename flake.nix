@@ -110,12 +110,14 @@
       nixosConfigurations = {
         # Reference nixosSystem from dual export
         devenv = dualSystems.devenv.nixosSystem;
+        rp1 = dualSystems.rp1.nixosSystem;
       };
 
       packages = library.forAllSystems (system:
       {
           # Reference VMA package from dual export
           devenv = dualSystems.devenv.package;
+          rp1 = dualSystems.rp1.package;
         }
       );
     };

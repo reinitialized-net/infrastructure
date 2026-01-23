@@ -8,10 +8,13 @@ This NixOS infrastructure flake is designed to simplify the deployment of NixOS-
 
 ### 1. Library Functions
 
-The flake exposes two primary library functions:
+The flake exposes several primary library functions:
 
+- **`makeDualExport`** - Creates both VMA package and nixosSystem from single definition (recommended)
 - **`generateVMAImage`** - Generates Proxmox VMA (Vzdump) format images suitable for direct import into Proxmox VE
 - **`makeConfiguration`** - Creates standard NixOS configurations with sensible defaults
+- **`makeUser`** - Creates users with bind-mounted home directories from /mnt/data
+- **`forAllSystems`** - Helper for multi-architecture support
 
 ### 2. NixOS Modules
 
@@ -72,6 +75,46 @@ The VMA image generation process creates ready-to-import Proxmox backups:
 4. Generates random credentials for initial access
 
 ## Workflow
+
+### Using the Dual-Export Pattern (Recommended)
+
+The dual-export pattern allows you to define a system once and export both a VMA image and nixosSystem configuration:
+
+```nix
+{
+  outputs = { self, ... }:
+    let
+      library = import ./library { inherit self; };
+      
+      # Define systems once
+      dualSystems = {
+        myapp = library.makeDualExport "myapp" {
+          system = "x86_64-linux";
+          vmId = 100;
+          cores = 4;
+          memory = 8192;
+          
+          disks = [
+            { storage = "local-lvm"; size = 50; }
+          ];
+          
+          networking = [
+            { bridge = "vmbr0"; vlan = 100; firewall = true; }
+          ];
+          
+          modules = [ ./myapp-config.nix ];
+        };
+      };
+    in
+    {
+      # Export both outputs
+      nixosConfigurations.myapp = dualSystems.myapp.nixosSystem;
+      packages.x86_64-linux.myapp = dualSystems.myapp.package;
+    };
+}
+```
+
+This pattern eliminates duplication and ensures consistency between your VMA images and nixosSystem configurations.
 
 ### Building a VM Image
 
