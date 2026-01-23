@@ -12,6 +12,25 @@
   # Check if secrets.meshNetwork is configured
   hasSecrets = config.secrets ? meshNetwork;
   secretsCfg = if hasSecrets then config.secrets.meshNetwork else {};
+
+  # Utility functions for subnet parsing
+  meshLib = {
+    # Extract the network prefix from a CIDR subnet (e.g., "10.255.0.0/24" -> "10.255.0")
+    getSubnetPrefix = subnet: let
+      # Split on "/" to get IP part
+      ipPart = lib.head (lib.splitString "/" subnet);
+      # Split IP into octets
+      octets = lib.splitString "." ipPart;
+      # Take first 3 octets and rejoin
+      prefix = lib.concatStringsSep "." (lib.take 3 octets);
+    in prefix;
+    
+    # Generate allowedIPs for a peer based on subnet and peer node ID
+    # e.g., subnet="10.255.0.0/24", nodeId=5 -> "10.255.0.5/32"
+    getPeerAllowedIP = subnet: nodeId: let
+      prefix = meshLib.getSubnetPrefix subnet;
+    in "${prefix}.${toString nodeId}/32";
+  };
 in {
   imports = [ 
     "${self}/modules/profiles/meshNetwork/meshTools.nix"
@@ -88,13 +107,13 @@ in {
       };
 
       networking.wireguard.interfaces.${meshInterface} = {
-        ips = [ "10.255.0.${toString cfg.nodeId}/24" ];
+        ips = [ (meshLib.getPeerAllowedIP meshSubnet cfg.nodeId) ];
         listenPort = cfg.listenPort;
         privateKeyFile = secretsCfg.file;
 
         peers = builtins.map (peer: {
           publicKey = peer.publicKey;
-          allowedIPs = [ "10.100.0.${toString peer.nodeId}/32" ];
+          allowedIPs = [ (meshLib.getPeerAllowedIP meshSubnet peer.nodeId) ];
           endpoint = lib.mkIf (peer.endpoint != null) peer.endpoint;
         persistentKeepalive = lib.mkIf (peer.persistentKeepalive != null) peer.persistentKeepalive;
       }) cfg.peers;
@@ -104,7 +123,7 @@ in {
     systemd.network.networks."50-${meshInterface}" = {
       matchConfig.Name = meshInterface;
       networkConfig = {
-        Address = "10.255.0.${toString cfg.nodeId}/24";
+        Address = (meshLib.getPeerAllowedIP meshSubnet cfg.nodeId);
       };
       routes = [
         {
