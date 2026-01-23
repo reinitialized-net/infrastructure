@@ -17,6 +17,7 @@
   modules = modules ++ [
     "${self}/modules/hardware/${hardware}.nix"
     "${self}/modules/profiles/standard.nix"
+    "${self}/modules/profiles/firewall.nix"
     (if host == "standard" then {} else {
       imports = [ 
         "${self}/hosts/${host}.nix"
