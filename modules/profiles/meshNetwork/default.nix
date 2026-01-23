@@ -251,7 +251,7 @@ in {
         echo "Mesh IP: 10.255.0.${toString cfg.nodeId}"
         echo
         echo "=== Wireguard Interface ==="
-        ${pkgs.wireguard-tools}/bin/wg show ${meshInterface}
+        sudo ${pkgs.wireguard-tools}/bin/wg show ${meshInterface}
         echo
         echo "=== Mesh Routes ==="
         ${pkgs.iproute2}/bin/ip route show dev ${meshInterface}
