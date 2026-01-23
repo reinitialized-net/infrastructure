@@ -70,8 +70,51 @@
       enable = lib.mkForce true;
       wheelNeedsPassword = lib.mkDefault false;
     };
-    polkit.enable = lib.mkDefault true;
+    polkit = {
+      enable = lib.mkDefault true;
+      # Allow wheel group to manage systemd without authentication
+      # Required for nixos-rebuild with sudo-rs
+      extraConfig = ''
+        polkit.addRule(function(action, subject) {
+          if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+               action.id == "org.freedesktop.systemd1.manage-unit-files" ||
+               action.id == "org.freedesktop.systemd1.reload-daemon") &&
+              subject.isInGroup("wheel")) {
+            return polkit.Result.YES;
+          }
+        });
+      '';
+    };
   };
+
+  # Allow wheel group to access systemd DBus without authentication
+  services.dbus.packages = [ 
+    (pkgs.writeTextFile {
+      name = "nixos-rebuild-dbus-policy";
+      destination = "/share/dbus-1/system.d/nixos-rebuild.conf";
+      text = ''
+        <!DOCTYPE busconfig PUBLIC
+         "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
+         "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
+        <busconfig>
+          <policy user="root">
+            <allow send_destination="org.freedesktop.systemd1"
+                   send_interface="org.freedesktop.systemd1.Manager"
+                   send_member="Subscribe"/>
+            <allow send_destination="org.freedesktop.systemd1"
+                   send_interface="org.freedesktop.DBus.Properties"/>
+          </policy>
+          <policy group="wheel">
+            <allow send_destination="org.freedesktop.systemd1"
+                   send_interface="org.freedesktop.systemd1.Manager"
+                   send_member="Subscribe"/>
+            <allow send_destination="org.freedesktop.systemd1"
+                   send_interface="org.freedesktop.DBus.Properties"/>
+          </policy>
+        </busconfig>
+      '';
+    })
+  ];
 
   nix.settings = {
     auto-optimise-store = lib.mkForce true;
