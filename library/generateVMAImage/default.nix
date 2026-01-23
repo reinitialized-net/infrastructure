@@ -23,7 +23,6 @@
       bridge = "vmbr0";
       firewall = false;
       vlan = 200;
-      useDHCP = true;
     }
   ],
 }:
