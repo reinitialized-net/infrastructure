@@ -48,7 +48,7 @@
     peers = [
       {
         nodeId = 1;
-        endpoint = "10.1.200.2";
+        endpoint = "10.1.200.2:51820";
         publicKey = "zKEWyw9tClll136BGRSv2ImwiP6wNpeJ8ZqG6+ETnmY=";
       }
     ];

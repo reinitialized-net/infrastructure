@@ -50,7 +50,7 @@
       peers = [
         {
           nodeId = 2;
-          endpoint = "10.1.12.2";
+          endpoint = "10.1.12.2:51820";
           publicKey = "RCmhMTQbaHCwfYeJYOF0J09aGdZvAWDuIakUY3tomGk=";
         }
       ];
