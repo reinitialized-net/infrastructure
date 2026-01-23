@@ -51,7 +51,7 @@
             }
             { 
               storage = "coldData";
-              size = 500;
+              size = 100;
             }
           ];
           networking = [
