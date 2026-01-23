@@ -1,17 +1,30 @@
 {
   system,
   lib,
+  pkgs,
   ...
 }: {
   # UEFI boot configuration for Proxmox VMA images
   boot = {
     loader = {
-      systemd-boot.enable = lib.mkForce true;
+      systemd-boot = {
+        enable = lib.mkForce true;
+        # Automatically detect and boot UKI images from /EFI/Linux/
+        # This ensures systemd-boot is properly installed to ESP
+        
+        # Install systemd-boot to ESP on first boot to avoid warnings
+        extraInstallCommands = lib.mkDefault ''
+          ${pkgs.systemd}/bin/bootctl --esp-path=/boot install --no-variables || true
+        '';
+      };
       grub.enable = lib.mkForce false;
-      efi.canTouchEfiVariables = lib.mkForce false;
+      # Don't modify EFI boot variables in VMs, but allow file installation
+      efi.canTouchEfiVariables = lib.mkDefault false;
     };
 
     initrd = {
+      # Enable systemd in initrd - this automatically enables UKI generation
+      # UKI (Unified Kernel Image) bundles kernel + initrd + cmdline into a single .efi
       systemd.enable = lib.mkDefault true;
       
       # Include default modules for broader hardware support
