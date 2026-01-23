@@ -52,10 +52,10 @@ VMA (VM Archive) images are Proxmox-compatible backups that can be imported dire
 
 ```bash
 # Build the VMA image
-nix build .#packages.x86_64-linux.devenv
+nix build path:.#packages.x86_64-linux.devenv
 
 # Or use shorthand (if system matches)
-nix build .#devenv
+nix build path:.#devenv
 
 # Output will be in ./result/
 ls -lh result/
@@ -89,61 +89,10 @@ cat result/CREDENTIALS.txt
 # Generated: 2026-01-23 12:00:00 UTC
 ```
 
-### Building and Deploying NixOS Systems
-
-For development and updates, you can build nixosSystem configurations on a development host (devenv) and deploy them to target hosts.
-
-#### Build on Development Host (devenv)
+### Building for already existing systems
 
 ```bash
-# On devenv, build the configuration for a target host
-nix build .#nixosConfigurations.rp1.config.system.build.toplevel
-
-# The build output is in ./result
-```
-
-#### Deploy to Target Host
-
-Once built on devenv, push the configuration to the target host and activate it:
-
-```bash
-# Method 1: Using nixos-rebuild with --target-host
-# This builds locally and deploys to the target
-nixos-rebuild switch --flake .#rp1 --target-host root@rp1 --build-host localhost
-
-# Method 2: Copy the closure and activate remotely
-# Build the system
-nix build .#nixosConfigurations.rp1.config.system.build.toplevel
-
-# Copy to target host
-nix copy --to ssh://root@rp1 ./result
-
-# Activate on target host
-ssh root@rp1 "sudo nix-env --profile /nix/var/nix/profiles/system --set $(readlink result) && sudo $(readlink result)/bin/switch-to-configuration switch"
-
-# Method 3: Manual deployment (most control)
-# Build the configuration
-nix build .#nixosConfigurations.rp1.config.system.build.toplevel
-
-# Copy the entire closure to target
-nix-copy-closure --to root@rp1 ./result
-
-# SSH to target and activate
-ssh root@rp1
-sudo nix-env --profile /nix/var/nix/profiles/system --set /nix/store/...-nixos-system-rp1-25.05
-sudo /nix/var/nix/profiles/system/bin/switch-to-configuration switch
-```
-
-#### Quick Rebuild for Active System
-
-If you're already on the target host and it's managed by this flake:
-
-```bash
-# Rebuild and switch (requires the flake to be accessible on the host)
-sudo nixos-rebuild switch --flake .#devenv
-
-# Or point to a remote flake repository
-sudo nixos-rebuild switch --flake github:reinitialized-net/infrastructure#devenv
+  nixos-rebuild switch --flake path:.#configNameHere --sudo --target-host rnetadmin@ipAddressHere --build-host rnetadmin@10.1.200.2
 ```
 
 ### Testing Configurations Before Deployment
@@ -152,27 +101,27 @@ Test configurations before applying them:
 
 ```bash
 # Build without activating
-nix build .#nixosConfigurations.rp1.config.system.build.toplevel
+nix build path:.#nixosConfigurations.rp1.config.system.build.toplevel
 
 # Test on the target (boots into new config, auto-reverts if issues)
-nixos-rebuild test --flake .#rp1 --target-host root@rp1
+nixos-rebuild test --flake path:.#rp1 --target-host root@rp1
 
 # Boot into new config on next reboot (doesn't activate immediately)
-nixos-rebuild boot --flake .#rp1 --target-host root@rp1
+nixos-rebuild boot --flake path:.#rp1 --target-host root@rp1
 ```
 
 ### Building All Outputs
 
 ```bash
 # Build all VMA packages
-nix build .#packages.x86_64-linux.devenv .#packages.x86_64-linux.rp1
+nix build path:.#packages.x86_64-linux.devenv .#packages.x86_64-linux.rp1
 
 # Build all nixosSystem configurations
-nix build .#nixosConfigurations.devenv.config.system.build.toplevel
-nix build .#nixosConfigurations.rp1.config.system.build.toplevel
+nix build path:.#nixosConfigurations.devenv.config.system.build.toplevel
+nix build path:.#nixosConfigurations.rp1.config.system.build.toplevel
 
 # Check all flake outputs
-nix flake show
+nix flake show --flake path:.
 ```
 
 ## Getting Started
