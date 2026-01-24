@@ -159,12 +159,7 @@ in {
         fixed-cidr = lib.mkDefault "172.17.0.0/16";
       };
     };
-
-    # Enable nftables for Docker integration
-    networking.nftables = lib.mkIf cfg.dockerIntegration {
-      enable = true;
-    };
-
+    
     # Create a Docker network that routes through mesh
     systemd.services.docker-meshNetwork = lib.mkIf (cfg.dockerIntegration && config.virtualisation.docker.enable) {
       description = "Create Docker mesh network";
