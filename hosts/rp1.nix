@@ -51,7 +51,6 @@
   systemd.tmpfiles.rules = [
     "d /mnt/containers/nginx/var/lib/acme 0750 root root -"
   ];
-  
   # Configure Nginx Reverse Proxy
   containers.nginx = {
     ephemeral = true;

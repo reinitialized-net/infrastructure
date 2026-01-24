@@ -46,7 +46,6 @@
     meshNetwork = {
       enable = true;
       nodeId = 1;
-      # Peers are automatically populated from meshTopology.nix
     };
   };
   # Install development tools
