@@ -171,25 +171,20 @@ calculate_checksum() {
 export_volume() {
     local volume=$1
     local backup_file=$2
-    local compress_cmd=""
     local compress_ext=""
     
-    # Set compression
+    # Set compression extension
     case $COMPRESS in
         gzip)
-            compress_cmd="@gzip@/bin/gzip"
             compress_ext=".gz"
             ;;
         bzip2)
-            compress_cmd="@bzip2@/bin/bzip2"
             compress_ext=".bz2"
             ;;
         xz)
-            compress_cmd="@xz@/bin/xz"
             compress_ext=".xz"
             ;;
         none)
-            compress_cmd="@coreutils@/bin/cat"
             compress_ext=""
             ;;
         *)
@@ -203,19 +198,31 @@ export_volume() {
     print_info "Exporting volume: $volume"
     print_info "Backup location: $backup_file"
     
-    # Create backup using docker run with volume mount
+    # Create backup using docker run with Alpine's built-in tools
     if [ "$COMPRESS" = "none" ]; then
         $USE_SUDO @docker@/bin/docker run --rm \
             -v "$volume:/volume:ro" \
             -v "$(@coreutils@/bin/dirname "$backup_file"):/backup" \
             alpine \
             tar cf "/backup/$(@coreutils@/bin/basename "$backup_file")" -C /volume .
-    else
+    elif [ "$COMPRESS" = "gzip" ]; then
         $USE_SUDO @docker@/bin/docker run --rm \
             -v "$volume:/volume:ro" \
             -v "$(@coreutils@/bin/dirname "$backup_file"):/backup" \
             alpine \
-            sh -c "tar cf - -C /volume . | $compress_cmd > /backup/$(@coreutils@/bin/basename "$backup_file")"
+            sh -c "tar cf - -C /volume . | gzip > /backup/$(@coreutils@/bin/basename "$backup_file")"
+    elif [ "$COMPRESS" = "bzip2" ]; then
+        $USE_SUDO @docker@/bin/docker run --rm \
+            -v "$volume:/volume:ro" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup" \
+            alpine \
+            sh -c "tar cf - -C /volume . | bzip2 > /backup/$(@coreutils@/bin/basename "$backup_file")"
+    elif [ "$COMPRESS" = "xz" ]; then
+        $USE_SUDO @docker@/bin/docker run --rm \
+            -v "$volume:/volume:ro" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup" \
+            alpine \
+            sh -c "apk add --no-cache xz > /dev/null 2>&1 && tar cf - -C /volume . | xz > /backup/$(@coreutils@/bin/basename "$backup_file")"
     fi
     
     if [ $? -eq 0 ]; then
@@ -268,31 +275,32 @@ import_volume() {
         $USE_SUDO @docker@/bin/docker volume create "$volume"
     fi
     
-    # Detect compression type from extension
-    local decompress_cmd=""
+    # Import backup using Alpine's built-in tools
     if [[ "$backup_file" == *.gz ]]; then
-        decompress_cmd="@gzip@/bin/gunzip"
+        $USE_SUDO @docker@/bin/docker run --rm \
+            -v "$volume:/volume" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup:ro" \
+            alpine \
+            sh -c "gunzip < /backup/$(@coreutils@/bin/basename "$backup_file") | tar xf - -C /volume"
     elif [[ "$backup_file" == *.bz2 ]]; then
-        decompress_cmd="@bzip2@/bin/bunzip2"
+        $USE_SUDO @docker@/bin/docker run --rm \
+            -v "$volume:/volume" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup:ro" \
+            alpine \
+            sh -c "bunzip2 < /backup/$(@coreutils@/bin/basename "$backup_file") | tar xf - -C /volume"
     elif [[ "$backup_file" == *.xz ]]; then
-        decompress_cmd="@xz@/bin/unxz"
+        $USE_SUDO @docker@/bin/docker run --rm \
+            -v "$volume:/volume" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup:ro" \
+            alpine \
+            sh -c "apk add --no-cache xz > /dev/null 2>&1 && unxz < /backup/$(@coreutils@/bin/basename "$backup_file") | tar xf - -C /volume"
     else
-        decompress_cmd="@coreutils@/bin/cat"
-    fi
-    
-    # Import backup
-    if [ "$decompress_cmd" = "@coreutils@/bin/cat" ]; then
+        # Uncompressed tar file
         $USE_SUDO @docker@/bin/docker run --rm \
             -v "$volume:/volume" \
             -v "$(@coreutils@/bin/dirname "$backup_file"):/backup:ro" \
             alpine \
             tar xf "/backup/$(@coreutils@/bin/basename "$backup_file")" -C /volume
-    else
-        $USE_SUDO @docker@/bin/docker run --rm \
-            -v "$volume:/volume" \
-            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup:ro" \
-            alpine \
-            sh -c "$decompress_cmd < /backup/$(@coreutils@/bin/basename "$backup_file") | tar xf - -C /volume"
     fi
     
     if [ $? -eq 0 ]; then
@@ -534,6 +542,7 @@ case $MODE in
         import_volume_name="${DEST_VOLUME_NAME:-$VOLUME_NAME}"
         
         # Get containers using volume if it exists
+        containers=""
         if check_volume_exists "$import_volume_name"; then
             containers=$(get_containers_using_volume "$import_volume_name")
             if [ -n "$containers" ]; then
