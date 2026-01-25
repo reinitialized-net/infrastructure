@@ -155,7 +155,7 @@
             forceSSL = true;
             enableACME = true;
             listenAddresses = [ 
-              "10.1.12.4"
+              "10.1.12.2"
             ];
             
             locations."/" = {
@@ -166,7 +166,7 @@
             forceSSL = true;
             enableACME = true;
             listenAddresses = [ 
-              "10.1.12.4"
+              "10.1.12.3"
             ];
             
             locations."/" = {
