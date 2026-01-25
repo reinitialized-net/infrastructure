@@ -63,7 +63,7 @@
           ];
           modules = [
             inputs.vscodeServer.nixosModules.default
-            "${inputs.self}/modules/profiles/containers.nix"
+            "${inputs.self}/modules/profiles/containers"
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
@@ -90,7 +90,7 @@
           ];
           modules = [
             inputs.vscodeServer.nixosModules.default
-            "${inputs.self}/modules/profiles/containers.nix"
+            "${inputs.self}/modules/profiles/containers"
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
@@ -118,7 +118,7 @@
           ];
           modules = [
             inputs.vscodeServer.nixosModules.default
-            "${inputs.self}/modules/profiles/containers.nix"
+            "${inputs.self}/modules/profiles/containers"
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };

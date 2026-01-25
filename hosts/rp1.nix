@@ -67,6 +67,11 @@
     config = { lib, ... }: {
       system.stateVersion = lib.mkDefault defaultStateVersion;
       
+      # Ensure nginx user can access ACME files
+      users.users.nginx = {
+        extraGroups = [ "acme" ];
+      };
+      
       # Enable ACME for automatic SSL certificates
       security.acme = {
         acceptTerms = true;
