@@ -114,8 +114,8 @@ in {
     # Main configuration
     (lib.mkIf cfg.enable (lib.mkMerge [
     {
-      # Automatically configure firewall whitelist for mesh peers
-      networking.firewall.whitelist = let
+      # Automatically configure firewall allowlist for mesh peers
+      networking.firewall.allowlist = let
         # Determine final peer list (same logic as wireguard config)
         finalPeers = if cfg.autoPeers && cfg.peers == []
                      then meshTopology.getPeersForNode cfg.nodeId

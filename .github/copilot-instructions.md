@@ -32,7 +32,7 @@ devenv = library.makeDualExport "devenv" {
 - **standard profile** (`modules/profiles/standard.nix`) is auto-included in ALL systems via `makeConfiguration`
 - Profile modules are in `modules/profiles/`:
   - `containers/` (directory with default.nix) - Docker + mesh integration
-  - `firewall.nix` - IP whitelisting
+  - `firewall.nix` - IP allowlist/denylist
   - `meshNetwork/` (directory) - WireGuard mesh with auto-peer discovery
   - `mountData.nix` - Second disk mounting
   - `secrets.nix` - Declarative secrets
@@ -77,7 +77,7 @@ config.secrets.meshNetwork.file
 - `useDHCP = false` at top level, enable per-interface via systemd.network.networks
 - Mesh networking uses WireGuard with Docker bridge integration
 - **Auto-peer discovery**: Mesh nodes are defined once in `meshTopology.nix`, peers auto-discovered via `autoPeers = true`
-- Firewall whitelist system for source IP-based rules (see `modules/profiles/firewall.nix`)
+- Firewall allowlist/denylist system for source IP-based rules (see `modules/profiles/firewall.nix`)
 
 ### Mesh Network Auto-Configuration
 
@@ -148,14 +148,21 @@ services.meshNetwork = {
 };
 ```
 
-### Firewall Whitelisting
+### Firewall Allowlist/Denylist
 
 ```nix
-networking.firewall.whitelist = [
+networking.firewall.allowlist = [
   {
     port = 443;
     protocol = "tcp";
     source = [ "10.0.0.0/8" "192.168.1.0/24" ];
+  }
+];
+networking.firewall.denylist = [
+  {
+    port = 22;
+    protocol = "tcp";
+    source = [ "192.168.1.100/32" ];
   }
 ];
 ```

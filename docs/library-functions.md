@@ -456,7 +456,7 @@ This creates a VM with:
       ./app-configuration.nix
       {
         # Inline configuration
-        networking.firewall.whitelist = [
+        networking.firewall.allowlist = [
           {
             port = 443;
             protocol = "tcp";

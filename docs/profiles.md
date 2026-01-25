@@ -102,7 +102,7 @@ WireGuard-based mesh networking. Provides:
 
 **Path:** `modules/profiles/firewall.nix`
 
-Advanced firewall with source IP whitelisting. Provides:
+Advanced firewall with source IP allowlist/denylist. Provides:
 - Per-port source IP restrictions
 - TCP/UDP/both protocol support
 - IPv4/IPv6 support
@@ -114,7 +114,7 @@ Advanced firewall with source IP whitelisting. Provides:
 **Usage:**
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 443;
       protocol = "tcp";
@@ -193,7 +193,7 @@ Secondary disk management. Provides:
   
   services.nginx.enable = true;
   
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     { port = 80; protocol = "tcp"; source = [ "0.0.0.0/0" ]; }
     { port = 443; protocol = "tcp"; source = [ "0.0.0.0/0" ]; }
   ];
@@ -213,7 +213,7 @@ Secondary disk management. Provides:
     dataDir = "/mnt/data/postgres";
   };
   
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 5432;
       protocol = "tcp";
@@ -249,7 +249,7 @@ Secondary disk management. Provides:
     };
   };
   
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 443;
       protocol = "tcp";

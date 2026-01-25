@@ -51,7 +51,7 @@ A basic web server VM with nginx.
               };
             };
             
-            networking.firewall.whitelist = [
+            networking.firewall.allowlist = [
               {
                 port = 80;
                 protocol = "tcp";
@@ -148,7 +148,7 @@ PostgreSQL database with a large data disk.
               '';
             };
             
-            networking.firewall.whitelist = [
+            networking.firewall.allowlist = [
               {
                 port = 5432;
                 protocol = "tcp";
@@ -396,7 +396,7 @@ Application server with strict firewall rules.
               enable = true;
               
               # Only allow specific sources
-              whitelist = [
+              allowlist = [
                 # HTTPS from CDN/load balancer only
                 {
                   port = 443;
@@ -612,7 +612,7 @@ my-infrastructure/
     };
   };
   
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     { port = 80; protocol = "tcp"; source = [ "0.0.0.0/0" ]; }
     { port = 443; protocol = "tcp"; source = [ "0.0.0.0/0" ]; }
   ];
@@ -656,7 +656,7 @@ my-infrastructure/
     group = "api";
   };
   
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 8080;
       protocol = "tcp";
@@ -699,7 +699,7 @@ my-infrastructure/
     }];
   };
   
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 5432;
       protocol = "tcp";
@@ -747,7 +747,7 @@ my-infrastructure/
     };
   };
   
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 3000;
       protocol = "tcp";

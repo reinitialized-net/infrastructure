@@ -21,7 +21,7 @@ The flake exposes several primary library functions:
 Three main custom modules are provided:
 
 - **`secrets`** - Declarative secrets management system
-- **`networking.firewall.whitelist`** - Source IP-based firewall rules
+- **`networking.firewall.allowlist`** - Source IP-based firewall rules
 - **`services.meshNetwork`** - WireGuard mesh networking for Docker hosts
 
 ### 3. Profiles
@@ -32,7 +32,7 @@ Pre-configured system profiles for common use cases:
 - **containers** - Docker with mesh networking support
 - **meshNetwork** - WireGuard mesh network with auto-peer discovery from centralized topology
 - **mountData** - Data partition mounting configuration
-- **firewall** - Advanced firewall with whitelist support
+- **firewall** - Advanced firewall with allowlist support
 - **secrets** - Declarative secrets management
 
 ### 4. Hardware Modules
@@ -62,7 +62,7 @@ Modules are designed to be composable and independent:
   
   # Enable features as needed
   services.meshNetwork.enable = true;
-  networking.firewall.whitelist = [ ... ];
+  networking.firewall.allowlist = [ ... ];
 }
 ```
 

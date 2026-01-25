@@ -1,4 +1,4 @@
-# Firewall Whitelist Module
+# Firewall Allowlist/Denylist Module
 
 **Module Path:** `modules/profiles/firewall.nix`
 
@@ -6,7 +6,7 @@
 
 ## Overview
 
-Extends the standard NixOS firewall with granular source IP-based whitelisting. Allows fine-grained control over which source IPs can access specific ports, supporting both nftables and iptables backends.
+Extends the standard NixOS firewall with granular source IP-based allowlisting. Allows fine-grained control over which source IPs can access specific ports, supporting both nftables and iptables backends.
 
 ## Features
 
@@ -17,7 +17,7 @@ Extends the standard NixOS firewall with granular source IP-based whitelisting. 
 - Automatic backend detection (nftables or iptables)
 - Complements existing `networking.firewall` options
 
-## Option: `networking.firewall.whitelist`
+## Option: `networking.firewall.allowlist`
 
 ### Type
 
@@ -25,7 +25,7 @@ Extends the standard NixOS firewall with granular source IP-based whitelisting. 
 listOf (submodule)
 ```
 
-A list of whitelist entries, each specifying a port and allowed source IPs.
+A list of allowlist entries, each specifying a port and allowed source IPs.
 
 ### Submodule Options
 
@@ -89,7 +89,7 @@ Allow HTTPS from anywhere:
 {
   networking.firewall = {
     enable = true;
-    whitelist = [
+    allowlist = [
       {
         port = 443;
         protocol = "tcp";
@@ -107,7 +107,7 @@ Allow SSH only from trusted networks:
 
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 22;
       protocol = "tcp";
@@ -127,7 +127,7 @@ PostgreSQL accessible only from application servers:
 
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 5432;
       protocol = "tcp";
@@ -147,7 +147,7 @@ WireGuard VPN from specific endpoints:
 
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 51820;
       protocol = "udp";
@@ -166,7 +166,7 @@ DNS server allowing both protocols:
 
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 53;
       protocol = "tcp_udp";
@@ -182,7 +182,7 @@ Web server with IPv6:
 
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 443;
       protocol = "tcp";
@@ -199,7 +199,7 @@ Web server with IPv6:
 {
   networking.firewall = {
     enable = true;
-    whitelist = [
+    allowlist = [
       # HTTPS - public
       {
         port = 443;
@@ -263,7 +263,7 @@ Web server with IPv6:
 
 ### Mixed with Standard Firewall Rules
 
-The whitelist works alongside standard firewall configuration:
+The allowlist works alongside standard firewall configuration:
 
 ```nix
 {
@@ -273,8 +273,8 @@ The whitelist works alongside standard firewall configuration:
     # Standard allowedTCPPorts still works
     allowedTCPPorts = [ 80 ];  # No source restriction
     
-    # Whitelist for source-restricted ports
-    whitelist = [
+    # Allowlist for source-restricted ports
+    allowlist = [
       {
         port = 443;
         source = [ "10.0.0.0/8" ];  # Source restriction
@@ -296,7 +296,7 @@ When using nftables (recommended):
       enable = true;
       package = pkgs.nftables;
       
-      whitelist = [
+      allowlist = [
         {
           port = 443;
           protocol = "tcp";
@@ -320,7 +320,7 @@ Falls back to iptables automatically:
       enable = true;
       package = pkgs.iptables;
       
-      whitelist = [
+      allowlist = [
         {
           port = 443;
           protocol = "tcp";
@@ -361,7 +361,7 @@ iptables -A INPUT -4 -p tcp -s 10.0.0.0/8 --dport 443 -j ACCEPT
 
 ### Rule Priority
 
-1. Whitelist rules are processed as part of the firewall input chain
+1. Allowlist rules are processed as part of the firewall input chain
 2. They are evaluated before the default drop rules
 3. Multiple source IPs for the same port create multiple rules
 
@@ -385,7 +385,7 @@ Always restrict administrative ports:
 
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     # Never allow SSH from everywhere
     {
       port = 22;
@@ -401,7 +401,7 @@ Add comments to explain source restrictions:
 
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 3306;
       protocol = "tcp";
@@ -440,7 +440,7 @@ Combine with mesh networking for secure internal communication:
     trustedInterfaces = [ "wg-mesh" ];
     
     # External services restricted
-    whitelist = [
+    allowlist = [
       {
         port = 443;
         source = [ "0.0.0.0/0" ];  # Public
@@ -495,5 +495,5 @@ curl https://your-server  # Should timeout/refuse
 ## See Also
 
 - [NixOS Firewall Documentation](https://nixos.org/manual/nixos/stable/#sec-firewall)
-- [Mesh Network Module](meshNetwork.md) - Uses firewall whitelist
+- [Mesh Network Module](meshNetwork.md) - Uses firewall allowlist
 - [Examples](../examples.md) - Complete firewall configurations

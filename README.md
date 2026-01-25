@@ -12,7 +12,7 @@ This documentation covers custom options and features provided by this NixOS inf
    - [makeUser](docs/library-functions.md#makeuser)
 3. [Custom Modules](docs/modules/README.md)
    - [Secrets Management](docs/modules/secrets.md)
-   - [Firewall Whitelist](docs/modules/firewall.md)
+   - [Firewall Allowlist/Denylist](docs/modules/firewall.md)
    - [Mesh Network](docs/modules/meshNetwork.md)
    - [Containers Profile](docs/modules/containers.md)
 4. [Profiles](docs/profiles.md)
@@ -27,7 +27,7 @@ This flake provides:
 - **User Management**: Create users with properly configured bind-mounted home directories
 - **Secrets Management System**: Centralized, declarative secret configuration
 - **Mesh Network**: WireGuard-based mesh networking with auto-peer discovery
-- **Custom Firewall Rules**: Advanced source IP-based port whitelisting
+- **Custom Firewall Rules**: Advanced source IP-based port allowlist/denylist
 - **Standard Profiles**: Pre-configured system profiles for common use cases
 
 ## Build Instructions

@@ -11,8 +11,8 @@ This directory contains documentation for all custom NixOS modules provided by t
    - Key-value pairs and file references
    - Integration with external secret managers
 
-2. **[Firewall Whitelist](firewall.md)** - `networking.firewall.whitelist`
-   - Source IP-based port whitelisting
+2. **[Firewall Allowlist/Denylist](firewall.md)** - `networking.firewall.allowlist`
+   - Source IP-based port allowlisting
    - Support for both nftables and iptables
    - IPv4/IPv6 support
 
@@ -58,7 +58,7 @@ All custom modules are automatically available when using `nixosModules.default`
         # Use them in your configuration
         {
           secrets.my-app.keys.apiKey = "secret";
-          networking.firewall.whitelist = [ ... ];
+          networking.firewall.allowlist = [ ... ];
           services.meshNetwork.enable = true;
         }
       ];
@@ -74,7 +74,7 @@ All custom modules are automatically available when using `nixosModules.default`
 Modules that provide core infrastructure capabilities:
 
 - **secrets** - Secret management
-- **networking.firewall.whitelist** - Advanced firewall rules
+- **networking.firewall.allowlist** - Advanced firewall rules
 - **services.meshNetwork** - Mesh networking
 
 ### Profile Modules
@@ -114,6 +114,6 @@ secrets
 Read detailed documentation for each module:
 
 - [Secrets Management](secrets.md)
-- [Firewall Whitelist](firewall.md)
+- [Firewall Allowlist/Denylist](firewall.md)
 - [Mesh Network](meshNetwork.md)
 - [Containers Profile](containers.md)

@@ -25,7 +25,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 #### Infrastructure Modules
 
 - **[Secrets Management](modules/secrets.md)** - `secrets.*` - Centralized secrets configuration
-- **[Firewall Whitelist](modules/firewall.md)** - `networking.firewall.whitelist` - Source IP-based firewall rules
+- **[Firewall Allowlist/Denylist](modules/firewall.md)** - `networking.firewall.allowlist` - Source IP-based firewall rules
 - **[Mesh Network](modules/meshNetwork.md)** - `services.meshNetwork` - WireGuard mesh with auto-peer discovery
 
 #### Profile Modules
@@ -64,7 +64,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 4. [Examples → Multi-Host Docker Cluster](examples.md#multi-host-docker-cluster)
 
 **Security Configuration:**
-1. [Firewall Whitelist](modules/firewall.md)
+1. [Firewall Allowlist/Denylist](modules/firewall.md)
 2. [Secrets Management](modules/secrets.md)
 3. [Examples → Secure Application](examples.md#secure-application-with-firewall)
 
@@ -84,7 +84,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 
 **NixOS Options:**
 - [secrets.*](modules/secrets.md)
-- [networking.firewall.whitelist](modules/firewall.md)
+- [networking.firewall.allowlist](modules/firewall.md)
 - [services.meshNetwork.*](modules/meshNetwork.md)
 
 **System Profiles:**
@@ -111,7 +111,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 | Module | Path | Auto-Import |
 |--------|------|-------------|
 | Secrets | `secrets.*` | Yes |
-| Firewall | `networking.firewall.whitelist` | Yes |
+| Firewall | `networking.firewall.allowlist` | Yes |
 | Mesh Network | `services.meshNetwork` | Yes (needs enable) |
 | Standard | Profile | Yes |
 | Containers | Profile | No |
@@ -156,7 +156,7 @@ packages.x86_64-linux.docker = generateVMAImage "docker" {
 **With Firewall:**
 ```nix
 {
-  networking.firewall.whitelist = [
+  networking.firewall.allowlist = [
     {
       port = 443;
       protocol = "tcp";
