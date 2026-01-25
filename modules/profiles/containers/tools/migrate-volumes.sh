@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Docker Volume Migration Script
 # Migrates a Docker volume from source host to destination host
@@ -54,11 +54,11 @@ print_error() {
 check_sudo() {
     if [ -z "$USE_SUDO" ]; then
         # Check if we can access docker without sudo
-        if docker ps &>/dev/null; then
+        if @docker@/bin/docker ps &>/dev/null; then
             USE_SUDO=""
             print_info "Docker accessible without sudo"
         else
-            USE_SUDO="sudo"
+            USE_SUDO="@sudo@/bin/sudo"
             print_info "Using sudo for Docker operations"
         fi
     fi
@@ -111,7 +111,7 @@ EOF
 # Function to check if volume exists
 check_volume_exists() {
     local volume=$1
-    if ! $USE_SUDO docker volume inspect "$volume" &>/dev/null; then
+    if ! $USE_SUDO @docker@/bin/docker volume inspect "$volume" &>/dev/null; then
         return 1
     fi
     return 0
@@ -120,14 +120,14 @@ check_volume_exists() {
 # Function to get containers using a volume
 get_containers_using_volume() {
     local volume=$1
-    $USE_SUDO docker ps -a --filter volume="$volume" --format '{{.Names}}' | tr '\n' ' '
+    $USE_SUDO @docker@/bin/docker ps -a --filter volume="$volume" --format '{{.Names}}' | @coreutils@/bin/tr '\n' ' '
 }
 
 # Function to stop container
 stop_container() {
     local container=$1
     print_info "Stopping container: $container"
-    if $USE_SUDO docker stop "$container" &>/dev/null; then
+    if $USE_SUDO @docker@/bin/docker stop "$container" &>/dev/null; then
         print_success "Container stopped: $container"
         return 0
     else
@@ -140,7 +140,7 @@ stop_container() {
 start_container() {
     local container=$1
     print_info "Starting container: $container"
-    if $USE_SUDO docker start "$container" &>/dev/null; then
+    if $USE_SUDO @docker@/bin/docker start "$container" &>/dev/null; then
         print_success "Container started: $container"
         return 0
     else
@@ -152,19 +152,19 @@ start_container() {
 # Function to get volume mountpoint
 get_volume_mountpoint() {
     local volume=$1
-    $USE_SUDO docker volume inspect "$volume" --format '{{.Mountpoint}}'
+    $USE_SUDO @docker@/bin/docker volume inspect "$volume" --format '{{.Mountpoint}}'
 }
 
 # Function to get volume size
 get_volume_size() {
     local mountpoint=$1
-    $USE_SUDO du -sh "$mountpoint" 2>/dev/null | awk '{print $1}' || echo "unknown"
+    $USE_SUDO @coreutils@/bin/du -sh "$mountpoint" 2>/dev/null | @gawk@/bin/awk '{print $1}' || @coreutils@/bin/echo "unknown"
 }
 
 # Function to calculate checksum
 calculate_checksum() {
     local file=$1
-    sha256sum "$file" | awk '{print $1}'
+    @coreutils@/bin/sha256sum "$file" | @gawk@/bin/awk '{print $1}'
 }
 
 # Function to export volume
@@ -177,19 +177,19 @@ export_volume() {
     # Set compression
     case $COMPRESS in
         gzip)
-            compress_cmd="gzip"
+            compress_cmd="@gzip@/bin/gzip"
             compress_ext=".gz"
             ;;
         bzip2)
-            compress_cmd="bzip2"
+            compress_cmd="@bzip2@/bin/bzip2"
             compress_ext=".bz2"
             ;;
         xz)
-            compress_cmd="xz"
+            compress_cmd="@xz@/bin/xz"
             compress_ext=".xz"
             ;;
         none)
-            compress_cmd="cat"
+            compress_cmd="@coreutils@/bin/cat"
             compress_ext=""
             ;;
         *)
@@ -205,17 +205,17 @@ export_volume() {
     
     # Create backup using docker run with volume mount
     if [ "$COMPRESS" = "none" ]; then
-        $USE_SUDO docker run --rm \
+        $USE_SUDO @docker@/bin/docker run --rm \
             -v "$volume:/volume:ro" \
-            -v "$(dirname "$backup_file"):/backup" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup" \
             alpine \
-            tar cf "/backup/$(basename "$backup_file")" -C /volume .
+            tar cf "/backup/$(@coreutils@/bin/basename "$backup_file")" -C /volume .
     else
-        $USE_SUDO docker run --rm \
+        $USE_SUDO @docker@/bin/docker run --rm \
             -v "$volume:/volume:ro" \
-            -v "$(dirname "$backup_file"):/backup" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup" \
             alpine \
-            sh -c "tar cf - -C /volume . | $compress_cmd > /backup/$(basename "$backup_file")"
+            sh -c "tar cf - -C /volume . | $compress_cmd > /backup/$(@coreutils@/bin/basename "$backup_file")"
     fi
     
     if [ $? -eq 0 ]; then
@@ -224,12 +224,12 @@ export_volume() {
         # Calculate and save checksum
         if [ "$VERIFY_CHECKSUM" = true ]; then
             local checksum=$(calculate_checksum "$backup_file")
-            echo "$checksum" > "${backup_file}.sha256"
+            @coreutils@/bin/echo "$checksum" > "${backup_file}.sha256"
             print_info "Checksum: $checksum"
         fi
         
         # Show backup file info
-        local size=$(du -h "$backup_file" | awk '{print $1}')
+        local size=$(@coreutils@/bin/du -h "$backup_file" | @gawk@/bin/awk '{print $1}')
         print_info "Backup size: $size"
         
         return 0
@@ -250,7 +250,7 @@ import_volume() {
     # Verify checksum if available
     if [ "$VERIFY_CHECKSUM" = true ] && [ -f "${backup_file}.sha256" ]; then
         print_info "Verifying checksum..."
-        local expected=$(cat "${backup_file}.sha256")
+        local expected=$(@coreutils@/bin/cat "${backup_file}.sha256")
         local actual=$(calculate_checksum "$backup_file")
         
         if [ "$expected" != "$actual" ]; then
@@ -265,34 +265,34 @@ import_volume() {
     # Create volume if it doesn't exist
     if ! check_volume_exists "$volume"; then
         print_info "Creating volume: $volume"
-        $USE_SUDO docker volume create "$volume"
+        $USE_SUDO @docker@/bin/docker volume create "$volume"
     fi
     
     # Detect compression type from extension
     local decompress_cmd=""
     if [[ "$backup_file" == *.gz ]]; then
-        decompress_cmd="gunzip"
+        decompress_cmd="@gzip@/bin/gunzip"
     elif [[ "$backup_file" == *.bz2 ]]; then
-        decompress_cmd="bunzip2"
+        decompress_cmd="@bzip2@/bin/bunzip2"
     elif [[ "$backup_file" == *.xz ]]; then
-        decompress_cmd="unxz"
+        decompress_cmd="@xz@/bin/unxz"
     else
-        decompress_cmd="cat"
+        decompress_cmd="@coreutils@/bin/cat"
     fi
     
     # Import backup
-    if [ "$decompress_cmd" = "cat" ]; then
-        $USE_SUDO docker run --rm \
+    if [ "$decompress_cmd" = "@coreutils@/bin/cat" ]; then
+        $USE_SUDO @docker@/bin/docker run --rm \
             -v "$volume:/volume" \
-            -v "$(dirname "$backup_file"):/backup:ro" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup:ro" \
             alpine \
-            tar xf "/backup/$(basename "$backup_file")" -C /volume
+            tar xf "/backup/$(@coreutils@/bin/basename "$backup_file")" -C /volume
     else
-        $USE_SUDO docker run --rm \
+        $USE_SUDO @docker@/bin/docker run --rm \
             -v "$volume:/volume" \
-            -v "$(dirname "$backup_file"):/backup:ro" \
+            -v "$(@coreutils@/bin/dirname "$backup_file"):/backup:ro" \
             alpine \
-            sh -c "$decompress_cmd < /backup/$(basename "$backup_file") | tar xf - -C /volume"
+            sh -c "$decompress_cmd < /backup/$(@coreutils@/bin/basename "$backup_file") | tar xf - -C /volume"
     fi
     
     if [ $? -eq 0 ]; then
@@ -321,7 +321,7 @@ transfer_volume() {
     
     # First, export the volume
     local backup_file="${BACKUP_DIR}/${volume}.tar"
-    mkdir -p "$BACKUP_DIR"
+    @coreutils@/bin/mkdir -p "$BACKUP_DIR"
     
     if ! export_volume "$volume" "$backup_file"; then
         return 1
@@ -335,55 +335,55 @@ transfer_volume() {
         xz) compress_ext=".xz" ;;
     esac
     backup_file="${backup_file}${compress_ext}"
-    local backup_filename=$(basename "$backup_file")
+    local backup_filename=$(@coreutils@/bin/basename "$backup_file")
     
     # Transfer to remote host
     print_info "Transferring backup to remote host..."
     
     # Create remote directory (try with sudo first, then without)
-    ssh -p "$ssh_port" "$remote" "sudo mkdir -p $remote_dir && sudo chmod 755 $remote_dir" 2>/dev/null || \
-        ssh -p "$ssh_port" "$remote" "mkdir -p $remote_dir" || {
+    @openssh@/bin/ssh -p "$ssh_port" "$remote" "sudo mkdir -p $remote_dir && sudo chmod 755 $remote_dir" 2>/dev/null || \
+        @openssh@/bin/ssh -p "$ssh_port" "$remote" "mkdir -p $remote_dir" || {
             print_error "Failed to create remote directory"
             return 1
         }
     
     # Transfer backup file to temporary location first
     local temp_dir="/tmp/volume-migration-$$"
-    ssh -p "$ssh_port" "$remote" "mkdir -p $temp_dir" || {
+    @openssh@/bin/ssh -p "$ssh_port" "$remote" "mkdir -p $temp_dir" || {
         print_error "Failed to create temporary directory on remote host"
         return 1
     }
     
-    scp -P "$ssh_port" "$backup_file" "${remote}:${temp_dir}/${backup_filename}" || {
+    @openssh@/bin/scp -P "$ssh_port" "$backup_file" "${remote}:${temp_dir}/${backup_filename}" || {
         print_error "Failed to transfer backup file"
-        ssh -p "$ssh_port" "$remote" "rm -rf $temp_dir" 2>/dev/null
+        @openssh@/bin/ssh -p "$ssh_port" "$remote" "rm -rf $temp_dir" 2>/dev/null
         return 1
     }
     
     # Transfer checksum if exists
     if [ -f "${backup_file}.sha256" ]; then
-        scp -P "$ssh_port" "${backup_file}.sha256" "${remote}:${temp_dir}/${backup_filename}.sha256" || {
+        @openssh@/bin/scp -P "$ssh_port" "${backup_file}.sha256" "${remote}:${temp_dir}/${backup_filename}.sha256" || {
             print_warning "Failed to transfer checksum file"
         }
     fi
     
     # Move files to final destination with sudo (try sudo first, then without)
     print_info "Moving files to final destination with sudo..."
-    ssh -p "$ssh_port" "$remote" "sudo mv $temp_dir/${backup_filename} ${remote_dir}/ && sudo chmod 644 ${remote_dir}/${backup_filename}" 2>/dev/null || \
-        ssh -p "$ssh_port" "$remote" "mv $temp_dir/${backup_filename} ${remote_dir}/" || {
+    @openssh@/bin/ssh -p "$ssh_port" "$remote" "sudo mv $temp_dir/${backup_filename} ${remote_dir}/ && sudo chmod 644 ${remote_dir}/${backup_filename}" 2>/dev/null || \
+        @openssh@/bin/ssh -p "$ssh_port" "$remote" "mv $temp_dir/${backup_filename} ${remote_dir}/" || {
             print_error "Failed to move backup file to destination"
-            ssh -p "$ssh_port" "$remote" "rm -rf $temp_dir" 2>/dev/null
+            @openssh@/bin/ssh -p "$ssh_port" "$remote" "rm -rf $temp_dir" 2>/dev/null
             return 1
         }
     
     # Move checksum file if exists
     if [ -f "${backup_file}.sha256" ]; then
-        ssh -p "$ssh_port" "$remote" "sudo mv $temp_dir/${backup_filename}.sha256 ${remote_dir}/ && sudo chmod 644 ${remote_dir}/${backup_filename}.sha256" 2>/dev/null || \
-            ssh -p "$ssh_port" "$remote" "mv $temp_dir/${backup_filename}.sha256 ${remote_dir}/" 2>/dev/null
+        @openssh@/bin/ssh -p "$ssh_port" "$remote" "sudo mv $temp_dir/${backup_filename}.sha256 ${remote_dir}/ && sudo chmod 644 ${remote_dir}/${backup_filename}.sha256" 2>/dev/null || \
+            @openssh@/bin/ssh -p "$ssh_port" "$remote" "mv $temp_dir/${backup_filename}.sha256 ${remote_dir}/" 2>/dev/null
     fi
     
     # Clean up temporary directory
-    ssh -p "$ssh_port" "$remote" "rm -rf $temp_dir" 2>/dev/null
+    @openssh@/bin/ssh -p "$ssh_port" "$remote" "rm -rf $temp_dir" 2>/dev/null
     
     print_success "Transfer completed"
     print_info "To import on remote host, run:"
@@ -495,7 +495,7 @@ case $MODE in
         stopped_containers=""
         if [ -n "$containers_to_stop" ] && [ "$STOP_CONTAINERS" = true ]; then
             for container in $containers_to_stop; do
-                if $USE_SUDO docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+                if $USE_SUDO @docker@/bin/docker ps --format '{{.Names}}' | @gnugrep@/bin/grep -q "^${container}$"; then
                     if stop_container "$container"; then
                         stopped_containers="$stopped_containers $container"
                     fi
@@ -506,7 +506,7 @@ case $MODE in
         fi
         
         # Create backup directory
-        mkdir -p "$BACKUP_DIR"
+        @coreutils@/bin/mkdir -p "$BACKUP_DIR"
         
         # Export volume
         backup_file="${BACKUP_DIR}/${VOLUME_NAME}.tar"
@@ -555,7 +555,7 @@ case $MODE in
         stopped_containers=""
         if [ -n "$containers_to_stop" ] && [ "$STOP_CONTAINERS" = true ]; then
             for container in $containers_to_stop; do
-                if $USE_SUDO docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+                if $USE_SUDO @docker@/bin/docker ps --format '{{.Names}}' | @gnugrep@/bin/grep -q "^${container}$"; then
                     if stop_container "$container"; then
                         stopped_containers="$stopped_containers $container"
                     fi
@@ -608,7 +608,7 @@ case $MODE in
         stopped_containers=""
         if [ -n "$containers_to_stop" ] && [ "$STOP_CONTAINERS" = true ]; then
             for container in $containers_to_stop; do
-                if $USE_SUDO docker ps --format '{{.Names}}' | grep -q "^${container}$"; then
+                if $USE_SUDO @docker@/bin/docker ps --format '{{.Names}}' | @gnugrep@/bin/grep -q "^${container}$"; then
                     if stop_container "$container"; then
                         stopped_containers="$stopped_containers $container"
                     fi

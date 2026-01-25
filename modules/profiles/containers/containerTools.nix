@@ -3,22 +3,33 @@
   pkgs,
   ...
 }: let
-  # Helper function to create a script from a file (no substitution needed for bash-only scripts)
-  makeToolScript = name: scriptPath:
-    pkgs.writeScriptBin name (builtins.readFile scriptPath);
-  
-  # Load all .sh files from tools directory
-  toolsDir = ./tools;
-  scriptFiles = builtins.attrNames (builtins.readDir toolsDir);
-  
-  # Filter for .sh files and create script derivations
-  toolScripts = map (filename:
+  # Helper function to create a script with package substitution
+  makeToolScript = name: scriptPath: substitutions:
     let
-      scriptName = lib.removeSuffix ".sh" filename;
-      scriptPath = "${toolsDir}/${filename}";
+      # Read the script file
+      scriptContent = builtins.readFile scriptPath;
+      # Replace @package@ style placeholders with actual paths
+      replacedContent = lib.replaceStrings
+        (map (key: "@${key}@") (builtins.attrNames substitutions))
+        (builtins.attrValues substitutions)
+        scriptContent;
     in
-      makeToolScript scriptName scriptPath
-  ) (builtins.filter (name: lib.hasSuffix ".sh" name) scriptFiles);
+      pkgs.writeScriptBin name replacedContent;
+  
+  # Load and process each tool script with required package substitutions
+  toolScripts = with pkgs; [
+    (makeToolScript "migrate-volumes" ./tools/migrate-volumes.sh {
+      docker = "${docker}";
+      sudo = "${sudo}";
+      coreutils = "${coreutils}";
+      gawk = "${gawk}";
+      gzip = "${gzip}";
+      bzip2 = "${bzip2}";
+      xz = "${xz}";
+      openssh = "${openssh}";
+      gnugrep = "${gnugrep}";
+    })
+  ];
 in {
   environment.systemPackages = toolScripts;
 }
