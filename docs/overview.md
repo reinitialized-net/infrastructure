@@ -11,10 +11,10 @@ This NixOS infrastructure flake is designed to simplify the deployment of NixOS-
 The flake exposes several primary library functions:
 
 - **`makeDualExport`** - Creates both VMA package and nixosSystem from single definition (recommended)
-- **`generateVMAImage`** - Generates Proxmox VMA (Vzdump) format images suitable for direct import into Proxmox VE
-- **`makeConfiguration`** - Creates standard NixOS configurations with sensible defaults
 - **`makeUser`** - Creates users with bind-mounted home directories from /mnt/data
 - **`forAllSystems`** - Helper for multi-architecture support
+- **`generateVMAImage`** - Generates Proxmox VMA (Vzdump) format images
+- **`makeConfiguration`** - Creates standard NixOS configurations
 
 ### 2. NixOS Modules
 
@@ -28,11 +28,12 @@ Three main custom modules are provided:
 
 Pre-configured system profiles for common use cases:
 
-- **standard** - Base configuration with SSH, sudo-rs, and auto-updates
+- **standard** - Base configuration with SSH, sudo-rs, and basic tools (auto-included)
 - **containers** - Docker with mesh networking support
-- **meshNetwork** - WireGuard mesh network for distributed systems
+- **meshNetwork** - WireGuard mesh network with auto-peer discovery from centralized topology
 - **mountData** - Data partition mounting configuration
 - **firewall** - Advanced firewall with whitelist support
+- **secrets** - Declarative secrets management
 
 ### 4. Hardware Modules
 
@@ -78,7 +79,7 @@ The VMA image generation process creates ready-to-import Proxmox backups:
 
 ### Using the Dual-Export Pattern (Recommended)
 
-The dual-export pattern allows you to define a system once and export both a VMA image and nixosSystem configuration:
+The dual-export pattern is the PRIMARY way to define systems. It allows you to define a system once and export both a VMA image and nixosSystem configuration, eliminating duplication and ensuring consistency.
 
 ```nix
 {
@@ -86,7 +87,7 @@ The dual-export pattern allows you to define a system once and export both a VMA
     let
       library = import ./library { inherit self; };
       
-      # Define systems once
+      # Define systems once using makeDualExport
       dualSystems = {
         myapp = library.makeDualExport "myapp" {
           system = "x86_64-linux";
@@ -102,21 +103,23 @@ The dual-export pattern allows you to define a system once and export both a VMA
             { bridge = "vmbr0"; vlan = 100; firewall = true; }
           ];
           
-          modules = [ ./myapp-config.nix ];
+          modules = [ ./hosts/myapp.nix ];
         };
       };
     in
     {
-      # Export both outputs
+      # Export both outputs from the dual system
       nixosConfigurations.myapp = dualSystems.myapp.nixosSystem;
       packages.x86_64-linux.myapp = dualSystems.myapp.package;
     };
 }
 ```
 
-This pattern eliminates duplication and ensures consistency between your VMA images and nixosSystem configurations.
+This pattern ensures that VMA images and nixosSystem configurations stay in sync.
 
 ### Building a VM Image
+
+**Note:** Use `makeDualExport` instead of calling `generateVMAImage` directly for new systems.
 
 ```nix
 packages.x86_64-linux.my-app = generateVMAImage "my-app" {
@@ -169,12 +172,20 @@ services.myapp.apiKey = config.secrets.my-app.keys.apiKey;
 
 ### Mesh Networking
 
+The mesh network module supports auto-peer discovery from a centralized topology:
+
 ```nix
+# In modules/profiles/meshNetwork/meshTopology.nix, define all nodes once
+nodes = {
+  node1 = { nodeId = 1; hostname = "node1"; endpoint = "10.1.1.1:51820"; publicKey = "..."; };
+  node2 = { nodeId = 2; hostname = "node2"; endpoint = "10.1.1.2:51820"; publicKey = "..."; };
+  node3 = { nodeId = 3; hostname = "node3"; endpoint = "10.1.1.3:51820"; publicKey = "..."; };
+};
+
+# In your host config, just set nodeId - peers are auto-discovered
 services.meshNetwork = {
   enable = true;
-  nodeId = 1;
-  privateKeyFile = config.secrets.meshNetwork.file;
-  peers = config.secrets.meshNetwork.keys.peers;
+  nodeId = 1;  # Automatically discovers node2 and node3 as peers
 };
 ```
 
@@ -194,10 +205,10 @@ infrastructure/
 │   │   └── qemu.nix       # QEMU/KVM hardware config
 │   ├── profiles/          # System profiles
 │   │   ├── standard.nix
-│   │   ├── containers.nix
+│   │   ├── containers/    # Docker profile (directory)
 │   │   ├── firewall.nix
 │   │   ├── secrets.nix
-│   │   └── meshNetwork/
+│   │   └── meshNetwork/   # Mesh network (directory)
 │   └── secrets/           # Secret definitions
 │       └── (gitignored)
 ├── hosts/                 # Host-specific configurations

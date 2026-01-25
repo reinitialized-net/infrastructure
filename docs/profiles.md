@@ -36,7 +36,7 @@ packages.x86_64-linux.vm = generateVMAImage "vm" {
 
 **Auto-imported:** No (import explicitly)
 
-**Path:** `modules/profiles/containers.nix`
+**Path:** `modules/profiles/containers/`
 
 Docker host configuration with mesh networking. Provides:
 - Docker with optimized settings
@@ -58,7 +58,7 @@ Docker host configuration with mesh networking. Provides:
 {
   imports = [
     "${reinitialized-infra}/modules/profiles/mountData.nix"
-    "${reinitialized-infra}/modules/profiles/containers.nix"
+    "${reinitialized-infra}/modules/profiles/containers"
   ];
   
   services.meshNetwork.enable = true;
@@ -229,7 +229,7 @@ Secondary disk management. Provides:
 {
   imports = [
     ./modules/profiles/mountData.nix
-    ./modules/profiles/containers.nix
+    ./modules/profiles/containers
   ];
   
   services.meshNetwork = {
@@ -289,7 +289,7 @@ Some profiles must be imported explicitly:
 {
   imports = [
     "${reinitialized-infra}/modules/profiles/mountData.nix"
-    "${reinitialized-infra}/modules/profiles/containers.nix"
+    "${reinitialized-infra}/modules/profiles/containers"
   ];
 }
 ```

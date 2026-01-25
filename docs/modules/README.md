@@ -19,7 +19,7 @@ This directory contains documentation for all custom NixOS modules provided by t
 3. **[Mesh Network](meshNetwork.md)** - `services.meshNetwork`
    - WireGuard-based mesh networking
    - Docker integration
-   - Automatic peer discovery
+   - Auto-peer discovery from centralized topology
 
 ### Profile Modules
 
@@ -31,8 +31,8 @@ This directory contains documentation for all custom NixOS modules provided by t
 5. **[Standard Profile](standard.md)** - Base system configuration
    - SSH server
    - sudo-rs
-   - Auto-updates
    - Basic utilities
+   - Firewall with nftables
 
 6. **[Mount Data Profile](mountData.md)** - Data partition mounting
    - Automatic partition detection

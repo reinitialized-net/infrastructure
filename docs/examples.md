@@ -74,7 +74,7 @@ A basic web server VM with nginx.
 
 ```bash
 # Build the image
-nix build .#webserver
+nix build path:.#webserver
 
 # Import to Proxmox
 qmrestore result/vzdump-qemu-100.vma.zst 100 --storage local-lvm
@@ -215,7 +215,7 @@ Three-node Docker cluster with mesh networking.
         
         modules = [
           "${reinitialized-infra.inputs.self}/modules/profiles/mountData.nix"
-          "${reinitialized-infra.inputs.self}/modules/profiles/containers.nix"
+          "${reinitialized-infra.inputs.self}/modules/profiles/containers"
           ./mesh-secrets.nix
           {
             services.meshNetwork = {
@@ -324,7 +324,7 @@ Three-node Docker cluster with mesh networking.
 
 ```bash
 # Build all three nodes
-nix build .#docker-node1 .#docker-node2 .#docker-node3
+nix build path:.#docker-node1 path:.#docker-node2 path:.#docker-node3
 
 # Import to Proxmox
 qmrestore result-1/vzdump-qemu-110.vma.zst 110 --storage local-lvm
@@ -761,7 +761,7 @@ my-infrastructure/
 
 ```bash
 # Build all services
-nix build .#web .#api .#database .#monitoring
+nix build path:.#web path:.#api path:.#database path:.#monitoring
 
 # Deploy to Proxmox
 for vm in web api database monitoring; do

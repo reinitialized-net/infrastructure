@@ -150,7 +150,9 @@ services.meshNetwork.dockerIntegration = true;
 
 ### Using Centralized Topology (Recommended)
 
-The easiest way to configure the mesh network is to use the centralized topology in `meshTopology.nix`. This approach eliminates duplication and makes it easy to add new nodes.
+The easiest way to configure the mesh network is to use the centralized topology in `meshTopology.nix`. This approach eliminates duplication and automatically configures all peers.
+
+**Key Feature:** With `autoPeers = true` (default), you only need to set your `nodeId` - the module automatically discovers all other peers from the centralized topology.
 
 #### 1. Generate Keys
 
@@ -391,10 +393,10 @@ All existing nodes will automatically include the new node in their peer list on
 
 ```bash
 # Build the configuration
-nixos-rebuild build --flake .#hostname
+nixos-rebuild build --flake path:.#hostname
 
 # Deploy
-nixos-rebuild switch --flake .#hostname
+nixos-rebuild switch --flake path:.#hostname
 ```
 
 ## Complete Examples

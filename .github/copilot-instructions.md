@@ -6,14 +6,14 @@ NixOS infrastructure flake for building Proxmox VMA (VM Archive) images and mana
 
 ## Architecture Principles
 
-### Dual-Export Pattern (Critical)
+### Dual-Export Pattern (Critical - PRIMARY METHOD)
 
-The `makeDualExport` function is the primary pattern for defining systems - it generates BOTH a NixOS configuration AND a VMA package from a single definition:
+The `makeDualExport` function is the **PRIMARY and ONLY recommended** pattern for defining systems - it generates BOTH a NixOS configuration AND a VMA package from a single definition:
 
 ```nix
 devenv = library.makeDualExport "devenv" {
   system = "x86_64-linux";
-  vmId = 203;
+  vmId = 202;
   modules = [ ./hosts/devenv.nix ];
   # ... VMA-specific config (disks, networking, cores, memory)
 };
@@ -24,12 +24,18 @@ devenv = library.makeDualExport "devenv" {
 - Define systems once in `flake.nix` under `dualSystems`
 - Export both `nixosConfigurations.<name>` and `packages.<system>.<name>` from the dual export
 - VMA config (vmId, disks, networking) is stripped when creating nixosSystem
-- ALL new hosts should use this pattern unless there's a specific reason not to
+- **ALL new hosts MUST use this pattern**
+- DO NOT call `generateVMAImage` or `makeConfiguration` directly
 
 ### Module Composition
 
 - **standard profile** (`modules/profiles/standard.nix`) is auto-included in ALL systems via `makeConfiguration`
-- Profile modules are in `modules/profiles/`: `containers.nix`, `firewall.nix`, `meshNetwork/`, `mountData.nix`, `secrets.nix`
+- Profile modules are in `modules/profiles/`:
+  - `containers/` (directory with default.nix) - Docker + mesh integration
+  - `firewall.nix` - IP whitelisting
+  - `meshNetwork/` (directory) - WireGuard mesh with auto-peer discovery
+  - `mountData.nix` - Second disk mounting
+  - `secrets.nix` - Declarative secrets
 - Hardware modules in `modules/hardware/`: currently only `qemu.nix` for Proxmox VMs
 - Host-specific configs in `hosts/` import profile modules as needed
 
@@ -37,10 +43,11 @@ devenv = library.makeDualExport "devenv" {
 
 ### Library Functions (library/default.nix)
 
-1. **makeDualExport** - Primary pattern, creates both VMA package and nixosSystem
-2. **generateVMAImage** - Generates Proxmox VMA images (use via makeDualExport)
-3. **makeConfiguration** - Creates nixosSystem (use via makeDualExport)
-4. **makeUser** - Creates users with bind-mounted homes from `/mnt/data` (requires mountData profile)
+1. **makeDualExport** - PRIMARY pattern, creates both VMA package and nixosSystem (ALWAYS USE THIS)
+2. **makeUser** - Creates users with bind-mounted homes from `/mnt/data` (requires mountData profile)
+3. **forAllSystems** - Multi-architecture support helper
+4. **generateVMAImage** - INTERNAL: Generates Proxmox VMA images (DO NOT call directly - use makeDualExport)
+5. **makeConfiguration** - INTERNAL: Creates nixosSystem (DO NOT call directly - use makeDualExport)
 
 ### Secrets Management
 
@@ -69,7 +76,15 @@ config.secrets.meshNetwork.file
 - systemd-networkd is used (NOT NetworkManager)
 - `useDHCP = false` at top level, enable per-interface via systemd.network.networks
 - Mesh networking uses WireGuard with Docker bridge integration
+- **Auto-peer discovery**: Mesh nodes are defined once in `meshTopology.nix`, peers auto-discovered via `autoPeers = true`
 - Firewall whitelist system for source IP-based rules (see `modules/profiles/firewall.nix`)
+
+### Mesh Network Auto-Configuration
+
+- All mesh nodes defined in `modules/profiles/meshNetwork/meshTopology.nix`
+- Setting `autoPeers = true` (default) automatically populates peers from topology
+- Only need to set `nodeId` in host config - no manual peer configuration needed
+- Peers are automatically filtered (excludes self) and formatted correctly
 
 ### User Management
 
@@ -122,14 +137,14 @@ modules = [ "${inputs.self}/modules/profiles/mountData.nix" ];
 
 ```nix
 modules = [
-  "${inputs.self}/modules/profiles/containers.nix"  # Enables Docker + mesh
+  "${inputs.self}/modules/profiles/containers"  # Enables Docker + mesh
 ];
 # Configure mesh in hosts/<name>.nix:
 services.meshNetwork = {
   enable = true;
   nodeId = <unique-id>;
-  privateKeyFile = config.secrets.meshNetwork.file;
-  peers = config.secrets.meshNetwork.keys.peers;
+  # With autoPeers = true (default), peers are auto-discovered from meshTopology.nix
+  # No need to manually configure privateKeyFile or peers - sourced from secrets
 };
 ```
 

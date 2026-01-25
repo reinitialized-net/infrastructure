@@ -4,17 +4,323 @@ This flake provides library functions for building NixOS configurations and Prox
 
 ## Available Functions
 
-- **[`generateVMAImage`](#generatevmaimage)** - Generate Proxmox VMA images with NixOS
-- **[`makeConfiguration`](#makeconfiguration)** - Create standard NixOS system configurations
-- **[`makeDualExport`](#makedualexport)** - Export both VMA package and nixosSystem from single definition
+- **[`makeDualExport`](#makedualexport)** - Export both VMA package and nixosSystem from single definition (PRIMARY)
 - **[`makeUser`](#makeuser)** - Create user with bind-mounted home from /mnt/data
 - **[`forAllSystems`](#forallsystems)** - Apply function to all supported architectures
+- **[`generateVMAImage`](#generatevmaimage)** - Generate Proxmox VMA images (internal, use via makeDualExport)
+- **[`makeConfiguration`](#makeconfiguration)** - Create nixosSystem (internal, use via makeDualExport)
+
+---
+
+### `makeDualExport`
+
+**PRIMARY FUNCTION** - Creates both a VMA package and nixosSystem from a single definition. This is the recommended way to define systems in this infrastructure.
+
+#### Signature
+
+```nix
+makeDualExport :: String -> AttrSet -> { package :: Derivation; nixosSystem :: AttrSet; }
+```
+
+#### Purpose
+
+Eliminates duplication by allowing you to define a system once and export both:
+- A Proxmox VMA image package for deployment
+- A nixosSystem configuration for testing and rebuilding
+
+#### Parameters
+
+**`host`** (String, required)
+- The hostname for the system
+- Used in VM configuration and as the system hostname
+
+**Configuration AttrSet:**
+
+**`system`** (String, optional)
+- Target system architecture
+- Default: `"x86_64-linux"`
+- Options: `"x86_64-linux"`, `"aarch64-linux"`
+
+**`hardware`** (String, optional)
+- Hardware profile to use
+- Default: `"qemu"`
+- Must exist in `modules/hardware/`
+
+**`modules`** (List, optional)
+- NixOS modules to include
+- Default: `[]`
+
+**VMA-Specific Options:**
+
+**`vmId`** (Integer, required for VMA)
+- Unique Proxmox VM ID
+- Required when `exportVMA = true`
+
+**`cores`** (Integer, optional)
+- CPU cores
+- Default: `2`
+
+**`memory`** (Integer, optional)
+- RAM in megabytes
+- Default: `4096`
+
+**`enableProtection`** (Boolean, optional)
+- Proxmox VM protection
+- Default: `true`
+
+**`disks`** (List of AttrSet, optional)
+- Disk configuration
+- Default: Single 25GB disk on `"hotData"`
+- Each disk: `{ storage = "name"; size = GB; }`
+
+**`networking`** (List of AttrSet, optional)
+- Network interfaces
+- Default: Single interface on vmbr0, VLAN 200, DHCP
+- Each interface: `{ bridge = "name"; firewall = bool; vlan = int; }`
+
+**Export Control:**
+
+**`exportVMA`** (Boolean, optional)
+- Whether to export VMA package
+- Default: `true`
+
+**`exportNixOS`** (Boolean, optional)
+- Whether to export nixosSystem
+- Default: `true`
+
+#### Return Value
+
+Returns an attribute set with:
+- **`package`** - VMA image derivation (if `exportVMA = true`)
+- **`nixosSystem`** - NixOS system configuration (if `exportNixOS = true`)
+
+#### Example Usage
+
+##### Basic Dual Export
+
+```nix
+# In flake.nix
+{
+  outputs = { self, ... }:
+    let
+      library = import ./library { inherit self; };
+      
+      dualSystems = {
+        myhost = library.makeDualExport "myhost" {
+          system = "x86_64-linux";
+          vmId = 100;
+          modules = [ ./hosts/myhost.nix ];
+        };
+      };
+    in
+    {
+      # Export both outputs
+      nixosConfigurations.myhost = dualSystems.myhost.nixosSystem;
+      packages.x86_64-linux.myhost = dualSystems.myhost.package;
+    };
+}
+```
+
+##### Advanced Configuration
+
+```nix
+{
+  outputs = { self, ... }:
+    let
+      library = import ./library { inherit self; };
+      
+      dualSystems = {
+        appserver = library.makeDualExport "appserver" {
+          system = "x86_64-linux";
+          vmId = 150;
+          
+          # Resources
+          cores = 8;
+          memory = 16384;
+          enableProtection = true;
+          
+          # Multiple disks
+          disks = [
+            { storage = "fast-ssd"; size = 50; }
+            { storage = "bulk-storage"; size = 500; }
+          ];
+          
+          # Multiple networks
+          networking = [
+            { bridge = "vmbr0"; vlan = 100; firewall = true; }
+            { bridge = "vmbr1"; vlan = 200; firewall = false; }
+          ];
+          
+          # Custom modules
+          modules = [
+            ./modules/profiles/containers
+            ./hosts/appserver.nix
+          ];
+        };
+      };
+    in
+    {
+      nixosConfigurations.appserver = dualSystems.appserver.nixosSystem;
+      packages.x86_64-linux.appserver = dualSystems.appserver.package;
+    };
+}
+```
+
+#### Usage Patterns
+
+**Building VMA Image:**
+```bash
+nix build path:.#packages.x86_64-linux.myhost
+ls result/
+# vzdump-qemu-100.vma.zst
+# CREDENTIALS.txt
+```
+
+**Testing Configuration:**
+```bash
+# Build without deploying
+nix build path:.#nixosConfigurations.myhost.config.system.build.toplevel
+
+# Deploy to live system
+nixos-rebuild switch --flake path:.#myhost --target-host user@myhost
+```
+
+**Remote Deployment:**
+```bash
+nixos-rebuild switch \
+  --flake path:.#myhost \
+  --target-host rnetadmin@10.1.11.2 \
+  --build-host rnetadmin@10.1.200.2 \
+  --use-remote-sudo
+```
+
+---
+
+### `makeUser`
+
+Creates a user with their home directory bind-mounted from `/mnt/data`. Handles proper permissions and ensures `/mnt/data` is mounted first.
+
+#### Signature
+
+```nix
+makeUser :: AttrSet -> Module
+```
+
+#### Parameters
+
+**`username`** (String, required)
+- The username to create
+
+**`uid`** (Integer, optional)
+- User ID
+- Default: auto-assigned
+
+**`group`** (String, optional)
+- Primary group name
+- Default: same as username
+
+**`gid`** (Integer, optional)
+- Group ID
+- Default: auto-assigned
+
+**`homePermissions`** (String, optional)
+- Home directory permissions
+- Default: `"0700"`
+
+**`homeDirectory`** (String, optional)
+- Home directory path
+- Default: `"/home/${username}"`
+
+**`dataPath`** (String, optional)
+- Path under /mnt/data
+- Default: `"/mnt/data/${username}"`
+
+**`extraUserAttrs`** (AttrSet, optional)
+- Additional user attributes
+- Default: `{}`
+
+**`extraGroupAttrs`** (AttrSet, optional)
+- Additional group attributes
+- Default: `{}`
+
+#### Example Usage
+
+##### Basic User
+
+```nix
+{
+  imports = [
+    ./modules/profiles/mountData.nix
+    ((import ./library/makeUser.nix {}) {
+      username = "myapp";
+      uid = 1001;
+    })
+  ];
+}
+```
+
+##### User with Extra Attributes
+
+```nix
+{
+  imports = [
+    ((import ./library/makeUser.nix {}) {
+      username = "develop";
+      group = "developers";
+      homePermissions = "0750";
+      extraUserAttrs = {
+        extraGroups = [ "docker" "wheel" ];
+        shell = pkgs.bashInteractive;
+        openssh.authorizedKeys.keys = [
+          "ssh-ed25519 AAAA..."
+        ];
+      };
+    })
+  ];
+}
+```
+
+#### Requirements
+
+- `modules/profiles/mountData.nix` must be imported (enforced by assertion)
+- Second disk must be configured in VMA disks array
+
+---
+
+### `forAllSystems`
+
+Helper for applying a function across all supported architectures.
+
+#### Signature
+
+```nix
+forAllSystems :: (String -> a) -> AttrSet
+```
+
+#### Supported Systems
+
+- `x86_64-linux`
+- `aarch64-linux`
+
+#### Example Usage
+
+```nix
+{
+  packages = library.forAllSystems (system: {
+    mypackage = /* build for system */;
+  });
+}
+```
 
 ---
 
 ### `generateVMAImage`
 
+**INTERNAL FUNCTION** - Used by `makeDualExport`. Direct use is not recommended.
+
 Generates a Proxmox-compatible VMA (Vzdump) format VM image with a complete NixOS system.
+
+**Recommendation:** Use `makeDualExport` instead for new systems.
 
 #### Signature
 
@@ -194,7 +500,7 @@ The function returns a derivation that builds:
 
 ```bash
 # Build the image
-nix build .#packages.x86_64-linux.app-server
+nix build path:.#packages.x86_64-linux.app-server
 
 # The output is in ./result/
 ls -lh result/
@@ -306,10 +612,10 @@ Automatically imports:
 
 ```bash
 # Build the system
-nixos-rebuild build --flake .#webserver
+nixos-rebuild build --flake path:.#webserver
 
 # Or activate directly
-nixos-rebuild switch --flake .#webserver
+nixos-rebuild switch --flake path:.#webserver
 ```
 
 ---

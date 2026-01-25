@@ -1,6 +1,6 @@
 # Containers Profile Module
 
-**Module Path:** `modules/profiles/containers.nix`
+**Module Path:** `modules/profiles/containers/`
 
 **Import:** Not automatically included - import explicitly
 
@@ -77,7 +77,7 @@ fileSystems."/var/lib/docker" = {
 {
   imports = [
     ./modules/profiles/mountData.nix
-    ./modules/profiles/containers.nix
+    ./modules/profiles/containers
   ];
 }
 ```
@@ -88,14 +88,14 @@ fileSystems."/var/lib/docker" = {
 {
   imports = [
     ./modules/profiles/mountData.nix
-    ./modules/profiles/containers.nix
+    ./modules/profiles/containers
   ];
   
   # Enable mesh networking
   services.meshNetwork = {
     enable = true;
     nodeId = 1;
-    # ... mesh configuration
+    # Peers auto-discovered from meshTopology.nix
   };
 }
 ```
@@ -121,7 +121,7 @@ fileSystems."/var/lib/docker" = {
     
     modules = [
       ./modules/profiles/mountData.nix
-      ./modules/profiles/containers.nix
+      ./modules/profiles/containers
       {
         services.meshNetwork.enable = true;
         services.meshNetwork.nodeId = 1;
@@ -130,6 +130,8 @@ fileSystems."/var/lib/docker" = {
   };
 }
 ```
+
+**Note:** Use `makeDualExport` instead for new systems.
 
 ## Docker Usage
 

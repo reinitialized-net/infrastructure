@@ -12,11 +12,11 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 ### Library Functions
 
 - **[Library Functions](library-functions.md)** - Complete reference for all library functions
-  - `generateVMAImage` - Build Proxmox VMA images
-  - `makeConfiguration` - Create NixOS configurations
-  - `makeDualExport` - Export both VMA package and nixosSystem from single definition
+  - `makeDualExport` - Export both VMA package and nixosSystem (recommended)
   - `makeUser` - Create users with bind-mounted homes from /mnt/data
   - `forAllSystems` - Helper function for multi-arch support
+  - `generateVMAImage` - Build Proxmox VMA images
+  - `makeConfiguration` - Create NixOS configurations
 
 ### Modules
 
@@ -26,7 +26,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 
 - **[Secrets Management](modules/secrets.md)** - `secrets.*` - Centralized secrets configuration
 - **[Firewall Whitelist](modules/firewall.md)** - `networking.firewall.whitelist` - Source IP-based firewall rules
-- **[Mesh Network](modules/meshNetwork.md)** - `services.meshNetwork` - WireGuard mesh for Docker hosts
+- **[Mesh Network](modules/meshNetwork.md)** - `services.meshNetwork` - WireGuard mesh with auto-peer discovery
 
 #### Profile Modules
 
@@ -53,7 +53,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 ### By Use Case
 
 **Building Proxmox VMs:**
-1. [Library Functions → generateVMAImage](library-functions.md#generatevmaimage)
+1. [Library Functions → makeDualExport](library-functions.md#makedualexport)
 2. [Standard Profile](modules/standard.md) (auto-included)
 3. [Examples → Simple Web Server](examples.md#simple-web-server-vm)
 
@@ -76,11 +76,11 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 ### By Module Type
 
 **Library Functions:**
-- [generateVMAImage](library-functions.md#generatevmaimage)
-- [makeConfiguration](library-functions.md#makeconfiguration)
-- [makeDualExport](library-functions.md#makedualexport)
+- [makeDualExport](library-functions.md#makedualexport) (PRIMARY)
 - [makeUser](library-functions.md#makeuser)
 - [forAllSystems](library-functions.md#forallsystems)
+- [generateVMAImage](library-functions.md#generatevmaimage)
+- [makeConfiguration](library-functions.md#makeconfiguration)
 
 **NixOS Options:**
 - [secrets.*](modules/secrets.md)
@@ -136,7 +136,7 @@ packages.x86_64-linux.docker = generateVMAImage "docker" {
   ];
   modules = [
     "${infra}/modules/profiles/mountData.nix"
-    "${infra}/modules/profiles/containers.nix"
+    "${infra}/modules/profiles/containers"
   ];
 };
 ```

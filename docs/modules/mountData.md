@@ -97,7 +97,7 @@ Required by the containers profile:
 {
   imports = [
     ./modules/profiles/mountData.nix
-    ./modules/profiles/containers.nix
+    ./modules/profiles/containers
   ];
   
   # Docker data will be stored on /mnt/data/docker

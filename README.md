@@ -22,11 +22,11 @@ This documentation covers custom options and features provided by this NixOS inf
 
 This flake provides:
 
-- **Proxmox VMA Image Generation**: Build complete Proxmox-compatible VM images with NixOS
 - **Dual-Export Pattern**: Define systems once, export both VMA images and nixosSystem configurations
+- **Proxmox VMA Image Generation**: Build complete Proxmox-compatible VM images with NixOS
 - **User Management**: Create users with properly configured bind-mounted home directories
 - **Secrets Management System**: Centralized, declarative secret configuration
-- **Mesh Network**: WireGuard-based mesh networking for Docker containers
+- **Mesh Network**: WireGuard-based mesh networking with auto-peer discovery
 - **Custom Firewall Rules**: Advanced source IP-based port whitelisting
 - **Standard Profiles**: Pre-configured system profiles for common use cases
 
@@ -39,10 +39,12 @@ This flake exports the following systems:
 #### NixOS System Configurations
 - `nixosConfigurations.devenv` - Development environment VM
 - `nixosConfigurations.rp1` - Reverse proxy server VM
+- `nixosConfigurations.apps1` - Application server VM
 
 #### Proxmox VMA Packages  
 - `packages.x86_64-linux.devenv` - Proxmox VMA image for devenv
 - `packages.x86_64-linux.rp1` - Proxmox VMA image for rp1
+- `packages.x86_64-linux.apps1` - Proxmox VMA image for apps1
 
 ### Building VMA Images for Proxmox
 
@@ -92,7 +94,7 @@ cat result/CREDENTIALS.txt
 ### Building for already existing systems
 
 ```bash
-  nixos-rebuild switch --flake path:.#configNameHere --sudo --target-host rnetadmin@ipAddressHere --build-host rnetadmin@10.1.200.2
+nixos-rebuild switch --flake path:.#<hostname> --sudo --target-host rnetadmin@<ip> --build-host rnetadmin@<build-ip>
 ```
 
 ### Testing Configurations Before Deployment
@@ -114,14 +116,15 @@ nixos-rebuild boot --flake path:.#rp1 --target-host root@rp1
 
 ```bash
 # Build all VMA packages
-nix build path:.#packages.x86_64-linux.devenv .#packages.x86_64-linux.rp1
+nix build path:.#packages.x86_64-linux.devenv path:.#packages.x86_64-linux.rp1 path:.#packages.x86_64-linux.apps1
 
 # Build all nixosSystem configurations
 nix build path:.#nixosConfigurations.devenv.config.system.build.toplevel
 nix build path:.#nixosConfigurations.rp1.config.system.build.toplevel
+nix build path:.#nixosConfigurations.apps1.config.system.build.toplevel
 
 # Check all flake outputs
-nix flake show --flake path:.
+nix flake show path:.
 ```
 
 ## Getting Started
