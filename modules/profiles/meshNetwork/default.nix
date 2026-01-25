@@ -225,15 +225,18 @@ in {
       text = ''
         # Mesh Network Configuration for Docker Compose
         MESH_NETWORK=backend
-        MESH_NODE_IP=10.255.0.${toString cfg.nodeId}
+        MESH_NODE_IP=${meshLib.getSubnetPrefix meshSubnet}.${toString cfg.nodeId}
         MESH_SUBNET=${meshSubnet}
       '';
       mode = "0444";
     };
 
-    # Helper commands
+    # Add required packages
     environment.systemPackages = with pkgs; [
       wireguard-tools
+      iproute2
+      iputils
+      jq
     ];
 
     # Status script
@@ -243,7 +246,7 @@ in {
         echo "=== Mesh Network Status ==="
         echo
         echo "Node ID: ${toString cfg.nodeId}"
-        echo "Mesh IP: 10.255.0.${toString cfg.nodeId}"
+        echo "Mesh IP: ${meshLib.getSubnetPrefix meshSubnet}.${toString cfg.nodeId}"
         echo
         echo "=== Wireguard Interface ==="
         sudo ${pkgs.wireguard-tools}/bin/wg show ${meshInterface}
@@ -253,8 +256,8 @@ in {
         echo
         echo "=== Peer Connectivity ==="
         ${lib.concatMapStrings (peer: ''
-          echo -n "Node ${toString peer.nodeId} (10.255.0.${toString peer.nodeId}): "
-          ${pkgs.iputils}/bin/ping -c 1 -W 1 10.255.0.${toString peer.nodeId} > /dev/null 2>&1 && echo "✓ UP" || echo "✗ DOWN"
+          echo -n "Node ${toString peer.nodeId} (${meshLib.getSubnetPrefix meshSubnet}.${toString peer.nodeId}): "
+          ${pkgs.iputils}/bin/ping -c 1 -W 1 ${meshLib.getSubnetPrefix meshSubnet}.${toString peer.nodeId} > /dev/null 2>&1 && echo "✓ UP" || echo "✗ DOWN"
         '') cfg.peers}
         ${lib.optionalString cfg.dockerIntegration ''
           echo
