@@ -94,8 +94,49 @@
               "10.1.12.4"
             ];
 
-            locations."/" = {
-              proxyPass = "http://10.255.0.3:3000";
+            locations = {
+              # Deny access to dotfiles
+              "/." = {
+                extraConfig = ''
+                  deny all;
+                '';
+              };
+              # Deny access to .rb and .log files
+              "~* ^.+\\.(rb|log)$" = {
+                extraConfig = ''
+                  deny all;
+                '';
+              };
+              # WebSocket cable proxy
+              "/cable" = {
+                proxyPass = "http://10.255.0.3:3000/cable";
+                proxyWebsockets = true;
+              };
+              # Main proxy with Rails-specific settings
+              "/" = {
+                extraConfig = ''
+                  client_body_buffer_size 128k;
+                  proxy_next_upstream error timeout invalid_header http_500 http_502 http_503;
+                  send_timeout 5m;
+                  proxy_read_timeout 240;
+                  proxy_send_timeout 240;
+                  proxy_connect_timeout 240;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+                  proxy_set_header X-Forwarded-Host $host;
+                  proxy_set_header X-Forwarded-Proto $scheme;
+                  proxy_redirect  http://  $scheme://;
+                  proxy_http_version 1.1;
+                  proxy_set_header Connection "";
+                  proxy_cache_bypass $cookie_session;
+                  proxy_no_cache $cookie_session;
+                  proxy_buffers 32 4k;
+                  proxy_headers_hash_bucket_size 128;
+                  proxy_headers_hash_max_size 1024;
+                  proxy_pass http://10.255.0.3:3000;
+                '';
+              };
             };
           };
           "media.reinitialized.me" = {
