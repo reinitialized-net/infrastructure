@@ -114,8 +114,29 @@ in {
     # Main configuration
     (lib.mkIf cfg.enable (lib.mkMerge [
     {
+      # Automatically configure firewall whitelist for mesh peers
+      networking.firewall.whitelist = let
+        # Determine final peer list (same logic as wireguard config)
+        finalPeers = if cfg.autoPeers && cfg.peers == []
+                     then meshTopology.getPeersForNode cfg.nodeId
+                     else cfg.peers;
+        
+        # Extract IP addresses from peer endpoints
+        peerIPs = builtins.filter (ip: ip != null) (builtins.map (peer:
+          if peer.endpoint != null then
+            # Extract IP from "IP:port" format
+            lib.head (lib.splitString ":" peer.endpoint)
+          else null
+        ) finalPeers);
+      in lib.mkIf (peerIPs != []) [
+        {
+          port = cfg.listenPort;
+          protocol = "udp";
+          source = peerIPs;
+        }
+      ];
+
       networking.firewall = {
-        allowedUDPPorts = [ cfg.listenPort ];
         trustedInterfaces = [ meshInterface ];
       };
 
@@ -267,6 +288,8 @@ in {
       '';
       mode = "0555";
     };
+
+    # Ensure firewall allows Wireguard traffic
     }
     ]))
   ];

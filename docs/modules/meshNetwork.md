@@ -683,9 +683,11 @@ Remote Container (172.20.0.y)
 
 Automatically configured:
 
-- **Allow UDP**: Port 51820 (or custom `listenPort`)
+- **Peer IP Whitelist**: WireGuard port (51820) is automatically restricted to declared peer endpoints only using `networking.firewall.whitelist`
 - **Trusted Interface**: `wg-mesh` marked as trusted
 - **nftables NAT**: Masquerading for Docker traffic
+
+**Security Note:** The module automatically extracts peer endpoint IP addresses from the mesh topology and configures firewall rules to only allow WireGuard traffic from those specific IPs. This ensures that only declared mesh peers can establish connections, providing an additional layer of security beyond WireGuard's cryptographic authentication.
 
 ## Troubleshooting
 
@@ -749,8 +751,9 @@ docker run --rm --network backend alpine ping 10.255.0.2
 
 1. **Private Keys**: Store securely, never commit to git
 2. **Endpoints**: Use DNS names for dynamic IPs
-3. **Firewall**: Mesh interface is trusted - secure physical hosts
+3. **Firewall**: Mesh interface is trusted - secure physical hosts. WireGuard port is automatically whitelisted to only accept connections from declared peer endpoints.
 4. **NAT**: Docker traffic is masqueraded, plan IP ranges carefully
+5. **Peer Authentication**: Two-layer security - IP whitelisting at firewall level plus WireGuard's cryptographic authentication
 
 ## Integration with Secrets Module
 
