@@ -18,6 +18,8 @@
         icc = lib.mkForce true;
         no-new-privileges = lib.mkForce true;
       };
+      # Ensure containers inherit host time and timezone
+      extraOptions = "--default-ulimit nofile=65536:65536";
     };
     oci-containers.backend = lib.mkForce "docker";
   };

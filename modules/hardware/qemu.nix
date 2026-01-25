@@ -67,6 +67,10 @@
     "/boot" = lib.mkForce {
       device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi0-part1";
       fsType = "vfat";
+      options = [
+        "fmask=0077"
+        "dmask=0077"
+      ];
       neededForBoot = true;
     };
   };

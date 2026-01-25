@@ -5,7 +5,18 @@
 }: {
   time = {
     timeZone = lib.mkDefault "America/Chicago";
-    hardwareClockInLocalTime = lib.mkDefault true;
+    hardwareClockInLocalTime = lib.mkDefault false; # Use UTC for RTC to avoid DST issues
+  };
+
+  # Enable NTP time synchronization
+  services.timesyncd = {
+    enable = lib.mkDefault true;
+    servers = lib.mkDefault [
+      "0.pool.ntp.org"
+      "1.pool.ntp.org"
+      "2.pool.ntp.org"
+      "3.pool.ntp.org"
+    ];
   };
 
   networking = {
