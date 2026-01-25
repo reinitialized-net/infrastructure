@@ -53,8 +53,8 @@
         # If this is used, it needs to be changed. 
         initialHashedPassword = lib.mkDefault "$6$ELaXwtqP5R5l.n5e$wsn7KBDXQKIfCbbDOfOHG4OYJjb/KQmyp4ekmFHcv/oZbJyEkwpoHCjqEDzOBpkGCXdZw1F1CNApXXkiKOhrR.";
 
-        isSystemUser = lib.mkForce true;
-        createHome = lib.mkForce true;
+        isNormalUser = lib.mkForce true;
+        createHome = lib.mkDefault true;
         group = lib.mkForce "rnetadmin";
         extraGroups = lib.mkDefault [ "wheel" ];
         shell = lib.mkForce pkgs.bashInteractive;
@@ -73,7 +73,7 @@
     polkit = {
       enable = lib.mkDefault true;
       # Allow wheel group to manage systemd without authentication
-      # Required for nixos-rebuild with sudo-rs
+      # Required for nixos-rebuild with sudo-rs over SSH
       extraConfig = ''
         polkit.addRule(function(action, subject) {
           if ((action.id == "org.freedesktop.systemd1.manage-units" ||
@@ -83,7 +83,26 @@
             return polkit.Result.YES;
           }
         });
+        
+        // Allow root user to manage systemd units (needed for sudo + systemd-run)
+        polkit.addRule(function(action, subject) {
+          if (action.id == "org.freedesktop.systemd1.manage-units" &&
+              subject.user == "root") {
+            return polkit.Result.YES;
+          }
+        });
       '';
+    };
+  };
+
+  # Ensure polkit is properly started and rules are loaded
+  systemd.services.polkit = {
+    serviceConfig = {
+      # Ensure polkit can read all rules
+      ReadOnlyPaths = [
+        "/etc/polkit-1/rules.d"
+        "/run/current-system/sw/share/polkit-1/rules.d"
+      ];
     };
   };
 
@@ -99,15 +118,13 @@
         <busconfig>
           <policy user="root">
             <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.systemd1.Manager"
-                   send_member="Subscribe"/>
+                   send_interface="org.freedesktop.systemd1.Manager"/>
             <allow send_destination="org.freedesktop.systemd1"
                    send_interface="org.freedesktop.DBus.Properties"/>
           </policy>
           <policy group="wheel">
             <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.systemd1.Manager"
-                   send_member="Subscribe"/>
+                   send_interface="org.freedesktop.systemd1.Manager"/>
             <allow send_destination="org.freedesktop.systemd1"
                    send_interface="org.freedesktop.DBus.Properties"/>
           </policy>
