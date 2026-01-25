@@ -7,7 +7,8 @@
 }: {
   imports = [ 
     "${self}/modules/profiles/meshNetwork"
-    "${self}/modules/profiles/secrets.nix"  
+    "${self}/modules/profiles/secrets.nix"
+    ./containerTools.nix
   ];
 
   virtualisation = {
@@ -49,5 +50,4 @@
       initialHashedPassword = lib.mkForce "!";
     };
   };
-
 }
