@@ -106,7 +106,7 @@
             ];
             
             locations."/" = {
-              proxyPass = "http://10.255.0.3:3000";
+              proxyPass = "http://10.1.11.21:8096";
             };
           };
 
@@ -118,7 +118,7 @@
             ];
             
             locations."/" = {
-              proxyPass = "http://10.255.0.3:3000";
+              proxyPass = "http://10.255.0.3:5380";
             };
           };
           "two.dns.reinitialized.net" = {
@@ -129,7 +129,7 @@
             ];
             
             locations."/" = {
-              proxyPass = "http://10.255.0.3:3000";
+              proxyPass = "http://10.255.0.4:5380";
             };
           };
         };

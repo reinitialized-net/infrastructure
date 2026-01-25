@@ -11,25 +11,25 @@
       nodeId = 1;
       hostname = "devenv";
       endpoint = "10.1.200.2:51820";
-      publicKey = "zKEWyw9tClll136BGRSv2ImwiP6wNpeJ8ZqG6+ETnmY=";
+      publicKey = "a02vEIEtLx7VvLXUptVOI6Cc6KO8YgftR8BrDAXamxI=";
     };
     rp1 = {
       nodeId = 2;
       hostname = "rp1";
       endpoint = "10.1.12.2:51820";
-      publicKey = "RCmhMTQbaHCwfYeJYOF0J09aGdZvAWDuIakUY3tomGk=";
+      publicKey = "JOnePxD+oQUZpnHB9thbalLHr4hAuZ/CnMH2Pprgxkw=";
     };
     apps1 = {
       nodeId = 3;
       hostname = "apps1";
       endpoint = "10.1.11.2:51820";
-      publicKey = "A+iE73jvq8FYY64bv/DbXoOaZPujfKXv/jBp+Mb+Vks=";
+      publicKey = "tcRfFOQke76a5ipKraCRu4jbh6qJNfyfd2g0YhbsR0A=";
     };
     apps2 = {
       nodeId = 4;
       hostname = "apps2";
       endpoint = "10.1.11.3:51820";
-      publicKey = "N6YAF//4vGLvz3DPoeDdv4Wla9oLqRt+xPywxJ05s2A=";
+      publicKey = "IifQOSQL9gZyWoQKErF8yzCyvjuJSaq5MhDV6D3kT10=";
     };
   };
   

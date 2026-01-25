@@ -84,7 +84,7 @@ in
               else
                 protocolRules;
             in finalRules)
-            entry.sourceAddresses
+            entry.source
           )
           config.networking.firewall.whitelist;
       })

@@ -91,6 +91,9 @@
       networks = [ 
         "backend"
       ];
+      ports = [
+        "10.255.0.3:3000:3000"
+      ];
       volumes = [
         "hudu_data:/var/www/hudu2/public/uploads/"
         "hudu_data:/var/www/hudu2/uploads"
