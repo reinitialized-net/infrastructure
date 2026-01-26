@@ -23,8 +23,8 @@
       dualSystems = {
         standard = {
           system = "x86_64-linux";
-          vmId = 100;
           enableProtection = false;
+          vmId = 100;
           disks = [
             {
               storage = "hotData";
@@ -42,8 +42,10 @@
 
         devenv = library.makeDualExport "devenv" {
           system = "x86_64-linux";
-          vmId = 202;
           enableProtection = true;
+          vmId = 202;
+          memory = 65536;
+          cores = 6;
           disks = [
             { 
               storage = "hotData";
@@ -69,8 +71,8 @@
         };
         rp1 = library.makeDualExport "rp1" {
           system = "x86_64-linux";
-          vmId = 203;
           enableProtection = true;
+          vmId = 203;
           disks = [
             { 
               storage = "hotData";
@@ -99,6 +101,7 @@
           system = "x86_64-linux";
           vmId = 204;
           enableProtection = true;
+          memory = 8192;
           disks = [
             { 
               storage = "hotData";
@@ -113,7 +116,35 @@
             { 
               bridge = "vmbr0";
               firewall = false;
-              vlan = 12;
+              vlan = 11;
+            }
+          ];
+          modules = [
+            inputs.vscodeServer.nixosModules.default
+            "${inputs.self}/modules/profiles/containers"
+            "${inputs.self}/modules/profiles/mountData.nix"
+          ];
+        };
+        apps2 = library.makeDualExport "apps2" {
+          system = "x86_64-linux";
+          vmId = 205;
+          enableProtection = true;
+          memory = 8192;
+          disks = [
+            { 
+              storage = "hotData";
+              size = 20; 
+            }
+            { 
+              storage = "coldData";
+              size = 50;
+            }
+          ];
+          networking = [
+            { 
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 11;
             }
           ];
           modules = [
@@ -140,15 +171,17 @@
         devenv = dualSystems.devenv.nixosSystem;
         rp1 = dualSystems.rp1.nixosSystem;
         apps1 = dualSystems.apps1.nixosSystem;
+        apps2 = dualSystems.apps2.nixosSystem;
       };
 
       packages = library.forAllSystems (system:
-      {
-          # Reference VMA package from dual export
-          devenv = dualSystems.devenv.package;
-          rp1 = dualSystems.rp1.package;
-          apps1 = dualSystems.apps1.package;
-      }
+        {
+            # Reference VMA package from dual export
+            devenv = dualSystems.devenv.package;
+            rp1 = dualSystems.rp1.package;
+            apps1 = dualSystems.apps1.package;
+            apps2 = dualSystems.apps2.package;
+        }
       );
     };
 }
