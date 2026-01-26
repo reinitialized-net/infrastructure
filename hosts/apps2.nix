@@ -1,5 +1,6 @@
 {
   config,
+  pkgs,
   ...
 }:{
   # Networking Configuration
@@ -30,6 +31,41 @@
       enable = true;
       nodeId = 4;
   };
+
+  # Enable ACME for DNS server certificate
+  security.acme = {
+    acceptTerms = true;
+    defaults = {
+      email = "admin@reinitialized.net";
+    };
+    certs."two.dns.reinitialized.net" = {
+      # Use HTTP-01 challenge with webroot
+      webroot = "/var/lib/acme/acme-challenge";
+      # Ensure nginx user can read the certificates
+      group = "nginx";
+      # Reload Technitium container after cert renewal
+      postRun = ''
+        ${pkgs.docker}/bin/docker restart dnsTwo || true
+      '';
+    };
+  };
+
+  # Nginx for ACME challenge serving
+  services.nginx = {
+    enable = true;
+    # Listen only on mesh network IP
+    virtualHosts."two.dns.reinitialized.net" = {
+      listen = [
+        {
+          addr = "10.255.0.4";
+          port = 80;
+        }
+      ];
+      locations."/.well-known/acme-challenge/" = {
+        root = "/var/lib/acme/acme-challenge";
+      };
+    };
+  };
   # Hosted Services
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
@@ -50,6 +86,7 @@
       ];
       volumes = [
         "technitium_data:/etc/dns"
+        "/var/lib/acme/two.dns.reinitialized.net:/etc/dns/certs:ro"
       ];
     };
   };

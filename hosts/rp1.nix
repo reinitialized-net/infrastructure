@@ -110,6 +110,8 @@
 
     config = { lib, ... }: {
       system.stateVersion = lib.mkDefault defaultStateVersion;
+
+      # NOTE: DO NOT OVERRIDE DNS. This has been resolved using Split Horizon DNS and returns correctly.
       
       # Ensure nginx user can access ACME files
       users.users.nginx = {
@@ -237,6 +239,27 @@
               proxyPass = "http://10.255.0.3:5380";
             };
           };
+          
+          # HTTP-only virtualHost for apps1 ACME challenges
+          "one.dns.reinitialized.net:80" = {
+            serverName = "one.dns.reinitialized.net";
+            listenAddresses = [ 
+              "10.1.12.2"
+            ];
+            
+            locations."/.well-known/acme-challenge/" = {
+              proxyPass = "http://10.255.0.3";
+              extraConfig = ''
+                proxy_set_header Host $host;
+              '';
+            };
+            
+            # Redirect all other HTTP traffic to HTTPS
+            locations."/" = {
+              return = "301 https://$host$request_uri";
+            };
+          };
+          
           "two.dns.reinitialized.net" = {
             forceSSL = true;
             enableACME = true;
@@ -246,6 +269,26 @@
             
             locations."/" = {
               proxyPass = "http://10.255.0.4:5380";
+            };
+          };
+          
+          # HTTP-only virtualHost for apps2 ACME challenges
+          "two.dns.reinitialized.net:80" = {
+            serverName = "two.dns.reinitialized.net";
+            listenAddresses = [ 
+              "10.1.12.3"
+            ];
+            
+            locations."/.well-known/acme-challenge/" = {
+              proxyPass = "http://10.255.0.4";
+              extraConfig = ''
+                proxy_set_header Host $host;
+              '';
+            };
+            
+            # Redirect all other HTTP traffic to HTTPS
+            locations."/" = {
+              return = "301 https://$host$request_uri";
             };
           };
         };
