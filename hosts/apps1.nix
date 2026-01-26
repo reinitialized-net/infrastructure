@@ -6,25 +6,6 @@
   networking = {
     hostName = "apps1";
     useDHCP = false;
-    firewall.whitelist = [
-      # Allow DNS traffic
-      {
-        port = 53;
-        protocol = "tcp_udp";
-        ipType = "ipv4";
-        source = [
-          "0.0.0.0/0"
-        ];
-      }
-      {
-        port = 853;
-        protocol = "tcp_udp";
-        ipType = "ipv4";
-        source = [
-          "0.0.0.0/0"
-        ];
-      }
-    ];
   };
   systemd.network.networks = {
     "eth0" = {
@@ -32,9 +13,8 @@
         "10.1.11.2/24"
       ];
       dns = [
-        "10.1.12.3"
-        #"127.0.0.1"
-        #"10.1.11.3"
+        "10.1.11.2"
+        "10.1.11.3"
       ];
       gateway = [
         "10.1.11.1"
@@ -125,9 +105,16 @@
     dnsOne = {
       autoStart = true;
       hostname = "dnsOne";
-      image = "technitium/dns:14.3.0";
+      image = "technitium/dns-server:14.3.0";
       networks = [
         "backend"
+      ];
+      ports = [
+        "10.255.0.3:5380:5380"
+        "10.1.11.2:53:53/tcp"
+        "10.1.11.2:53:53/udp"
+        "10.1.11.2:853:853/tcp"
+        "10.1.11.2:853:853/udp"
       ];
       volumes = [
         "technitium_data:/etc/dns"

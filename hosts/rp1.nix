@@ -8,18 +8,60 @@
   networking = {
     hostName = "rp1";
     useDHCP = false;
-    firewall.whitelist = [
+    firewall.denylist = [
+      {
+        port = 53;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [
+          "10.0.0.0/8"
+          "172.16.0.0/24"
+          "192.168.0.0/16"
+        ];
+      }
+      {
+        port = 853;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [
+          "10.0.0.0/8"
+          "172.16.0.0/24"
+          "192.168.0.0/16"
+        ];
+      }
+    ];
+    firewall.allowlist = [
       {
         port = 80;
         protocol = "tcp_udp";
         ipType = "ipv4";
-        source = [ "0.0.0.0/0" ];
+        source = [
+          "0.0.0.0/0"
+        ];
       }
       {
         port = 443;
         protocol = "tcp_udp";
         ipType = "ipv4";
-        source = [ "0.0.0.0/0" ];
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 53;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 853;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
       }
     ];
   };
@@ -31,8 +73,7 @@
         "10.1.12.4/29"
       ];
       dns = [
-        "10.1.12.3"
-        #"10.1.11.2"
+        "10.1.11.2"
         #"10.1.11.3"
       ];
       gateway = [
@@ -85,6 +126,24 @@
         package = (pkgs.angie.override { withStream = true; });
         recommendedProxySettings = true;
         recommendedTlsSettings = true;
+
+        # Stream configuration for DNS
+        streamConfig = ''
+          upstream dnsOne {
+            server 10.1.11.2:53;
+            server 10.1.11.2:853;
+          }
+          
+          server {
+            listen 10.1.12.2:53 udp;
+            listen 10.1.12.2:53;
+            listen 10.1.12.2:853;
+            listen 10.1.12.2:853 udp;
+            proxy_pass dnsOne;
+            proxy_timeout 1s;
+            proxy_responses 1;
+          }
+        '';
 
         virtualHosts = {
           "docs.reinitialized.net" = {
@@ -162,17 +221,17 @@
               proxyPass = "http://10.255.0.3:5380";
             };
           };
-          "two.dns.reinitialized.net" = {
-            forceSSL = true;
-            enableACME = true;
-            listenAddresses = [ 
-              "10.1.12.3"
-            ];
+          # "two.dns.reinitialized.net" = {
+          #   forceSSL = true;
+          #   enableACME = true;
+          #   listenAddresses = [ 
+          #     "10.1.12.3"
+          #   ];
             
-            locations."/" = {
-              proxyPass = "http://10.255.0.4:5380";
-            };
-          };
+          #   locations."/" = {
+          #     proxyPass = "http://10.255.0.4:5380";
+          #   };
+          # };
         };
       };
     };
