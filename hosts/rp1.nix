@@ -69,7 +69,7 @@
     "eth0" = {
       address = [
         "10.1.12.2/29"
-        #10.1.12.3/29
+        "10.1.12.3/29"
         "10.1.12.4/29"
       ];
       dns = [
@@ -133,6 +133,10 @@
             server 10.1.11.2:53;
             server 10.1.11.2:853;
           }
+          upstream dnsTwo {
+            server 10.1.11.2:53;
+            server 10.1.11.2:853;
+          }
           
           server {
             listen 10.1.12.2:53 udp;
@@ -140,6 +144,15 @@
             listen 10.1.12.2:853;
             listen 10.1.12.2:853 udp;
             proxy_pass dnsOne;
+            proxy_timeout 1s;
+            proxy_responses 1;
+          }
+          server {
+            listen 10.1.12.3:53 udp;
+            listen 10.1.12.3:53;
+            listen 10.1.12.3:853;
+            listen 10.1.12.3:853 udp;
+            proxy_pass dnsTwo;
             proxy_timeout 1s;
             proxy_responses 1;
           }
@@ -221,17 +234,17 @@
               proxyPass = "http://10.255.0.3:5380";
             };
           };
-          # "two.dns.reinitialized.net" = {
-          #   forceSSL = true;
-          #   enableACME = true;
-          #   listenAddresses = [ 
-          #     "10.1.12.3"
-          #   ];
+          "two.dns.reinitialized.net" = {
+            forceSSL = true;
+            enableACME = true;
+            listenAddresses = [ 
+              "10.1.12.3"
+            ];
             
-          #   locations."/" = {
-          #     proxyPass = "http://10.255.0.4:5380";
-          #   };
-          # };
+            locations."/" = {
+              proxyPass = "http://10.255.0.4:5380";
+            };
+          };
         };
       };
     };
