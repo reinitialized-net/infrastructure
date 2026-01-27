@@ -97,22 +97,39 @@
       exit 1
     fi
 
-    # Get target IP
-    TARGET_IP=$(get_host_ip "$TARGET")
-    
-    echo "╔══════════════════════════════════════════════════════════════╗"
-    echo "║  NixOS Remote Rebuild                                        ║"
-    echo "╠══════════════════════════════════════════════════════════════╣"
-    echo "  Target:  $TARGET ($TARGET_IP)"
-    echo "  Action:  nixos-rebuild $ACTION"
-    echo "  User:    $SSH_USER"
-    echo "╚══════════════════════════════════════════════════════════════╝"
-    echo ""
+    # Check if target is local (devenv) or remote
+    if [[ "$TARGET" == "devenv" ]]; then
+      echo "╔══════════════════════════════════════════════════════════════╗"
+      echo "║  NixOS Local Rebuild                                         ║"
+      echo "╠══════════════════════════════════════════════════════════════╣"
+      echo "  Target:  $TARGET (local)"
+      echo "  Action:  nixos-rebuild $ACTION"
+      echo "╚══════════════════════════════════════════════════════════════╝"
+      echo ""
 
-    # Execute nixos-rebuild
-    echo "→ Connecting to $TARGET_IP as $SSH_USER..."
-    ${pkgs.openssh}/bin/ssh -t "$SSH_USER@$TARGET_IP" \
-      "sudo nixos-rebuild $ACTION --flake 'path:$FLAKE_PATH#$TARGET'"
+      # Execute local nixos-rebuild
+      echo "→ Rebuilding local system..."
+      sudo nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET"
+    else
+      # Get target IP for remote host
+      TARGET_IP=$(get_host_ip "$TARGET")
+      
+      echo "╔══════════════════════════════════════════════════════════════╗"
+      echo "║  NixOS Remote Rebuild                                        ║"
+      echo "╠══════════════════════════════════════════════════════════════╣"
+      echo "  Target:  $TARGET ($TARGET_IP)"
+      echo "  Action:  nixos-rebuild $ACTION"
+      echo "  User:    $SSH_USER"
+      echo "  Mode:    Build on devenv, deploy to target"
+      echo "╚══════════════════════════════════════════════════════════════╝"
+      echo ""
+
+      # Execute nixos-rebuild from devenv with --target-host
+      echo "→ Building and deploying to $TARGET_IP as $SSH_USER..."
+      nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
+        --target-host "$SSH_USER@$TARGET_IP" \
+        --sudo
+    fi
     
     echo ""
     echo "✓ Rebuild completed successfully for $TARGET"
@@ -127,7 +144,6 @@
     VALID_HOSTS="${validHostsStr}"
     FLAKE_PATH="/home/develop/projects/reinitialized.net/infrastructure"
     SSH_USER="rnetadmin"
-    CURRENT_HOST=$(hostname)
 
     get_host_ip() {
       local host="$1"
@@ -154,9 +170,9 @@
       echo "→ Updating: $host"
       echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
       
-      if [[ "$host" == "$CURRENT_HOST" ]]; then
-        echo "  (local host - running directly)"
-        if sudo nixos-rebuild switch --flake "path:$FLAKE_PATH#$host"; then
+      if [[ "$host" == "devenv" ]]; then
+        echo "  (local host - building and activating directly)"
+        if sudo nixos-rebuild switch --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host"; then
           SUCCESS_HOSTS+=("$host")
           echo "✓ $host updated successfully"
         else
@@ -170,9 +186,10 @@
           continue
         }
         
-        echo "  (remote: $TARGET_IP)"
-        if ${pkgs.openssh}/bin/ssh -t "$SSH_USER@$TARGET_IP" \
-            "sudo nixos-rebuild switch --flake 'path:$FLAKE_PATH#$host'"; then
+        echo "  (remote: $TARGET_IP - building on devenv, deploying to target)"
+        if nixos-rebuild switch --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host" \
+            --target-host "$SSH_USER@$TARGET_IP" \
+            --sudo; then
           SUCCESS_HOSTS+=("$host")
           echo "✓ $host updated successfully"
         else
