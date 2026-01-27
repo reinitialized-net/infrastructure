@@ -88,8 +88,8 @@ WireGuard-based mesh networking. Provides:
   services.meshNetwork = {
     enable = true;
     nodeId = 1;
-    privateKeyFile = /run/secrets/wg-key;
-    peers = [ /* ... */ ];
+    # privateKeyFile auto-sourced from secrets.meshNetwork.file
+    # peers auto-discovered from meshTopology.nix when autoPeers = true (default)
   };
 }
 ```

@@ -193,28 +193,32 @@ services.meshNetwork = {
 
 ```
 infrastructure/
-├── flake.nix              # Main flake definition
-├── library/               # Library functions
-│   ├── default.nix        # Library exports
+├── flake.nix                # Main flake definition
+├── library/                 # Library functions
+│   ├── default.nix          # Library exports
+│   ├── makeDualExport.nix   # Dual-export pattern (PRIMARY)
 │   ├── makeConfiguration.nix
+│   ├── makeUser.nix         # User with bind-mounted home
 │   └── generateVMAImage/
-│       ├── default.nix    # VMA image builder
-│       └── qemuConfig.nix # Proxmox VM configuration
-├── modules/               # Custom NixOS modules
+│       ├── default.nix      # VMA image builder
+│       └── qemuConfig.nix   # Proxmox VM configuration
+├── modules/                 # Custom NixOS modules
 │   ├── hardware/
-│   │   └── qemu.nix       # QEMU/KVM hardware config
-│   ├── profiles/          # System profiles
-│   │   ├── standard.nix
-│   │   ├── containers/    # Docker profile (directory)
-│   │   ├── firewall.nix
-│   │   ├── secrets.nix
-│   │   └── meshNetwork/   # Mesh network (directory)
-│   └── secrets/           # Secret definitions
-│       └── (gitignored)
-├── hosts/                 # Host-specific configurations
-├── overrides/             # Package overrides
-│   └── vma.nix           # Custom QEMU with VMA support
-└── docs/                  # Documentation
+│   │   └── qemu.nix         # QEMU/KVM hardware config
+│   ├── profiles/            # System profiles
+│   │   ├── standard.nix     # Base config (auto-included)
+│   │   ├── mountData.nix    # Secondary disk mounting
+│   │   ├── firewall.nix     # Allowlist/denylist firewall
+│   │   ├── secrets.nix      # Secrets management
+│   │   ├── containers/      # Docker profile (directory)
+│   │   └── meshNetwork/     # Mesh network (directory)
+│   │       └── meshTopology.nix  # Centralized node definitions
+│   ├── secrets/             # Actual secret definitions (gitignored)
+│   └── secrets.example/     # Example secret definitions
+├── hosts/                   # Host-specific configurations
+├── overrides/               # Package overrides
+│   └── vma.nix              # Custom QEMU with VMA support
+└── docs/                    # Documentation
 ```
 
 ## Integration Points

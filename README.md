@@ -39,12 +39,14 @@ This flake exports the following systems:
 #### NixOS System Configurations
 - `nixosConfigurations.devenv` - Development environment VM
 - `nixosConfigurations.rp1` - Reverse proxy server VM
-- `nixosConfigurations.apps1` - Application server VM
+- `nixosConfigurations.apps1` - Application server 1 VM
+- `nixosConfigurations.apps2` - Application server 2 VM
 
 #### Proxmox VMA Packages  
 - `packages.x86_64-linux.devenv` - Proxmox VMA image for devenv
 - `packages.x86_64-linux.rp1` - Proxmox VMA image for rp1
 - `packages.x86_64-linux.apps1` - Proxmox VMA image for apps1
+- `packages.x86_64-linux.apps2` - Proxmox VMA image for apps2
 
 ### Building VMA Images for Proxmox
 

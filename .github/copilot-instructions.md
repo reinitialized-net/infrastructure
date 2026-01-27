@@ -74,7 +74,7 @@ config.secrets.meshNetwork.file
 ### Networking Patterns
 
 - systemd-networkd is used (NOT NetworkManager)
-- `useDHCP = false` at top level, enable per-interface via systemd.network.networks
+- `useDHCP = true` at top level by default (can be overridden per-host)
 - Mesh networking uses WireGuard with Docker bridge integration
 - **Auto-peer discovery**: Mesh nodes are defined once in `meshTopology.nix`, peers auto-discovered via `autoPeers = true`
 - Firewall allowlist/denylist system for source IP-based rules (see `modules/profiles/firewall.nix`)

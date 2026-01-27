@@ -25,7 +25,7 @@ The standard profile provides a base configuration for all NixOS systems in this
 ```nix
 time = {
   timeZone = lib.mkDefault "America/Chicago";
-  hardwareClockInLocalTime = lib.mkDefault true;
+  hardwareClockInLocalTime = lib.mkDefault false;  # Use UTC for RTC to avoid DST issues
 };
 ```
 
@@ -48,7 +48,7 @@ networking = {
   nftables.enable = lib.mkDefault true;
   networkmanager.enable = lib.mkForce false;
   useNetworkd = lib.mkForce true;
-  useDHCP = lib.mkDefault false;
+  useDHCP = lib.mkDefault true;
   
   firewall = {
     enable = lib.mkForce true;
@@ -109,13 +109,13 @@ Default administrative user:
 ```nix
 users.users.rnetadmin = {
   initialHashedPassword = lib.mkDefault "$6$ELaXwtqP5R5l.n5e$...";
-  isSystemUser = lib.mkForce true;
-  createHome = lib.mkForce true;
+  isNormalUser = lib.mkForce true;
+  createHome = lib.mkDefault true;
   group = lib.mkForce "rnetadmin";
   extraGroups = lib.mkDefault [ "wheel" ];
   shell = lib.mkForce pkgs.bashInteractive;
   
-  openssh.authorizedKeys.keys = lib.mkDefault [ 
+  openssh.authorizedKeys.keys = [ 
     "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5pCeT2IuImFk0Rc2qcxudr8hVTgWvQDcwkXi0Hybru rnetadmin"
   ];
 };

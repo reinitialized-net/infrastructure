@@ -63,18 +63,16 @@ services.meshNetwork.nodeId = 1;
 services.meshNetwork.listenPort = 51820;
 ```
 
-#### `privateKeyFile`
+#### Private Key Configuration
 
-**Type:** `path`
-
-**Required:** Yes (unless set via secrets)
-
-**Description:** Path to the WireGuard private key file. Generate with `wg genkey`.
-
-**Auto-configuration:** Can be sourced from `secrets.meshNetwork.file`
+**Note:** The mesh network module automatically sources the WireGuard private key from `secrets.meshNetwork.file`. There is no separate `privateKeyFile` option - configure your private key via the secrets module:
 
 ```nix
-services.meshNetwork.privateKeyFile = /run/secrets/mesh-privatekey;
+# In modules/secrets/<hostname>.nix
+secrets.meshNetwork = {
+  description = "MeshNetwork secrets";
+  file = lib.mkDefault (builtins.toFile "mesh-privatekey" "YOUR_PRIVATE_KEY_HERE");
+};
 ```
 
 #### `peers`
@@ -296,9 +294,7 @@ In your configuration:
   };
   
   # Configuration is auto-loaded from secrets
-  # Or override manually:
-  # services.meshNetwork.nodeId = 1;
-  # services.meshNetwork.privateKeyFile = /path/to/key;
+  # nodeId must be set in host config or secrets
 }
 ```
 
@@ -406,11 +402,20 @@ nixos-rebuild switch --flake path:.#hostname
 **Node 1 (Public IP: 203.0.113.10)**
 
 ```nix
+# modules/secrets/node1.nix
+{
+  secrets.meshNetwork = {
+    description = "Node 1 mesh credentials";
+    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "node1_private_key_here");
+  };
+}
+
+# hosts/node1.nix
 {
   services.meshNetwork = {
     enable = true;
     nodeId = 1;
-    privateKeyFile = /run/secrets/wg-key-node1;
+    autoPeers = false;  # Manual peer configuration
     
     peers = [
       {
@@ -426,11 +431,20 @@ nixos-rebuild switch --flake path:.#hostname
 **Node 2 (Public IP: 203.0.113.20)**
 
 ```nix
+# modules/secrets/node2.nix
+{
+  secrets.meshNetwork = {
+    description = "Node 2 mesh credentials";
+    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "node2_private_key_here");
+  };
+}
+
+# hosts/node2.nix
 {
   services.meshNetwork = {
     enable = true;
     nodeId = 2;
-    privateKeyFile = /run/secrets/wg-key-node2;
+    autoPeers = false;  # Manual peer configuration
     
     peers = [
       {
@@ -448,11 +462,17 @@ nixos-rebuild switch --flake path:.#hostname
 **Hub (Node 1 - Public IP)**
 
 ```nix
+# modules/secrets/hub.nix
+{
+  secrets.meshNetwork.file = lib.mkDefault (builtins.toFile "mesh-privatekey" "hub_private_key");
+}
+
+# hosts/hub.nix
 {
   services.meshNetwork = {
     enable = true;
     nodeId = 1;
-    privateKeyFile = /run/secrets/wg-hub;
+    autoPeers = false;
     
     peers = [
       {
@@ -473,11 +493,17 @@ nixos-rebuild switch --flake path:.#hostname
 **Spoke Nodes (Behind NAT)**
 
 ```nix
+# modules/secrets/spoke.nix
+{
+  secrets.meshNetwork.file = lib.mkDefault (builtins.toFile "mesh-privatekey" "spoke_private_key");
+}
+
+# hosts/spoke.nix
 {
   services.meshNetwork = {
     enable = true;
     nodeId = 2;  # or 3 for the other spoke
-    privateKeyFile = /run/secrets/wg-spoke;
+    autoPeers = false;
     
     peers = [
       {
@@ -495,17 +521,16 @@ nixos-rebuild switch --flake path:.#hostname
 
 ```nix
 {
+  # Private key configured via secrets.meshNetwork.file
+  
   # Enable Docker
   virtualisation.docker.enable = true;
   
-  # Enable mesh network
+  # Enable mesh network (uses autoPeers from meshTopology.nix)
   services.meshNetwork = {
     enable = true;
     nodeId = 1;
     dockerIntegration = true;
-    
-    privateKeyFile = /run/secrets/wg-key;
-    peers = [ /* ... */ ];
   };
   
   # Containers can now use the 'backend' network
