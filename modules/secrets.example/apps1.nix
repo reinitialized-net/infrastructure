@@ -13,6 +13,7 @@
         sshPublicKey = "ssh-ed25519 AAAA... rp1-cert-distribution";
       };
     };
+    
     hudu = {
       description = "Hudu secrets";
       keys = {
