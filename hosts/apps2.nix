@@ -47,24 +47,35 @@
       nodeId = 4;
   };
 
-  # Add rp1 cert distribution SSH key to rnetadmin authorized keys
-  users.users.rnetadmin.openssh.authorizedKeys.keys = [
-    config.secrets.certDistribution.keys.sshPublicKey
-  ];
+  # Dedicated service account for certificate distribution from rp1
+  # This account has minimal privileges - only write to cert dir and restart container
+  users.users.certdist = {
+    isSystemUser = true;
+    group = "certdist";
+    home = "/var/lib/certdist";
+    createHome = true;
+    shell = pkgs.bashInteractive;
+    openssh.authorizedKeys.keys = [
+      config.secrets.certDistribution.keys.sshPublicKey
+    ];
+  };
+  users.groups.certdist = {};
 
   # Certificate directory for certificates distributed from rp1
   # Certificates are pushed from rp1 via SSH/rsync over mesh network
+  # Owned by certdist user so it can write certificates
   systemd.tmpfiles.rules = [
-    "d /var/lib/acme/two.dns.reinitialized.net 0750 root root -"
+    "d /var/lib/acme/two.dns.reinitialized.net 0755 certdist certdist -"
   ];
 
-  # Allow rnetadmin to restart docker containers for cert reload
+  # Allow certdist to restart docker containers for cert reload
+  # Using the symlink path which is stable across rebuilds
   security.sudo-rs.extraRules = [
     {
-      users = [ "rnetadmin" ];
+      users = [ "certdist" ];
       commands = [
         {
-          command = "${pkgs.docker}/bin/docker restart dnsTwo";
+          command = "/run/current-system/sw/bin/docker restart dnsTwo";
           options = [ "NOPASSWD" ];
         }
       ];

@@ -182,18 +182,27 @@ systemd.services.dns-cert-distribute = {
 # Remove: Local ACME configuration
 # Remove: Local nginx for ACME challenges  
 # Remove: technitium-cert-reload service
-# Add: SSH public key for rnetadmin from secrets
+# Add: Dedicated certdist service account for certificate distribution
 # Add: Firewall allowlist for mesh-only ports
 # Keep: Docker container configuration
 
-# Add rp1 cert distribution SSH key to rnetadmin
-users.users.rnetadmin.openssh.authorizedKeys.keys = [
-  config.secrets.certDistribution.keys.sshPublicKey
-];
+# Dedicated service account for certificate distribution
+# Uses minimal privileges - only write to cert dir and restart container
+users.users.certdist = {
+  isSystemUser = true;
+  group = "certdist";
+  home = "/var/lib/certdist";
+  createHome = true;
+  shell = pkgs.bashInteractive;
+  openssh.authorizedKeys.keys = [
+    config.secrets.certDistribution.keys.sshPublicKey
+  ];
+};
+users.groups.certdist = {};
 
-# Allow rnetadmin to restart docker containers
+# Allow certdist to restart docker containers
 security.sudo-rs.extraRules = [{
-  users = [ "rnetadmin" ];
+  users = [ "certdist" ];
   commands = [{
     command = "${pkgs.docker}/bin/docker restart dnsOne";
     options = [ "NOPASSWD" ];
@@ -206,9 +215,9 @@ networking.firewall.allowlist = [
   { port = 53443; protocol = "tcp"; source = [ "10.255.0.0/24" ]; }
 ];
 
-# Ensure certificate directory exists
+# Ensure certificate directory exists (owned by certdist)
 systemd.tmpfiles.rules = [
-  "d /var/lib/acme/one.dns.reinitialized.net 0750 root root -"
+  "d /var/lib/acme/one.dns.reinitialized.net 0755 certdist certdist -"
 ];
 
 # Container mounts certificates from distribution location
@@ -227,6 +236,7 @@ virtualisation.oci-containers.containers.dnsOne = {
 
 - All cluster communication (53443) restricted to mesh network
 - Certificate distribution via SSH over mesh (encrypted)
+- Dedicated `certdist` service account with minimal privileges
 - Admin UI access only through rp1 reverse proxy
 
 ### Firewall Rules

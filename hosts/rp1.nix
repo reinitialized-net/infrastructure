@@ -115,12 +115,15 @@
     description = "Distribute DNS certificates to Technitium cluster nodes";
     after = [ "network-online.target" ];
     wants = [ "network-online.target" ];
-    path = with pkgs; [ openssh rsync openssl ];
+    path = with pkgs; [ openssh rsync openssl coreutils ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = false;
       # Allow some time for ACME to finish writing files
       ExecStartPre = "${pkgs.coreutils}/bin/sleep 2";
+      # Runtime directory for temp key with correct permissions
+      RuntimeDirectory = "dns-cert-distribute";
+      RuntimeDirectoryMode = "0700";
     };
     script = let
       sshKeyFile = config.secrets.certDistribution.file;
@@ -128,8 +131,14 @@
       set -euo pipefail
       
       CERT_STAGING="/mnt/containers/dns-certs"
-      SSH_KEY="${sshKeyFile}"
-      SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+      
+      # Copy SSH key to runtime dir with correct permissions (600)
+      # This is needed because keys in nix store are 444 which SSH rejects
+      SSH_KEY_TEMP="/run/dns-cert-distribute/ssh_key"
+      cp "${sshKeyFile}" "$SSH_KEY_TEMP"
+      chmod 600 "$SSH_KEY_TEMP"
+      
+      SSH_OPTS="-i $SSH_KEY_TEMP -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
       
       # Function to convert and distribute certificate
       distribute_cert() {
@@ -157,11 +166,11 @@
         echo "Distributing certificate to $TARGET_HOST..."
         ${pkgs.rsync}/bin/rsync -avz -e "ssh $SSH_OPTS" \
           "$PFX_FILE" \
-          "rnetadmin@$TARGET_HOST:/var/lib/acme/$DOMAIN/cert.pfx"
+          "certdist@$TARGET_HOST:/var/lib/acme/$DOMAIN/cert.pfx"
         
         echo "Restarting $CONTAINER_NAME on $TARGET_HOST..."
-        ${pkgs.openssh}/bin/ssh $SSH_OPTS "rnetadmin@$TARGET_HOST" \
-          "sudo docker restart $CONTAINER_NAME" || true
+        ${pkgs.openssh}/bin/ssh $SSH_OPTS "certdist@$TARGET_HOST" \
+          "sudo /run/current-system/sw/bin/docker restart $CONTAINER_NAME" || true
         
         echo "Successfully distributed certificate for $DOMAIN"
       }

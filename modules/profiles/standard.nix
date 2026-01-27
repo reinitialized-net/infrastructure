@@ -67,7 +67,7 @@
         extraGroups = lib.mkDefault [ "wheel" ];
         shell = lib.mkForce pkgs.bashInteractive;
 
-        openssh.authorizedKeys.keys = lib.mkDefault [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5pCeT2IuImFk0Rc2qcxudr8hVTgWvQDcwkXi0Hybru rnetadmin" ];
+        openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5pCeT2IuImFk0Rc2qcxudr8hVTgWvQDcwkXi0Hybru rnetadmin" ];
       };
     };
   };
