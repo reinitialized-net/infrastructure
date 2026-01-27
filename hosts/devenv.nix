@@ -136,7 +136,7 @@
   '';
 
   # updateAll script
-  updateAllScript = pkgs.writeScriptBin "updateAll" ''
+  updateInfraScript = pkgs.writeScriptBin "updateInfra" ''
     #!${pkgs.bash}/bin/bash
     # Update all NixOS hosts defined in hosts/ directory
     set -euo pipefail
@@ -285,6 +285,6 @@ in {
 
     # DevEnv-exclusive fleet management tools
     rebuildHostScript
-    updateAllScript
+    updateInfraScript
   ];
 }
