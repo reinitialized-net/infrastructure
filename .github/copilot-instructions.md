@@ -95,7 +95,35 @@ config.secrets.meshNetwork.file
 
 ## Development Workflows
 
-### Building and Deploying
+### Fleet Management Tools (devenv only)
+
+The `devenv` host includes custom fleet management scripts that simplify deploying changes across the infrastructure. These tools automatically resolve host IPs from `meshTopology.nix` and handle both local and remote deployments.
+
+**`rebuildHost`** - Deploy changes to a single host:
+```bash
+# Deploy to a remote host (builds on devenv, deploys to target)
+rebuildHost apps1
+
+# Deploy to local devenv
+rebuildHost devenv
+
+# Use 'boot' instead of 'switch' (activates on next reboot)
+rebuildHost rp1 --boot
+```
+
+**`updateInfra`** - Deploy changes to ALL hosts in the fleet:
+```bash
+# Update all hosts defined in meshTopology.nix
+updateInfra
+```
+
+Both tools:
+- Auto-resolve host IPs from `meshTopology.nix`
+- Build on devenv and deploy to remote targets via SSH
+- Use `rnetadmin` user for remote connections
+- Display progress and summary of successful/failed hosts
+
+### Manual Building and Deploying
 
 ```bash
 # Build VMA image for Proxmox import
@@ -173,6 +201,8 @@ networking.firewall.denylist = [
 - **library/makeDualExport.nix** - The core dual-export pattern implementation
 - **modules/profiles/standard.nix** - Base config applied to ALL systems
 - **modules/profiles/secrets.nix** - Secrets module options definition
+- **modules/profiles/meshNetwork/meshTopology.nix** - Centralized mesh node definitions (used by fleet tools)
+- **hosts/devenv.nix** - Development environment with fleet management tools (`rebuildHost`, `updateInfra`)
 - **docs/** - Comprehensive documentation (reference for detailed examples)
 
 ## Common Pitfalls

@@ -6,16 +6,57 @@
 
 ## Overview
 
-Extends the standard NixOS firewall with granular source IP-based allowlisting. Allows fine-grained control over which source IPs can access specific ports, supporting both nftables and iptables backends.
+Extends the standard NixOS firewall with granular source IP-based allowlisting and denylisting. Allows fine-grained control over which source IPs can access specific ports, supporting both nftables and iptables backends.
 
 ## Features
 
 - Per-port source IP restrictions
+- Allowlist and denylist with intelligent priority handling
 - Support for both TCP and UDP protocols
 - IPv4, IPv6, or dual-stack support
 - CIDR notation for IP ranges
 - Automatic backend detection (nftables or iptables)
 - Complements existing `networking.firewall` options
+
+## Rule Priority
+
+The module uses intelligent priority ordering between allowlist and denylist:
+
+1. **Denylist takes priority by default** - Specific IP blocks are always honored
+2. **Exception for catch-all denies** - When a denylist entry uses `0.0.0.0/0` (or `::/0` for IPv6), specific allowlist sources for the same port/protocol are processed first
+
+This enables common patterns like "deny all, allow specific":
+
+```nix
+{
+  networking.firewall = {
+    # Deny port 443 from all sources by default
+    denylist = [
+      {
+        port = 443;
+        protocol = "tcp";
+        source = [ "0.0.0.0/0" ];
+      }
+    ];
+    
+    # But allow specific trusted networks
+    allowlist = [
+      {
+        port = 443;
+        protocol = "tcp";
+        source = [ "10.0.0.0/8" "192.168.1.0/24" ];
+      }
+    ];
+  };
+}
+```
+
+### Generated Rule Order
+
+Rules are generated in this order:
+1. **Allowlist overrides** - Specific allowlist sources that match catch-all denylist entries (ACCEPT)
+2. **Denylist rules** - All denylist entries including catch-all (DROP)
+3. **Normal allowlist** - Allowlist entries for ports without catch-all denies (ACCEPT)
 
 ## Option: `networking.firewall.allowlist`
 
@@ -359,11 +400,90 @@ For iptables, rules are added via `extraCommands`:
 iptables -A INPUT -4 -p tcp -s 10.0.0.0/8 --dport 443 -j ACCEPT
 ```
 
-### Rule Priority
+## Option: `networking.firewall.denylist`
 
-1. Allowlist rules are processed as part of the firewall input chain
-2. They are evaluated before the default drop rules
-3. Multiple source IPs for the same port create multiple rules
+### Type
+
+```nix
+listOf (submodule)
+```
+
+A list of denylist entries, each specifying a port and blocked source IPs. Uses the same submodule options as `allowlist`.
+
+### Submodule Options
+
+Same as `allowlist`: `port`, `protocol`, `ipType`, `source`
+
+### Denylist Examples
+
+#### Block Specific Bad Actors
+
+```nix
+{
+  networking.firewall.denylist = [
+    {
+      port = 22;
+      protocol = "tcp";
+      source = [ "192.168.1.100" "10.0.0.50" ];  # Known bad IPs
+    }
+  ];
+}
+```
+
+#### Deny All Except Trusted (with Allowlist Override)
+
+```nix
+{
+  networking.firewall = {
+    # Deny SSH from everyone
+    denylist = [
+      {
+        port = 22;
+        protocol = "tcp";
+        source = [ "0.0.0.0/0" ];
+      }
+    ];
+    
+    # But allow from mesh network
+    allowlist = [
+      {
+        port = 22;
+        protocol = "tcp";
+        source = [ "10.255.0.0/24" ];  # This takes priority due to catch-all deny
+      }
+    ];
+  };
+}
+```
+
+#### Block Port Globally with Internal Exception
+
+```nix
+{
+  networking.firewall = {
+    # Block database port from external
+    denylist = [
+      {
+        port = 5432;
+        protocol = "tcp";
+        source = [ "0.0.0.0/0" ];  # Catch-all deny
+      }
+    ];
+    
+    # Allow only from app servers
+    allowlist = [
+      {
+        port = 5432;
+        protocol = "tcp";
+        source = [
+          "10.100.0.10"  # app-server-1
+          "10.100.0.11"  # app-server-2
+        ];
+      }
+    ];
+  };
+}
+```
 
 ## Best Practices
 
