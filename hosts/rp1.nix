@@ -1,7 +1,9 @@
 {
   self,
+  config,
   defaultStateVersion,
   pkgs,
+  lib,
   ...
 }:{
   # Networking Configuration
@@ -94,7 +96,86 @@
   # Ensure container directories exist
   systemd.tmpfiles.rules = [
     "d /mnt/containers/nginx/var/lib/acme 0750 root root -"
+    "d /mnt/containers/dns-certs 0750 root root -"
+    "d /run/dns-cert-trigger 0755 root root -"
   ];
+
+  # Path watcher to trigger certificate distribution when container signals renewal
+  systemd.paths.dns-cert-distribute = {
+    description = "Watch for DNS certificate renewal trigger";
+    wantedBy = [ "multi-user.target" ];
+    pathConfig = {
+      PathModified = "/run/dns-cert-trigger/distribute-certs";
+      Unit = "dns-cert-distribute.service";
+    };
+  };
+
+  # Certificate distribution service - pushes PKCS#12 certs to DNS nodes via mesh
+  systemd.services.dns-cert-distribute = {
+    description = "Distribute DNS certificates to Technitium cluster nodes";
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    path = with pkgs; [ openssh rsync openssl ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = false;
+      # Allow some time for ACME to finish writing files
+      ExecStartPre = "${pkgs.coreutils}/bin/sleep 2";
+    };
+    script = let
+      sshKeyFile = config.secrets.certDistribution.file;
+    in ''
+      set -euo pipefail
+      
+      CERT_STAGING="/mnt/containers/dns-certs"
+      SSH_KEY="${sshKeyFile}"
+      SSH_OPTS="-i $SSH_KEY -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+      
+      # Function to convert and distribute certificate
+      distribute_cert() {
+        local DOMAIN="$1"
+        local TARGET_HOST="$2"
+        local CONTAINER_NAME="$3"
+        
+        local ACME_DIR="/mnt/containers/nginx/var/lib/acme/$DOMAIN"
+        local PFX_FILE="$CERT_STAGING/$DOMAIN.pfx"
+        
+        if [[ ! -f "$ACME_DIR/fullchain.pem" ]] || [[ ! -f "$ACME_DIR/key.pem" ]]; then
+          echo "Certificate files not found for $DOMAIN, skipping..."
+          return 1
+        fi
+        
+        echo "Converting $DOMAIN certificate to PKCS#12..."
+        ${pkgs.openssl}/bin/openssl pkcs12 -export -legacy \
+          -out "$PFX_FILE" \
+          -inkey "$ACME_DIR/key.pem" \
+          -in "$ACME_DIR/fullchain.pem" \
+          -passout pass:
+        
+        chmod 640 "$PFX_FILE"
+        
+        echo "Distributing certificate to $TARGET_HOST..."
+        ${pkgs.rsync}/bin/rsync -avz -e "ssh $SSH_OPTS" \
+          "$PFX_FILE" \
+          "rnetadmin@$TARGET_HOST:/var/lib/acme/$DOMAIN/cert.pfx"
+        
+        echo "Restarting $CONTAINER_NAME on $TARGET_HOST..."
+        ${pkgs.openssh}/bin/ssh $SSH_OPTS "rnetadmin@$TARGET_HOST" \
+          "sudo docker restart $CONTAINER_NAME" || true
+        
+        echo "Successfully distributed certificate for $DOMAIN"
+      }
+      
+      # Distribute to apps1 (dnsOne) via mesh IP
+      distribute_cert "one.dns.reinitialized.net" "10.255.0.3" "dnsOne" || true
+      
+      # Distribute to apps2 (dnsTwo) via mesh IP
+      distribute_cert "two.dns.reinitialized.net" "10.255.0.4" "dnsTwo" || true
+      
+      echo "Certificate distribution complete"
+    '';
+  };
+
   # Configure Nginx Reverse Proxy
   containers.nginx = {
     ephemeral = true;
@@ -104,6 +185,11 @@
     bindMounts = {
       "/var/lib/acme" = {
         hostPath = "/mnt/containers/nginx/var/lib/acme";
+        isReadOnly = false;
+      };
+      # Bind mount for triggering host certificate distribution
+      "/run/host-trigger" = {
+        hostPath = "/run/dns-cert-trigger";
         isReadOnly = false;
       };
     };
@@ -123,6 +209,17 @@
         acceptTerms = true;
         defaults = {
           email = "admin@reinitialized.net";
+        };
+        # Configure postRun hooks for DNS certificates
+        certs."one.dns.reinitialized.net" = {
+          postRun = ''
+            touch /run/host-trigger/distribute-certs
+          '';
+        };
+        certs."two.dns.reinitialized.net" = {
+          postRun = ''
+            touch /run/host-trigger/distribute-certs
+          '';
         };
       };
       # Nginx
@@ -240,26 +337,6 @@
             };
           };
           
-          # HTTP-only virtualHost for apps1 ACME challenges
-          "one.dns.reinitialized.net:80" = {
-            serverName = "one.dns.reinitialized.net";
-            listenAddresses = [ 
-              "10.1.12.2"
-            ];
-            
-            locations."/.well-known/acme-challenge/" = {
-              proxyPass = "http://10.255.0.3";
-              extraConfig = ''
-                proxy_set_header Host $host;
-              '';
-            };
-            
-            # Redirect all other HTTP traffic to HTTPS
-            locations."/" = {
-              return = "301 https://$host$request_uri";
-            };
-          };
-          
           "two.dns.reinitialized.net" = {
             forceSSL = true;
             enableACME = true;
@@ -269,26 +346,6 @@
             
             locations."/" = {
               proxyPass = "http://10.255.0.4:5380";
-            };
-          };
-          
-          # HTTP-only virtualHost for apps2 ACME challenges
-          "two.dns.reinitialized.net:80" = {
-            serverName = "two.dns.reinitialized.net";
-            listenAddresses = [ 
-              "10.1.12.3"
-            ];
-            
-            locations."/.well-known/acme-challenge/" = {
-              proxyPass = "http://10.255.0.4";
-              extraConfig = ''
-                proxy_set_header Host $host;
-              '';
-            };
-            
-            # Redirect all other HTTP traffic to HTTPS
-            locations."/" = {
-              return = "301 https://$host$request_uri";
             };
           };
         };

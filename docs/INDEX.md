@@ -48,6 +48,10 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
   - Complete infrastructure setup
 - **[User Management with Data Homes](examples/makeUser.md)** - Creating users with properly configured home directories
 
+## Architecture Documentation
+
+- **[Technitium DNS Cluster](architecture/technitium-dns-cluster.md)** - Authoritative DNS cluster with centralized certificate management
+
 ## Documentation by Topic
 
 ### By Use Case

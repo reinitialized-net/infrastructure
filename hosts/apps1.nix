@@ -7,6 +7,21 @@
   networking = {
     hostName = "apps1";
     useDHCP = false;
+    # Restrict cluster ports to mesh network only
+    firewall.allowlist = [
+      {
+        port = 5380;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "10.255.0.0/24" ];  # Mesh only - admin UI
+      }
+      {
+        port = 53443;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "10.255.0.0/24" ];  # Mesh only - cluster sync
+      }
+    ];
   };
   systemd.network.networks = {
     "eth0" = {
@@ -32,40 +47,29 @@
       nodeId = 3;
   };
 
-  # Enable ACME for DNS server certificate
-  security.acme = {
-    acceptTerms = true;
-    defaults = {
-      email = "admin@reinitialized.net";
-    };
-    certs."one.dns.reinitialized.net" = {
-      # Use HTTP-01 challenge with webroot
-      webroot = "/var/lib/acme/acme-challenge";
-      # Ensure nginx user can read the certificates
-      group = "nginx";
-      # Reload Technitium container after cert renewal
-      postRun = ''
-        ${pkgs.docker}/bin/docker restart dnsOne || true
-      '';
-    };
-  };
+  # Add rp1 cert distribution SSH key to rnetadmin authorized keys
+  users.users.rnetadmin.openssh.authorizedKeys.keys = [
+    config.secrets.certDistribution.keys.sshPublicKey
+  ];
 
-  # Nginx for ACME challenge serving
-  services.nginx = {
-    enable = true;
-    # Listen only on mesh network IP
-    virtualHosts."one.dns.reinitialized.net" = {
-      listen = [
+  # Certificate directory for certificates distributed from rp1
+  # Certificates are pushed from rp1 via SSH/rsync over mesh network
+  systemd.tmpfiles.rules = [
+    "d /var/lib/acme/one.dns.reinitialized.net 0750 root root -"
+  ];
+
+  # Allow rnetadmin to restart docker containers for cert reload
+  security.sudo-rs.extraRules = [
+    {
+      users = [ "rnetadmin" ];
+      commands = [
         {
-          addr = "10.255.0.3";
-          port = 80;
+          command = "${pkgs.docker}/bin/docker restart dnsOne";
+          options = [ "NOPASSWD" ];
         }
       ];
-      locations."/.well-known/acme-challenge/" = {
-        root = "/var/lib/acme/acme-challenge";
-      };
-    };
-  };
+    }
+  ];
   # Hosted Services
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
@@ -150,6 +154,7 @@
       ];
       ports = [
         "10.255.0.3:5380:5380"
+        "10.255.0.3:53443:53443"
         "10.1.11.2:53:53/tcp"
         "10.1.11.2:53:53/udp"
         "10.1.11.2:853:853/tcp"
