@@ -7,21 +7,6 @@
   networking = {
     hostName = "apps1";
     useDHCP = false;
-    # Restrict cluster ports to mesh network only
-    firewall.allowlist = [
-      {
-        port = 5380;
-        protocol = "tcp";
-        ipType = "ipv4";
-        source = [ "10.255.0.0/24" ];  # Mesh only - admin UI
-      }
-      {
-        port = 53443;
-        protocol = "tcp";
-        ipType = "ipv4";
-        source = [ "10.255.0.0/24" ];  # Mesh only - cluster sync
-      }
-    ];
   };
   systemd.network.networks = {
     "eth0" = {
@@ -164,8 +149,8 @@
         "backend"
       ];
       ports = [
-        "10.255.0.3:5380:5380"
         "10.255.0.3:53443:53443"
+
         "10.1.11.2:53:53/tcp"
         "10.1.11.2:53:53/udp"
         "10.1.11.2:853:853/tcp"

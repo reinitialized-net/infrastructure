@@ -20,6 +20,10 @@
           "172.16.0.0/24"
           "192.168.0.0/16"
         ];
+        exclude = [
+          "10.1.11.2"
+          "10.1.11.3"
+        ];
       }
       {
         port = 853;
@@ -29,6 +33,10 @@
           "10.0.0.0/8"
           "172.16.0.0/24"
           "192.168.0.0/16"
+        ];
+        exclude = [
+          "10.1.11.2"
+          "10.1.11.3"
         ];
       }
     ];
@@ -63,6 +71,15 @@
         ipType = "ipv4";
         source = [
           "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 53443;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "10.1.11.0/24"   # apps1/apps2 subnet
+          "10.1.12.0/29"   # rp1 subnet (for hairpin NAT from router)
         ];
       }
     ];
@@ -248,6 +265,12 @@
             server 10.1.11.2:53;
             server 10.1.11.2:853;
           }
+          upstream dnsOneCluster {
+            server 10.255.0.3:53443;
+          }
+          upstream dnsTwoCluster {
+            server 10.255.0.4:53443;
+          }
           
           server {
             listen 10.1.12.2:53 udp;
@@ -259,6 +282,10 @@
             proxy_responses 1;
           }
           server {
+            listen 10.1.12.2:53443;
+            proxy_pass dnsOneCluster;
+          }
+          server {
             listen 10.1.12.3:53 udp;
             listen 10.1.12.3:53;
             listen 10.1.12.3:853;
@@ -266,6 +293,10 @@
             proxy_pass dnsTwo;
             proxy_timeout 1s;
             proxy_responses 1;
+          }
+          server {
+            listen 10.1.12.3:53443;
+            proxy_pass dnsTwoCluster;
           }
         '';
 
@@ -342,7 +373,7 @@
             ];
             
             locations."/" = {
-              proxyPass = "http://10.255.0.3:5380";
+              proxyPass = "https://10.255.0.3:53443";
             };
           };
           
@@ -354,7 +385,7 @@
             ];
             
             locations."/" = {
-              proxyPass = "http://10.255.0.4:5380";
+              proxyPass = "https://10.255.0.4:53443";
             };
           };
         };
