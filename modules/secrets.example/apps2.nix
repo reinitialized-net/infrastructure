@@ -13,5 +13,15 @@
         sshPublicKey = "ssh-ed25519 AAAA... rp1-cert-distribution";
       };
     };
+    unifi = {
+      description = "UniFi Network Controller MongoDB credentials";
+      keys = {
+        MONGO_USER = "unifi";
+        MONGO_PASS = "YOUR_SECURE_PASSWORD_HERE";
+        MONGO_PORT = "27017";
+        MONGO_DBNAME = "unifi";
+        MONGO_AUTHSOURCE = "admin";
+      };
+    };
   };
 }

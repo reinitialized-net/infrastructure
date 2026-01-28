@@ -5,7 +5,14 @@
   pkgs,
   lib,
   ...
-}:{
+}:let
+  internalOnly = ''
+    allow 10.0.0.0/8;
+    allow 172.16.0.0/12;
+    allow 192.168.0.0/16;
+    deny all;
+  '';
+in {
   # Networking Configuration
   networking = {
     hostName = "rp1";
@@ -78,8 +85,47 @@
         protocol = "tcp";
         ipType = "ipv4";
         source = [
-          "10.1.11.0/24"   # apps1/apps2 subnet
-          "10.1.12.0/29"   # rp1 subnet (for hairpin NAT from router)
+          "10.0.0.0/8"
+          "172.16.0.0/24"
+          "192.168.0.0/16"
+        ];
+      }
+      {
+        port = 8443;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "10.0.0.0/8"
+          "172.16.0.0/24"
+          "192.168.0.0/16"
+        ];
+      }
+      {
+        port = 8080;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "10.0.0.0/8"
+          "172.16.0.0/24"
+          "192.168.0.0/16"
+        ];
+      }
+      {
+        port = 3478;
+        protocol = "udp";
+        ipType = "ipv4";
+        source = [
+          "10.0.0.0/8"
+          "172.16.0.0/24"
+          "192.168.0.0/16"
+        ];
+      }
+      {
+        port = 10001;
+        protocol = "udp";
+        ipType = "ipv4";
+        source = [
+          "10.1.11.0/24"
         ];
       }
     ];
@@ -221,10 +267,7 @@
     };
 
     config = { lib, ... }: {
-      system.stateVersion = lib.mkDefault defaultStateVersion;
-
-      # NOTE: DO NOT OVERRIDE DNS. This has been resolved using Split Horizon DNS and returns correctly.
-      
+      system.stateVersion = lib.mkDefault defaultStateVersion;      
       # Ensure nginx user can access ACME files
       users.users.nginx = {
         extraGroups = [ "acme" ];
@@ -257,46 +300,72 @@
 
         # Stream configuration for DNS
         streamConfig = ''
-          upstream dnsOne {
-            server 10.1.11.2:53;
-            server 10.1.11.2:853;
-          }
-          upstream dnsTwo {
-            server 10.1.11.2:53;
-            server 10.1.11.2:853;
-          }
-          upstream dnsOneCluster {
+          ## Upstream
+          upstream dnsOneUI {
             server 10.255.0.3:53443;
           }
-          upstream dnsTwoCluster {
+          upstream dnsOneService {
+            server 10.1.11.2:53;
+          }
+          upstream dnsTwoUI {
             server 10.255.0.4:53443;
           }
-          
+          upstream dnsTwoService {
+            server 10.1.11.3:53;
+          }
+
+          upstream unifiWeb {
+            server 10.255.0.4:8443;
+          }
+          upstream unifiComm {
+            server 10.255.0.4:8080;
+          }
+          upstream unifiStun {
+            server 10.255.0.4:3478;
+          }
+          upstream unifiDiscovery {
+            server 10.255.0.4:10001;
+          }
+
+          ## Listeners
           server {
             listen 10.1.12.2:53 udp;
             listen 10.1.12.2:53;
-            listen 10.1.12.2:853;
-            listen 10.1.12.2:853 udp;
-            proxy_pass dnsOne;
+            proxy_pass dnsOneService;
             proxy_timeout 1s;
             proxy_responses 1;
           }
           server {
             listen 10.1.12.2:53443;
-            proxy_pass dnsOneCluster;
+            proxy_pass dnsOneUI;
           }
           server {
             listen 10.1.12.3:53 udp;
             listen 10.1.12.3:53;
-            listen 10.1.12.3:853;
-            listen 10.1.12.3:853 udp;
-            proxy_pass dnsTwo;
+            proxy_pass dnsTwoService;
             proxy_timeout 1s;
             proxy_responses 1;
           }
           server {
             listen 10.1.12.3:53443;
-            proxy_pass dnsTwoCluster;
+            proxy_pass dnsTwoUI;
+          }
+
+          server {
+            listen 10.1.12.4:8443;
+            proxy_pass unifiWeb;
+          }
+          server {
+            listen 10.1.12.4:8080;
+            proxy_pass unifiComm;
+          }
+          server {
+            listen 10.1.12.4:3478 udp;
+            proxy_pass unifiStun;
+          }
+          server {
+            listen 10.1.12.4:10001 udp;
+            proxy_pass unifiDiscovery;
           }
         '';
 
@@ -374,9 +443,9 @@
             
             locations."/" = {
               proxyPass = "https://10.255.0.3:53443";
+              extraConfig = internalOnly;
             };
           };
-          
           "two.dns.reinitialized.net" = {
             forceSSL = true;
             enableACME = true;
@@ -386,6 +455,20 @@
             
             locations."/" = {
               proxyPass = "https://10.255.0.4:53443";
+              extraConfig = internalOnly;
+            };
+          };
+
+          "unifi.in.reinitialized.net" = {
+            forceSSL = true;
+            enableACME = true;
+            listenAddresses = [
+              "10.1.12.4"
+            ];
+
+            locations."/" = {
+              proxyPass = "https://10.255.0.4:8443";
+              extraConfig = internalOnly;
             };
           };
         };
