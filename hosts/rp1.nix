@@ -159,93 +159,15 @@ in {
   # Ensure container directories exist
   systemd.tmpfiles.rules = [
     "d /mnt/containers/nginx/var/lib/acme 0750 root root -"
-    "d /mnt/containers/dns-certs 0750 root root -"
-    "d /run/dns-cert-trigger 0755 root root -"
   ];
 
-  # Path watcher to trigger certificate distribution when container signals renewal
-  systemd.paths.dns-cert-distribute = {
-    description = "Watch for DNS certificate renewal trigger";
-    wantedBy = [ "multi-user.target" ];
-    pathConfig = {
-      PathModified = "/run/dns-cert-trigger/distribute-certs";
-      Unit = "dns-cert-distribute.service";
-    };
-  };
 
-  # Certificate distribution service - pushes PKCS#12 certs to DNS nodes via mesh
-  systemd.services.dns-cert-distribute = {
-    description = "Distribute DNS certificates to Technitium cluster nodes";
-    after = [ "network-online.target" ];
-    wants = [ "network-online.target" ];
-    path = with pkgs; [ openssh rsync openssl coreutils ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = false;
-      # Allow some time for ACME to finish writing files
-      ExecStartPre = "${pkgs.coreutils}/bin/sleep 2";
-      # Runtime directory for temp key with correct permissions
-      RuntimeDirectory = "dns-cert-distribute";
-      RuntimeDirectoryMode = "0700";
-    };
-    script = let
-      sshKeyFile = config.secrets.certDistribution.file;
-    in ''
-      set -euo pipefail
-      
-      CERT_STAGING="/mnt/containers/dns-certs"
-      
-      # Copy SSH key to runtime dir with correct permissions (600)
-      # This is needed because keys in nix store are 444 which SSH rejects
-      SSH_KEY_TEMP="/run/dns-cert-distribute/ssh_key"
-      cp "${sshKeyFile}" "$SSH_KEY_TEMP"
-      chmod 600 "$SSH_KEY_TEMP"
-      
-      SSH_OPTS="-i $SSH_KEY_TEMP -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
-      
-      # Function to convert and distribute certificate
-      distribute_cert() {
-        local DOMAIN="$1"
-        local TARGET_HOST="$2"
-        local CONTAINER_NAME="$3"
-        
-        local ACME_DIR="/mnt/containers/nginx/var/lib/acme/$DOMAIN"
-        local PFX_FILE="$CERT_STAGING/$DOMAIN.pfx"
-        
-        if [[ ! -f "$ACME_DIR/fullchain.pem" ]] || [[ ! -f "$ACME_DIR/key.pem" ]]; then
-          echo "Certificate files not found for $DOMAIN, skipping..."
-          return 1
-        fi
-        
-        echo "Converting $DOMAIN certificate to PKCS#12..."
-        ${pkgs.openssl}/bin/openssl pkcs12 -export -legacy \
-          -out "$PFX_FILE" \
-          -inkey "$ACME_DIR/key.pem" \
-          -in "$ACME_DIR/fullchain.pem" \
-          -passout pass:
-        
-        chmod 640 "$PFX_FILE"
-        
-        echo "Distributing certificate to $TARGET_HOST..."
-        ${pkgs.rsync}/bin/rsync -avz -e "ssh $SSH_OPTS" \
-          "$PFX_FILE" \
-          "certdist@$TARGET_HOST:/var/lib/acme/$DOMAIN/cert.pfx"
-        
-        echo "Restarting $CONTAINER_NAME on $TARGET_HOST..."
-        ${pkgs.openssh}/bin/ssh $SSH_OPTS "certdist@$TARGET_HOST" \
-          "sudo /run/current-system/sw/bin/docker restart $CONTAINER_NAME" || true
-        
-        echo "Successfully distributed certificate for $DOMAIN"
-      }
-      
-      # Distribute to apps1 (dnsOne) via mesh IP
-      distribute_cert "one.dns.reinitialized.net" "10.255.0.3" "dnsOne" || true
-      
-      # Distribute to apps2 (dnsTwo) via mesh IP
-      distribute_cert "two.dns.reinitialized.net" "10.255.0.4" "dnsTwo" || true
-      
-      echo "Certificate distribution complete"
-    '';
+
+  # Ensure nginx container waits for WireGuard mesh to be online before starting
+  # This is needed because ACME uses Technitium DNS API via mesh network
+  systemd.services."container@nginx" = {
+    after = [ "sys-devices-virtual-net-wg\\x2dmesh.device" ];
+    wants = [ "sys-devices-virtual-net-wg\\x2dmesh.device" ];
   };
 
   # Configure Nginx Reverse Proxy
@@ -259,18 +181,58 @@ in {
         hostPath = "/mnt/containers/nginx/var/lib/acme";
         isReadOnly = false;
       };
-      # Bind mount for triggering host certificate distribution
-      "/run/host-trigger" = {
-        hostPath = "/run/dns-cert-trigger";
-        isReadOnly = false;
-      };
     };
 
-    config = { lib, ... }: {
+    config = { lib, pkgs, ... }: {
       system.stateVersion = lib.mkDefault defaultStateVersion;      
       # Ensure nginx user can access ACME files
       users.users.nginx = {
         extraGroups = [ "acme" ];
+      };
+      
+      # Add curl for the ACME DNS hook script
+      environment.systemPackages = [ pkgs.curl ];
+      
+      # Custom DNS script for ACME that updates primary and triggers secondary resync
+      environment.etc."lego-dns-hook.sh" = {
+        mode = "0755";
+        text = ''
+          #!/bin/sh
+          # LEGO_DNS_HOOK for Technitium DNS with cluster sync
+          # Called with: present/cleanup <domain> <token> <keyauth>
+          
+          ACTION="$1"
+          DOMAIN="$2"
+          TOKEN="$3"
+          
+          PRIMARY_URL="http://10.255.0.3:5380"
+          SECONDARY_URL="http://10.255.0.4:5380"
+          API_TOKEN="${config.secrets.acmeDns.keys.apiToken}"
+          
+          # Extract zone from domain (remove _acme-challenge. prefix)
+          ZONE=$(echo "$DOMAIN" | sed 's/^_acme-challenge\.//')
+          
+          case "$ACTION" in
+            present)
+              # Add TXT record to primary
+              ${pkgs.curl}/bin/curl -s "$PRIMARY_URL/api/zones/records/add?token=$API_TOKEN&domain=$DOMAIN&zone=$ZONE&type=TXT&text=$TOKEN" >/dev/null
+              
+              # Trigger zone resync on secondary
+              sleep 1
+              ${pkgs.curl}/bin/curl -s "$SECONDARY_URL/api/zones/resync?token=$API_TOKEN&domain=$ZONE" >/dev/null
+              
+              # Wait for resync to complete
+              sleep 3
+              ;;
+            cleanup)
+              # Delete TXT record from primary
+              ${pkgs.curl}/bin/curl -s "$PRIMARY_URL/api/zones/records/delete?token=$API_TOKEN&domain=$DOMAIN&zone=$ZONE&type=TXT&text=$TOKEN" >/dev/null
+              
+              # Trigger zone resync on secondary
+              ${pkgs.curl}/bin/curl -s "$SECONDARY_URL/api/zones/resync?token=$API_TOKEN&domain=$ZONE" >/dev/null
+              ;;
+          esac
+        '';
       };
       
       # Enable ACME for automatic SSL certificates
@@ -278,19 +240,17 @@ in {
         acceptTerms = true;
         defaults = {
           email = "admin@reinitialized.net";
-        };
-        # Configure postRun hooks for DNS certificates
-        certs."one.dns.reinitialized.net" = {
-          postRun = ''
-            touch /run/host-trigger/distribute-certs
+          dnsProvider = "exec";
+          credentialsFile = pkgs.writeText "lego-exec-env" ''
+            EXEC_PATH=/etc/lego-dns-hook.sh
           '';
-        };
-        certs."two.dns.reinitialized.net" = {
-          postRun = ''
-            touch /run/host-trigger/distribute-certs
-          '';
+          # Check both authoritative DNS servers to ensure zone transfer completed
+          # before requesting Let's Encrypt validation  
+          dnsResolver = "10.255.0.3:53,10.255.0.4:53";
+          extraLegoFlags = [ "--dns.propagation-wait=10s" "--dns-timeout=120" ];
         };
       };
+
       # Nginx
       services.nginx = {
         enable = true;
@@ -298,7 +258,7 @@ in {
         recommendedProxySettings = true;
         recommendedTlsSettings = true;
 
-        # Stream configuration for DNS
+        # Stream configuration for DNS and SSL passthrough
         streamConfig = ''
           ## Upstream
           upstream dnsOneUI {
@@ -327,7 +287,7 @@ in {
             server 10.255.0.4:10001;
           }
 
-          ## Listeners
+          ## DNS Service Listeners (Layer 4)
           server {
             listen 10.1.12.2:53 udp;
             listen 10.1.12.2:53;
@@ -351,6 +311,20 @@ in {
             proxy_pass dnsTwoUI;
           }
 
+          ## SSL Passthrough for DNS Admin UI (Layer 4)
+          ## rp1 only enforces SSL - actual cert is on apps servers
+          server {
+            listen 10.1.12.2:443;
+            proxy_pass dnsOneUI;
+            proxy_connect_timeout 10s;
+          }
+          server {
+            listen 10.1.12.3:443;
+            proxy_pass dnsTwoUI;
+            proxy_connect_timeout 10s;
+          }
+
+          ## UniFi Listeners
           server {
             listen 10.1.12.4:8443;
             proxy_pass unifiWeb;
@@ -434,31 +408,6 @@ in {
             };
           };
 
-          "one.dns.reinitialized.net" = {
-            forceSSL = true;
-            enableACME = true;
-            listenAddresses = [ 
-              "10.1.12.2"
-            ];
-            
-            locations."/" = {
-              proxyPass = "https://10.255.0.3:53443";
-              extraConfig = internalOnly;
-            };
-          };
-          "two.dns.reinitialized.net" = {
-            forceSSL = true;
-            enableACME = true;
-            listenAddresses = [ 
-              "10.1.12.3"
-            ];
-            
-            locations."/" = {
-              proxyPass = "https://10.255.0.4:53443";
-              extraConfig = internalOnly;
-            };
-          };
-
           "unifi.in.reinitialized.net" = {
             forceSSL = true;
             enableACME = true;
@@ -468,7 +417,10 @@ in {
 
             locations."/" = {
               proxyPass = "https://10.255.0.4:8443";
-              extraConfig = internalOnly;
+              extraConfig = ''
+                ${internalOnly}
+                proxy_ssl_verify off;
+              '';
             };
           };
         };
