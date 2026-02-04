@@ -1,9 +1,5 @@
 {
-  self,
-  config,
   defaultStateVersion,
-  pkgs,
-  lib,
   ...
 }:let
   internalOnly = ''
@@ -160,16 +156,12 @@ in {
   systemd.tmpfiles.rules = [
     "d /mnt/containers/nginx/var/lib/acme 0750 root root -"
   ];
-
-
-
   # Ensure nginx container waits for WireGuard mesh to be online before starting
   # This is needed because ACME uses Technitium DNS API via mesh network
   systemd.services."container@nginx" = {
     after = [ "sys-devices-virtual-net-wg\\x2dmesh.device" ];
     wants = [ "sys-devices-virtual-net-wg\\x2dmesh.device" ];
   };
-
   # Configure Nginx Reverse Proxy
   containers.nginx = {
     ephemeral = true;
@@ -188,69 +180,14 @@ in {
       # Ensure nginx user can access ACME files
       users.users.nginx = {
         extraGroups = [ "acme" ];
-      };
-      
-      # Add curl for the ACME DNS hook script
-      environment.systemPackages = [ pkgs.curl ];
-      
-      # Custom DNS script for ACME that updates primary and triggers secondary resync
-      environment.etc."lego-dns-hook.sh" = {
-        mode = "0755";
-        text = ''
-          #!/bin/sh
-          # LEGO_DNS_HOOK for Technitium DNS with cluster sync
-          # Called with: present/cleanup <domain> <token> <keyauth>
-          
-          ACTION="$1"
-          DOMAIN="$2"
-          TOKEN="$3"
-          
-          PRIMARY_URL="http://10.255.0.3:5380"
-          SECONDARY_URL="http://10.255.0.4:5380"
-          API_TOKEN="${config.secrets.acmeDns.keys.apiToken}"
-          
-          # Extract zone from domain (remove _acme-challenge. prefix)
-          ZONE=$(echo "$DOMAIN" | sed 's/^_acme-challenge\.//')
-          
-          case "$ACTION" in
-            present)
-              # Add TXT record to primary
-              ${pkgs.curl}/bin/curl -s "$PRIMARY_URL/api/zones/records/add?token=$API_TOKEN&domain=$DOMAIN&zone=$ZONE&type=TXT&text=$TOKEN" >/dev/null
-              
-              # Trigger zone resync on secondary
-              sleep 1
-              ${pkgs.curl}/bin/curl -s "$SECONDARY_URL/api/zones/resync?token=$API_TOKEN&domain=$ZONE" >/dev/null
-              
-              # Wait for resync to complete
-              sleep 3
-              ;;
-            cleanup)
-              # Delete TXT record from primary
-              ${pkgs.curl}/bin/curl -s "$PRIMARY_URL/api/zones/records/delete?token=$API_TOKEN&domain=$DOMAIN&zone=$ZONE&type=TXT&text=$TOKEN" >/dev/null
-              
-              # Trigger zone resync on secondary
-              ${pkgs.curl}/bin/curl -s "$SECONDARY_URL/api/zones/resync?token=$API_TOKEN&domain=$ZONE" >/dev/null
-              ;;
-          esac
-        '';
-      };
-      
+      };      
       # Enable ACME for automatic SSL certificates
       security.acme = {
         acceptTerms = true;
         defaults = {
           email = "admin@reinitialized.net";
-          dnsProvider = "exec";
-          credentialsFile = pkgs.writeText "lego-exec-env" ''
-            EXEC_PATH=/etc/lego-dns-hook.sh
-          '';
-          # Check both authoritative DNS servers to ensure zone transfer completed
-          # before requesting Let's Encrypt validation  
-          dnsResolver = "10.255.0.3:53,10.255.0.4:53";
-          extraLegoFlags = [ "--dns.propagation-wait=10s" "--dns-timeout=120" ];
         };
       };
-
       # Nginx
       services.nginx = {
         enable = true;
@@ -342,7 +279,6 @@ in {
             proxy_pass unifiDiscovery;
           }
         '';
-
         virtualHosts = {
           "docs.reinitialized.net" = {
             forceSSL = true;
