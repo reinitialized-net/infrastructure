@@ -76,7 +76,6 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:5380:5380"
         "10.255.0.4:53443:53443"
         "10.255.0.4:53:53/tcp"
         "10.255.0.4:53:53/udp"
@@ -93,7 +92,7 @@
       ];
     };
 
-    ### UniFi Network Controller - MongoDB
+    ## UniFi Network Controller
     unifi_mongodb = {
       autoStart = true;
       hostname = "unifi_mongodb";
@@ -110,8 +109,6 @@
         "unifi_mongodb_config:/data/configdb"
       ];
     };
-
-    ### UniFi Network Controller
     unifi = {
       autoStart = true;
       hostname = "unifi";
@@ -131,7 +128,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:8443:8443/tcp"    # UniFi web admin
+        "10.255.0.4:8443:8443/tcp"     # UniFi web admin
         "10.255.0.4:3478:3478/udp"     # STUN
         "10.255.0.4:10001:10001/udp"   # Device discovery
         "10.255.0.4:8080:8080/tcp"     # Device communication
@@ -144,6 +141,4 @@
       ];
     };
   };
-
-
 }

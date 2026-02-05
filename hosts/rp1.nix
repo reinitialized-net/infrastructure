@@ -124,6 +124,65 @@ in {
           "10.1.11.0/24"
         ];
       }
+      # Mail server ports (stalwartOne via 10.1.12.4)
+      {
+        port = 25;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 465;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 587;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 143;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 993;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 995;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "0.0.0.0/0"
+        ];
+      }
+      {
+        port = 4190;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [
+          "10.0.0.0/8"
+          "172.16.0.0/12"
+          "192.168.0.0/16"
+        ];
+      }
     ];
   };
   systemd.network.networks = {
@@ -197,20 +256,21 @@ in {
 
         # Stream configuration for DNS and SSL passthrough
         streamConfig = ''
-          ## Upstream
-          upstream dnsOneUI {
-            server 10.255.0.3:53443;
-          }
+          ## Upstreams
+          # Technitium DNS (via mesh network)
           upstream dnsOneService {
             server 10.1.11.2:53;
-          }
-          upstream dnsTwoUI {
-            server 10.255.0.4:53443;
           }
           upstream dnsTwoService {
             server 10.1.11.3:53;
           }
-
+          upstream dnsOneUI {
+            server 10.255.0.3:53443;
+          }
+          upstream dnsTwoUI {
+            server 10.255.0.4:53443;
+          }
+          # UniFi Controller
           upstream unifiWeb {
             server 10.255.0.4:8443;
           }
@@ -222,6 +282,95 @@ in {
           }
           upstream unifiDiscovery {
             server 10.255.0.4:10001;
+          }
+          # Stalwart Mail HTTP backends (for stream SSL termination + PROXY protocol)
+          upstream stalwartOneHttp {
+            server 10.255.0.3:8080;
+          }
+          upstream stalwartOneSmtp {
+            server 10.255.0.3:25;
+          }
+          upstream stalwartOneSmtps {
+            server 10.255.0.3:465;
+          }
+          upstream stalwartOneSubmission {
+            server 10.255.0.3:587;
+          }
+          upstream stalwartOneImap {
+            server 10.255.0.3:143;
+          }
+          upstream stalwartOneImaps {
+            server 10.255.0.3:993;
+          }
+          upstream stalwartOnePop3s {
+            server 10.255.0.3:995;
+          }
+          upstream stalwartOneSieve {
+            server 10.255.0.3:4190;
+          }
+          # Stalwart Mail (stalwartTwo on apps2 - future)
+          upstream stalwartTwoHttp {
+            server 10.255.0.4:8080;
+          }
+          upstream stalwartTwoSmtp {
+            server 10.255.0.4:25;
+          }
+          upstream stalwartTwoSmtps {
+            server 10.255.0.4:465;
+          }
+          upstream stalwartTwoSubmission {
+            server 10.255.0.4:587;
+          }
+          upstream stalwartTwoImap {
+            server 10.255.0.4:143;
+          }
+          upstream stalwartTwoImaps {
+            server 10.255.0.4:993;
+          }
+          upstream stalwartTwoPop3s {
+            server 10.255.0.4:995;
+          }
+          upstream stalwartTwoSieve {
+            server 10.255.0.4:4190;
+          }
+          # Local mail SSL termination upstreams (stream terminates SSL, then forwards HTTP)
+          upstream mailLocalTermination {
+            server 127.0.0.1:8443;
+          }
+          upstream mail2LocalTermination {
+            server 127.0.0.1:8444;
+          }
+
+          ## SNI routing maps for HTTPS on shared IPs
+          # 10.1.12.2: one.dns (passthrough) vs mail (local SSL termination)
+          map $ssl_preread_server_name $https_backend_12_2 {
+            one.dns.reinitialized.net dnsOneUI;
+            mail.reinitialized.net    mailLocalTermination;
+            default                   dnsOneUI;
+          }
+          # 10.1.12.3: two.dns (passthrough) vs mail2 (local SSL termination)
+          map $ssl_preread_server_name $https_backend_12_3 {
+            two.dns.reinitialized.net dnsTwoUI;
+            mail2.reinitialized.net   mail2LocalTermination;
+            default                   dnsTwoUI;
+          }
+
+          ## Mail HTTPS - Stream SSL termination + PROXY protocol
+          # rp1 terminates SSL using ACME certs, then forwards plain HTTP
+          # with PROXY protocol header so Stalwart knows the real client IP
+          server {
+            listen 127.0.0.1:8443 ssl;
+            ssl_certificate /var/lib/acme/mail.reinitialized.net/fullchain.pem;
+            ssl_certificate_key /var/lib/acme/mail.reinitialized.net/key.pem;
+            proxy_pass stalwartOneHttp;
+            proxy_protocol on;
+          }
+          server {
+            listen 127.0.0.1:8444 ssl;
+            ssl_certificate /var/lib/acme/mail2.reinitialized.net/fullchain.pem;
+            ssl_certificate_key /var/lib/acme/mail2.reinitialized.net/key.pem;
+            proxy_pass stalwartTwoHttp;
+            proxy_protocol on;
           }
 
           ## DNS Service Listeners (Layer 4)
@@ -248,20 +397,24 @@ in {
             proxy_pass dnsTwoUI;
           }
 
-          ## SSL Passthrough for DNS Admin UI (Layer 4)
-          ## rp1 only enforces SSL - actual cert is on apps servers
+          ## HTTPS with SNI routing (Layer 4)
+          # Routes based on hostname:
+          # - DNS UI: passthrough to backend (backend handles cert)
+          # - Mail: route to local nginx for SSL termination (rp1 handles cert)
           server {
             listen 10.1.12.2:443;
-            proxy_pass dnsOneUI;
+            ssl_preread on;
+            proxy_pass $https_backend_12_2;
             proxy_connect_timeout 10s;
           }
           server {
             listen 10.1.12.3:443;
-            proxy_pass dnsTwoUI;
+            ssl_preread on;
+            proxy_pass $https_backend_12_3;
             proxy_connect_timeout 10s;
           }
 
-          ## UniFi Listeners
+          ## UniFi Controller Listeners
           server {
             listen 10.1.12.4:8443;
             proxy_pass unifiWeb;
@@ -278,8 +431,145 @@ in {
             listen 10.1.12.4:10001 udp;
             proxy_pass unifiDiscovery;
           }
+
+          ## Stalwart Mail Listeners on 10.1.12.2 (stalwartOne)
+          ## All include proxy_protocol so Stalwart receives real client IPs
+          server {
+            listen 10.1.12.2:25;
+            proxy_pass stalwartOneSmtp;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.2:465;
+            proxy_pass stalwartOneSmtps;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.2:587;
+            proxy_pass stalwartOneSubmission;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.2:143;
+            proxy_pass stalwartOneImap;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.2:993;
+            proxy_pass stalwartOneImaps;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.2:995;
+            proxy_pass stalwartOnePop3s;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.2:4190;
+            proxy_pass stalwartOneSieve;
+            proxy_protocol on;
+          }
+
+          ## Stalwart Mail Listeners on 10.1.12.3 (stalwartTwo - future)
+          ## All include proxy_protocol so Stalwart receives real client IPs
+          server {
+            listen 10.1.12.3:25;
+            proxy_pass stalwartTwoSmtp;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.3:465;
+            proxy_pass stalwartTwoSmtps;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.3:587;
+            proxy_pass stalwartTwoSubmission;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.3:143;
+            proxy_pass stalwartTwoImap;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.3:993;
+            proxy_pass stalwartTwoImaps;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.3:995;
+            proxy_pass stalwartTwoPop3s;
+            proxy_protocol on;
+          }
+          server {
+            listen 10.1.12.3:4190;
+            proxy_pass stalwartTwoSieve;
+            proxy_protocol on;
+          }
         '';
         virtualHosts = {
+          "one.dns.reinitialized.net" = {
+            # Only listen on HTTP to redirect to HTTPS
+            # HTTPS traffic is handled by stream passthrough (no cert on rp1)
+            onlySSL = false;
+            enableACME = false;
+            addSSL = false;
+            listen = [
+              { addr = "10.1.12.2"; port = 80; ssl = false; }
+            ];
+
+            # Redirect all HTTP traffic to HTTPS
+            locations."/" = {
+              return = "301 https://$host$request_uri";
+            };
+          };
+          "two.dns.reinitialized.net" = {
+            # Only listen on HTTP to redirect to HTTPS
+            # HTTPS traffic is handled by stream passthrough (no cert on rp1)
+            onlySSL = false;
+            enableACME = false;
+            addSSL = false;
+            listen = [
+              { addr = "10.1.12.3"; port = 80; ssl = false; }
+            ];
+
+            # Redirect all HTTP traffic to HTTPS
+            locations."/" = {
+              return = "301 https://$host$request_uri";
+            };
+          };
+
+          "mail.reinitialized.net" = {
+            # HTTP-only: serves ACME HTTP-01 challenges and redirects to HTTPS
+            # HTTPS is handled by stream SSL termination with PROXY protocol
+            onlySSL = false;
+            enableACME = true;
+            addSSL = false;
+            listen = [
+              { addr = "10.1.12.2"; port = 80; ssl = false; }
+            ];
+
+            locations."/" = {
+              return = "301 https://$host$request_uri";
+            };
+          };
+
+          "mail2.reinitialized.net" = {
+            # HTTP-only: serves ACME HTTP-01 challenges and redirects to HTTPS
+            # HTTPS is handled by stream SSL termination with PROXY protocol
+            onlySSL = false;
+            enableACME = true;
+            addSSL = false;
+            listen = [
+              { addr = "10.1.12.3"; port = 80; ssl = false; }
+            ];
+
+            locations."/" = {
+              return = "301 https://$host$request_uri";
+            };
+          };
+
           "docs.reinitialized.net" = {
             forceSSL = true;
             enableACME = true;

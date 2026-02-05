@@ -138,6 +138,7 @@
         "hudu_data:/var/www/hudu2/uploads"
       ];
     };
+
     ### Technitium oneDns
     dnsOne = {
       autoStart = true;
@@ -147,7 +148,6 @@
         "backend"
       ];
       ports = [
-        "10.255.0.3:5380:5380"
         "10.255.0.3:53443:53443"
         "10.255.0.3:53:53/tcp"
         "10.255.0.3:53:53/udp"
@@ -161,6 +161,35 @@
       volumes = [
         "technitium_data:/etc/dns"
         "/var/lib/acme/one.dns.reinitialized.net:/etc/dns/certs:ro"
+      ];
+    };
+
+    ### Stalwart Collaboration Server
+    stalwartOne = {
+      autoStart = true;
+      hostname = "stalwart";
+      image = "stalwartlabs/stalwart:latest";
+      environment = {
+
+      };
+      networks = [
+        "backend"
+      ];
+      ports = [
+        # Web UI and ACME
+        "10.255.0.3:8080:8080"
+
+        # Mail protocols
+        "10.255.0.3:25:25"
+        "10.255.0.3:143:143"
+        "10.255.0.3:465:465"
+        "10.255.0.3:587:587"
+        "10.255.0.3:993:993"
+        "10.255.0.3:995:995"
+        "10.255.0.3:4190:4190"
+      ];
+      volumes = [
+        "stalwart_data:/opt/stalwart"
       ];
     };
   };
