@@ -24,7 +24,7 @@ Base configuration for all systems. Provides:
 **Usage:**
 ```nix
 # Automatically included via library functions
-packages.x86_64-linux.vm = generateVMAImage "vm" {
+dualSystems.vm = library.makeDualExport "vm" {
   vmId = 100;
   # standard profile is auto-included
 };
@@ -235,6 +235,8 @@ Secondary disk management. Provides:
   services.meshNetwork = {
     enable = true;
     nodeId = 1;
+    # autoPeers = true is default - peers auto-discovered from meshTopology.nix
+    # privateKeyFile is auto-sourced from secrets.meshNetwork.file
   };
 }
 ```
@@ -273,7 +275,7 @@ These are available automatically when using:
 }
 ```
 
-Or when using library functions (`generateVMAImage`, `makeConfiguration`).
+Or when using library functions (`makeDualExport`, `makeConfiguration`).
 
 **Auto-imported:**
 - standard

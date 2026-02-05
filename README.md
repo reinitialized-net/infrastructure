@@ -32,9 +32,18 @@ This flake provides:
 
 ## Build Instructions
 
-### Available Flake Exports
+## Available Flake Exports
 
 This flake exports the following systems:
+
+### Current Infrastructure
+
+| Host | VM ID | Purpose | VLAN |
+|------|-------|---------|------|
+| devenv | 202 | Development environment with fleet tools | 200 |
+| rp1 | 203 | Reverse proxy (Technitium DNS, nginx) | 12 |
+| apps1 | 204 | Application server (Hudu, DNS primary) | 11 |
+| apps2 | 205 | Application server (DNS secondary, UniFi) | 11 |
 
 #### NixOS System Configurations
 - `nixosConfigurations.devenv` - Development environment VM
@@ -93,7 +102,29 @@ cat result/CREDENTIALS.txt
 # Generated: 2026-01-23 12:00:00 UTC
 ```
 
-### Building for already existing systems
+### Fleet Management Tools (From devenv)
+
+The `devenv` host includes custom fleet management scripts that simplify deploying changes across the infrastructure:
+
+**`rebuildHost`** - Deploy changes to a single host:
+```bash
+# Deploy to a remote host (builds on devenv, deploys to target)
+rebuildHost apps1
+
+# Deploy to local devenv
+rebuildHost devenv
+
+# Use 'boot' instead of 'switch' (activates on next reboot)
+rebuildHost rp1 --boot
+```
+
+**`updateInfra`** - Deploy changes to ALL hosts in the fleet:
+```bash
+# Update all hosts defined in meshTopology.nix
+updateInfra
+```
+
+### Building for already existing systems (Manual)
 
 ```bash
 nixos-rebuild switch --flake path:.#<hostname> --sudo --target-host rnetadmin@<ip> --build-host rnetadmin@<build-ip>
@@ -152,7 +183,7 @@ Add this flake to your `flake.nix`:
 }
 ```
 
-Or use the library functions directly:
+Or use the dual-export pattern (recommended):
 
 ```nix
 {
@@ -160,13 +191,20 @@ Or use the library functions directly:
     reinitialized-infra.url = "github:reinitialized-net/infrastructure";
   };
   
-  outputs = { self, reinitialized-infra }: {
-    packages.x86_64-linux.my-vm = reinitialized-infra.lib.generateVMAImage "my-vm" {
-      system = "x86_64-linux";
-      vmId = 100;
-      # ... more options
+  outputs = { self, reinitialized-infra }:
+    let
+      library = reinitialized-infra.lib;
+      dualSystems = {
+        my-vm = library.makeDualExport "my-vm" {
+          system = "x86_64-linux";
+          vmId = 100;
+          modules = [ ./hosts/my-vm.nix ];
+        };
+      };
+    in {
+      nixosConfigurations.my-vm = dualSystems.my-vm.nixosSystem;
+      packages.x86_64-linux.my-vm = dualSystems.my-vm.package;
     };
-  };
 }
 ```
 

@@ -31,41 +31,46 @@ A basic web server VM with nginx.
   outputs = { self, reinitialized-infra }:
     let
       library = reinitialized-infra.lib;
-    in
-    {
-      packages.x86_64-linux.webserver = library.generateVMAImage "webserver" {
-        system = "x86_64-linux";
-        vmId = 100;
-        cores = 2;
-        memory = 4096;
-        
-        modules = [
-          {
-            services.nginx = {
-              enable = true;
-              virtualHosts."example.com" = {
-                root = "/var/www";
-                locations."/" = {
-                  index = "index.html";
+      
+      dualSystems = {
+        webserver = library.makeDualExport "webserver" {
+          system = "x86_64-linux";
+          vmId = 100;
+          cores = 2;
+          memory = 4096;
+          
+          modules = [
+            {
+              services.nginx = {
+                enable = true;
+                virtualHosts."example.com" = {
+                  root = "/var/www";
+                  locations."/" = {
+                    index = "index.html";
+                  };
                 };
               };
-            };
-            
-            networking.firewall.allowlist = [
-              {
-                port = 80;
-                protocol = "tcp";
-                source = [ "0.0.0.0/0" ];
-              }
-              {
-                port = 443;
-                protocol = "tcp";
-                source = [ "0.0.0.0/0" ];
-              }
-            ];
-          }
-        ];
+              
+              networking.firewall.allowlist = [
+                {
+                  port = 80;
+                  protocol = "tcp";
+                  source = [ "0.0.0.0/0" ];
+                }
+                {
+                  port = 443;
+                  protocol = "tcp";
+                  source = [ "0.0.0.0/0" ];
+                }
+              ];
+            }
+          ];
+        };
       };
+    in
+    {
+      nixosConfigurations.webserver = dualSystems.webserver.nixosSystem;
+      packages.x86_64-linux.webserver = dualSystems.webserver.package;
     };
 }
 ```
@@ -104,45 +109,56 @@ PostgreSQL database with a large data disk.
   outputs = { self, reinitialized-infra }:
     let
       library = reinitialized-infra.lib;
+      
+      dualSystems = {
+        database = library.makeDualExport "database" {
+          system = "x86_64-linux";
+          vmId = 101;
+          cores = 8;
+          memory = 32768;
+          
+          disks = [
+            {
+              storage = "local-lvm";
+              size = 50;  # OS disk
+            }
+            {
+              storage = "data-pool";
+              size = 1000;  # 1TB data disk
+            }
+          ];
+          
+          modules = [
+            reinitialized-infra.nixosModules.default
+            "${reinitialized-infra}/modules/profiles/mountData.nix"
+            ./secrets.nix
+            ./hosts/database.nix
+          ];
+        };
+      };
     in
     {
-      packages.x86_64-linux.database = library.generateVMAImage "database" {
-        system = "x86_64-linux";
-        vmId = 101;
-        cores = 8;
-        memory = 32768;
-        
-        disks = [
-          {
-            storage = "local-lvm";
-            size = 50;  # OS disk
-          }
-          {
-            storage = "data-pool";
-            size = 1000;  # 1TB data disk
-          }
-        ];
-        
-        modules = [
-          reinitialized-infra.inputs.self.nixosModules.default.imports # Get the modules
-          ./secrets.nix
-          {
-            # Import mountData for data disk
-            imports = [
-              "${reinitialized-infra.inputs.self}/modules/profiles/mountData.nix"
-            ];
-            
-            services.postgresql = {
-              enable = true;
-              package = pkgs.postgresql_15;
-              dataDir = "/mnt/data/postgres";
-              
-              settings = {
-                max_connections = 200;
-                shared_buffers = "8GB";
-                effective_cache_size = "24GB";
-              };
-              
+      nixosConfigurations.database = dualSystems.database.nixosSystem;
+      packages.x86_64-linux.database = dualSystems.database.package;
+    };
+}
+```
+
+**`hosts/database.nix`:**
+
+```nix
+{ config, pkgs, ... }: {
+  services.postgresql = {
+    enable = true;
+    package = pkgs.postgresql_15;
+    dataDir = "/mnt/data/postgres";
+    
+    settings = {
+      max_connections = 200;
+      shared_buffers = "8GB";
+      effective_cache_size = "24GB";
+    };
+    
               authentication = ''
                 host all all 10.0.0.0/8 md5
               '';
@@ -179,7 +195,7 @@ PostgreSQL database with a large data disk.
 
 ## Multi-Host Docker Cluster
 
-Three-node Docker cluster with mesh networking.
+Three-node Docker cluster with mesh networking using the autoPeers feature.
 
 ### Configuration
 
@@ -197,127 +213,182 @@ Three-node Docker cluster with mesh networking.
     let
       library = reinitialized-infra.lib;
       
-      # Shared configuration
-      dockerHost = nodeId: extraModules: {
+      # Shared base configuration
+      dockerHostBase = {
         cores = 4;
         memory = 16384;
         
         disks = [
-          {
-            storage = "local-lvm";
-            size = 50;
-          }
-          {
-            storage = "local-lvm";
-            size = 500;  # Container storage
-          }
+          { storage = "local-lvm"; size = 50; }
+          { storage = "local-lvm"; size = 500; }  # Container storage
         ];
+      };
+      
+      dualSystems = {
+        docker-node1 = library.makeDualExport "docker-node1" (dockerHostBase // {
+          system = "x86_64-linux";
+          vmId = 110;
+          modules = [
+            "${reinitialized-infra}/modules/profiles/mountData.nix"
+            "${reinitialized-infra}/modules/profiles/containers"
+            ./hosts/docker-node1.nix
+          ];
+        });
         
-        modules = [
-          "${reinitialized-infra.inputs.self}/modules/profiles/mountData.nix"
-          "${reinitialized-infra.inputs.self}/modules/profiles/containers"
-          ./mesh-secrets.nix
-          {
-            services.meshNetwork = {
-              enable = true;
-              inherit nodeId;
-            };
-          }
-        ] ++ extraModules;
+        docker-node2 = library.makeDualExport "docker-node2" (dockerHostBase // {
+          system = "x86_64-linux";
+          vmId = 111;
+          modules = [
+            "${reinitialized-infra}/modules/profiles/mountData.nix"
+            "${reinitialized-infra}/modules/profiles/containers"
+            ./hosts/docker-node2.nix
+          ];
+        });
+        
+        docker-node3 = library.makeDualExport "docker-node3" (dockerHostBase // {
+          system = "x86_64-linux";
+          vmId = 112;
+          modules = [
+            "${reinitialized-infra}/modules/profiles/mountData.nix"
+            "${reinitialized-infra}/modules/profiles/containers"
+            ./hosts/docker-node3.nix
+          ];
+        });
       };
     in
     {
+      nixosConfigurations = {
+        docker-node1 = dualSystems.docker-node1.nixosSystem;
+        docker-node2 = dualSystems.docker-node2.nixosSystem;
+        docker-node3 = dualSystems.docker-node3.nixosSystem;
+      };
+      
       packages.x86_64-linux = {
-        docker-node1 = library.generateVMAImage "docker-node1" 
-          ((dockerHost 1 [
-            {
-              networking.hostName = "docker-node1";
-              
-              # Web frontend
-              virtualisation.oci-containers.containers.web = {
-                image = "nginx:latest";
-                ports = [ "80:80" "443:443" ];
-                extraOptions = [ "--network=backend" ];
-                environment = {
-                  API_URL = "http://10.255.0.2:8080";
-                };
-              };
-            }
-          ]) // { system = "x86_64-linux"; vmId = 110; });
-        
-        docker-node2 = library.generateVMAImage "docker-node2"
-          ((dockerHost 2 [
-            {
-              networking.hostName = "docker-node2";
-              
-              # API backend
-              virtualisation.oci-containers.containers.api = {
-                image = "myapi:latest";
-                ports = [ "8080:8080" ];
-                extraOptions = [ "--network=backend" ];
-                environment = {
-                  DATABASE_URL = "postgresql://10.255.0.3:5432/myapp";
-                };
-              };
-            }
-          ]) // { system = "x86_64-linux"; vmId = 111; });
-        
-        docker-node3 = library.generateVMAImage "docker-node3"
-          ((dockerHost 3 [
-            {
-              networking.hostName = "docker-node3";
-              
-              # Database
-              virtualisation.oci-containers.containers.postgres = {
-                image = "postgres:15";
-                ports = [ "5432:5432" ];
-                extraOptions = [ "--network=backend" ];
-                volumes = [
-                  "postgres-data:/var/lib/postgresql/data"
-                ];
-                environment = {
-                  POSTGRES_PASSWORD = "secret";
-                  POSTGRES_DB = "myapp";
-                };
-              };
-            }
-          ]) // { system = "x86_64-linux"; vmId = 112; });
+        docker-node1 = dualSystems.docker-node1.package;
+        docker-node2 = dualSystems.docker-node2.package;
+        docker-node3 = dualSystems.docker-node3.package;
       };
     };
 }
 ```
 
-**`mesh-secrets.nix`:**
+**`hosts/docker-node1.nix`:**
 
 ```nix
-{
-  secrets.meshNetwork = {
-    description = "Docker cluster mesh network";
-    
-    keys = {
-      # Node-specific IDs are set in the main config
-      listenPort = 51820;
-      
-      peers = [
-        {
-          nodeId = 1;
-          publicKey = "node1_public_key_here";
-          endpoint = "192.168.1.10:51820";
-        }
-        {
-          nodeId = 2;
-          publicKey = "node2_public_key_here";
-          endpoint = "192.168.1.11:51820";
-        }
-        {
-          nodeId = 3;
-          publicKey = "node3_public_key_here";
-          endpoint = "192.168.1.12:51820";
-        }
-      ];
+{ config, ... }: {
+  networking.hostName = "docker-node1";
+  
+  services.meshNetwork = {
+    enable = true;
+    nodeId = 1;
+    # autoPeers = true (default) - peers auto-discovered from meshTopology.nix
+  };
+  
+  # Web frontend
+  virtualisation.oci-containers.containers.web = {
+    image = "nginx:latest";
+    ports = [ "80:80" "443:443" ];
+    networks = [ "backend" ];
+    environment = {
+      API_URL = "http://10.255.0.2:8080";
     };
   };
 }
+```
+
+**`hosts/docker-node2.nix`:**
+
+```nix
+{ config, ... }: {
+  networking.hostName = "docker-node2";
+  
+  services.meshNetwork = {
+    enable = true;
+    nodeId = 2;
+  };
+  
+  # API backend
+  virtualisation.oci-containers.containers.api = {
+    image = "myapi:latest";
+    ports = [ "8080:8080" ];
+    networks = [ "backend" ];
+    environment = {
+      DATABASE_URL = "postgresql://10.255.0.3:5432/myapp";
+    };
+  };
+}
+```
+
+**`hosts/docker-node3.nix`:**
+
+```nix
+{ config, ... }: {
+  networking.hostName = "docker-node3";
+  
+  services.meshNetwork = {
+    enable = true;
+    nodeId = 3;
+  };
+  
+  # Database
+  virtualisation.oci-containers.containers.postgres = {
+    image = "postgres:15";
+    ports = [ "5432:5432" ];
+    networks = [ "backend" ];
+    volumes = [
+      "postgres-data:/var/lib/postgresql/data"
+    ];
+    environment = {
+      POSTGRES_PASSWORD = "secret";
+      POSTGRES_DB = "myapp";
+    };
+  };
+}
+```
+
+**`modules/secrets/<hostname>.nix` (each node):**
+
+```nix
+{
+  lib,
+  ...
+}: {
+  secrets.meshNetwork = {
+    description = "Mesh network credentials";
+    # Private key is kept secret per-node
+    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "YOUR_PRIVATE_KEY_HERE");
+  };
+}
+```
+
+**Note:** With `autoPeers = true` (default), peers are automatically discovered from `meshTopology.nix`. You only need to configure the private key and nodeId per host.
+
+### meshTopology.nix Configuration
+
+Add all nodes to the centralized topology:
+
+```nix
+# modules/profiles/meshNetwork/meshTopology.nix
+nodes = {
+  docker-node1 = {
+    nodeId = 1;
+    hostname = "docker-node1";
+    endpoint = "192.168.1.10:51820";
+    publicKey = "node1_public_key_here";
+  };
+  docker-node2 = {
+    nodeId = 2;
+    hostname = "docker-node2";
+    endpoint = "192.168.1.11:51820";
+    publicKey = "node2_public_key_here";
+  };
+  docker-node3 = {
+    nodeId = 3;
+    hostname = "docker-node3";
+    endpoint = "192.168.1.12:51820";
+    publicKey = "node3_public_key_here";
+  };
+};
 ```
 
 ### Build All Nodes
@@ -358,97 +429,107 @@ Application server with strict firewall rules.
   outputs = { self, reinitialized-infra }:
     let
       library = reinitialized-infra.lib;
+      
+      dualSystems = {
+        app-server = library.makeDualExport "app-server" {
+          system = "x86_64-linux";
+          vmId = 120;
+          cores = 4;
+          memory = 8192;
+          enableProtection = true;
+          
+          modules = [
+            ./secrets/app-server.nix
+            ./hosts/app-server.nix
+          ];
+        };
+      };
     in
     {
-      packages.x86_64-linux.app-server = library.generateVMAImage "app-server" {
-        system = "x86_64-linux";
-        vmId = 120;
-        cores = 4;
-        memory = 8192;
-        
-        enableProtection = true;  # Enable Proxmox protection
-        
-        modules = [
-          ./secrets.nix
-          {
-            # Application service
-            systemd.services.myapp = {
-              description = "My Application";
-              wantedBy = [ "multi-user.target" ];
-              
-              serviceConfig = {
-                ExecStart = "${pkgs.python3}/bin/python /opt/myapp/server.py";
-                Restart = "always";
-                User = "myapp";
-              };
-            };
-            
-            # Create app user
-            users.users.myapp = {
-              isSystemUser = true;
-              group = "myapp";
-              home = "/opt/myapp";
-            };
-            users.groups.myapp = {};
-            
-            # Strict firewall
-            networking.firewall = {
-              enable = true;
-              
-              # Only allow specific sources
-              allowlist = [
-                # HTTPS from CDN/load balancer only
-                {
-                  port = 443;
-                  protocol = "tcp";
-                  source = [
-                    "203.0.113.0/24"  # Load balancer subnet
-                  ];
-                }
-                
-                # SSH from admin network only
-                {
-                  port = 22;
-                  protocol = "tcp";
-                  source = [
-                    "10.0.0.0/8"      # Internal network
-                    "192.168.1.100"   # Admin workstation
-                  ];
-                }
-                
-                # Monitoring from Prometheus only
-                {
-                  port = 9090;
-                  protocol = "tcp";
-                  source = [
-                    "10.255.0.100"    # Monitoring server
-                  ];
-                }
-                
-                # Database access from app only
-                {
-                  port = 5432;
-                  protocol = "tcp";
-                  source = [
-                    "10.100.0.0/24"   # App server subnet
-                  ];
-                }
-              ];
-            };
-            
-            # Security hardening
-            security.sudo-rs.wheelNeedsPassword = true;
-            
-            # Automatic security updates
-            system.autoUpgrade = {
-              enable = true;
-              dates = "daily";
-              allowReboot = false;
-            };
-          }
-        ];
-      };
+      nixosConfigurations.app-server = dualSystems.app-server.nixosSystem;
+      packages.x86_64-linux.app-server = dualSystems.app-server.package;
     };
+}
+```
+
+**`hosts/app-server.nix`:**
+
+```nix
+{ config, pkgs, ... }: {
+  # Application service
+  systemd.services.myapp = {
+    description = "My Application";
+    wantedBy = [ "multi-user.target" ];
+    
+    serviceConfig = {
+      ExecStart = "${pkgs.python3}/bin/python /opt/myapp/server.py";
+      Restart = "always";
+      User = "myapp";
+    };
+  };
+  
+  # Create app user
+  users.users.myapp = {
+    isSystemUser = true;
+    group = "myapp";
+    home = "/opt/myapp";
+  };
+  users.groups.myapp = {};
+  
+  # Strict firewall
+  networking.firewall = {
+    enable = true;
+    
+    # Only allow specific sources
+    allowlist = [
+      # HTTPS from CDN/load balancer only
+      {
+        port = 443;
+        protocol = "tcp";
+        source = [
+          "203.0.113.0/24"  # Load balancer subnet
+        ];
+      }
+      
+      # SSH from admin network only
+      {
+        port = 22;
+        protocol = "tcp";
+        source = [
+          "10.0.0.0/8"      # Internal network
+          "192.168.1.100"   # Admin workstation
+        ];
+      }
+      
+      # Monitoring from Prometheus only
+      {
+        port = 9090;
+        protocol = "tcp";
+        source = [
+          "10.255.0.100"    # Monitoring server
+        ];
+      }
+      
+      # Database access from app only
+      {
+        port = 5432;
+        protocol = "tcp";
+        source = [
+          "10.100.0.0/24"   # App server subnet
+        ];
+      }
+    ];
+  };
+  
+  # Security hardening
+  security.sudo-rs.wheelNeedsPassword = true;
+  
+  # Automatic security updates
+  system.autoUpgrade = {
+    enable = true;
+    dates = "daily";
+    allowReboot = false;
+  };
 }
 ```
 
@@ -488,12 +569,11 @@ my-infrastructure/
   outputs = { self, reinitialized-infra }:
     let
       library = reinitialized-infra.lib;
-      infra = reinitialized-infra.inputs.self;
-    in
-    {
-      packages.x86_64-linux = {
+      infra = "${reinitialized-infra}";
+      
+      dualSystems = {
         # Web server (public-facing)
-        web = library.generateVMAImage "web" {
+        web = library.makeDualExport "web" {
           system = "x86_64-linux";
           vmId = 100;
           cores = 4;
@@ -508,14 +588,14 @@ my-infrastructure/
           ];
           
           modules = [
-            infra.nixosModules.default
+            reinitialized-infra.nixosModules.default
             ./secrets/mesh.nix
             ./modules/web.nix
           ];
         };
         
         # API server (internal)
-        api = library.generateVMAImage "api" {
+        api = library.makeDualExport "api" {
           system = "x86_64-linux";
           vmId = 101;
           cores = 8;
@@ -530,7 +610,7 @@ my-infrastructure/
           ];
           
           modules = [
-            infra.nixosModules.default
+            reinitialized-infra.nixosModules.default
             ./secrets/mesh.nix
             ./secrets/apps.nix
             ./modules/api.nix
@@ -538,7 +618,7 @@ my-infrastructure/
         };
         
         # Database server
-        database = library.generateVMAImage "database" {
+        database = library.makeDualExport "database" {
           system = "x86_64-linux";
           vmId = 102;
           cores = 16;
@@ -558,7 +638,8 @@ my-infrastructure/
           ];
           
           modules = [
-            infra.nixosModules.default
+            reinitialized-infra.nixosModules.default
+            "${infra}/modules/profiles/mountData.nix"
             ./secrets/mesh.nix
             ./secrets/apps.nix
             ./modules/database.nix
@@ -566,18 +647,33 @@ my-infrastructure/
         };
         
         # Monitoring server
-        monitoring = library.generateVMAImage "monitoring" {
+        monitoring = library.makeDualExport "monitoring" {
           system = "x86_64-linux";
           vmId = 103;
           cores = 4;
           memory = 8192;
           
           modules = [
-            infra.nixosModules.default
+            reinitialized-infra.nixosModules.default
             ./secrets/mesh.nix
             ./modules/monitoring.nix
           ];
         };
+      };
+    in
+    {
+      nixosConfigurations = {
+        web = dualSystems.web.nixosSystem;
+        api = dualSystems.api.nixosSystem;
+        database = dualSystems.database.nixosSystem;
+        monitoring = dualSystems.monitoring.nixosSystem;
+      };
+      
+      packages.x86_64-linux = {
+        web = dualSystems.web.package;
+        api = dualSystems.api.package;
+        database = dualSystems.database.package;
+        monitoring = dualSystems.monitoring.package;
       };
     };
 }

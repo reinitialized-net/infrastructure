@@ -102,13 +102,14 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 
 | Task | Documentation |
 |------|---------------|
-| Build a Proxmox VM | [generateVMAImage](library-functions.md#generatevmaimage) |
+| Build a Proxmox VM | [makeDualExport](library-functions.md#makedualexport) |
 | Set up Docker cluster | [Multi-Host Example](examples.md#multi-host-docker-cluster) |
 | Configure firewall rules | [Firewall Module](modules/firewall.md) |
 | Manage secrets | [Secrets Module](modules/secrets.md) |
 | Create mesh network | [Mesh Network Module](modules/meshNetwork.md) |
 | Mount data disk | [Mount Data Profile](modules/mountData.md) |
 | Create users with data homes | [makeUser](library-functions.md#makeuser) |
+| Deploy fleet changes | [Fleet Management](#fleet-management-tools) |
 
 ### Module Quick Links
 
@@ -123,36 +124,39 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 
 ### Configuration Templates
 
-**Minimal VM:**
+**Minimal VM (using makeDualExport):**
 ```nix
-packages.x86_64-linux.vm = generateVMAImage "vm" {
+dualSystems.myvm = library.makeDualExport "myvm" {
   vmId = 100;
+  modules = [ ./hosts/myvm.nix ];
 };
+# Export: nixosConfigurations.myvm = dualSystems.myvm.nixosSystem;
+# Export: packages.x86_64-linux.myvm = dualSystems.myvm.package;
 ```
 
 **Docker Host:**
 ```nix
-packages.x86_64-linux.docker = generateVMAImage "docker" {
+dualSystems.docker = library.makeDualExport "docker" {
   vmId = 100;
   disks = [
     { storage = "local-lvm"; size = 50; }
     { storage = "local-lvm"; size = 500; }
   ];
   modules = [
-    "${infra}/modules/profiles/mountData.nix"
-    "${infra}/modules/profiles/containers"
+    "${inputs.self}/modules/profiles/mountData.nix"
+    "${inputs.self}/modules/profiles/containers"
   ];
 };
 ```
 
-**With Mesh:**
+**With Mesh (autoPeers - recommended):**
 ```nix
 {
   services.meshNetwork = {
     enable = true;
     nodeId = 1;
-    privateKeyFile = /run/secrets/wg-key;
-    peers = [ /* ... */ ];
+    # autoPeers = true is default - peers auto-discovered from meshTopology.nix
+    # privateKeyFile is auto-sourced from secrets.meshNetwork.file
   };
 }
 ```
@@ -168,6 +172,22 @@ packages.x86_64-linux.docker = generateVMAImage "docker" {
     }
   ];
 }
+```
+
+### Fleet Management Tools
+
+Available on the `devenv` host for deploying changes across the infrastructure:
+
+**`rebuildHost <hostname>`** - Deploy to a single host
+```bash
+rebuildHost apps1           # Deploy to remote host
+rebuildHost devenv          # Deploy locally
+rebuildHost rp1 --boot      # Activate on next reboot
+```
+
+**`updateInfra`** - Deploy to all hosts in the fleet
+```bash
+updateInfra                 # Updates all hosts from meshTopology.nix
 ```
 
 ## Documentation Structure
@@ -209,6 +229,6 @@ When adding new features:
 
 ---
 
-**Last Updated:** January 23, 2026
+**Last Updated:** February 4, 2026
 
 **Repository:** [reinitialized-net/infrastructure](https://github.com/reinitialized-net/infrastructure)

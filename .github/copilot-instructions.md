@@ -4,6 +4,22 @@
 
 NixOS infrastructure flake for building Proxmox VMA (VM Archive) images and managing distributed systems with WireGuard mesh networking. Targets Proxmox VE environments with declarative VM generation, secrets management, and Docker orchestration.
 
+### Current Hosts
+
+| Host | VM ID | Purpose | VLAN | Mesh Node ID |
+|------|-------|---------|------|--------------|
+| devenv | 202 | Development environment with fleet tools | 200 | 1 |
+| rp1 | 203 | Reverse proxy (Technitium DNS, nginx) | 12 | 2 |
+| apps1 | 204 | Application server (Hudu, DNS primary) | 11 | 3 |
+| apps2 | 205 | Application server (DNS secondary, UniFi) | 11 | 4 |
+
+### Flake Inputs
+
+- **nixpkgsStable**: `nixos-25.11` (default state version)
+- **nixpkgsUnstable**: `nixos-unstable`
+- **nixpkgsMaster**: `master`
+- **vscodeServer**: VS Code remote server support
+
 ## Architecture Principles
 
 ### Dual-Export Pattern (Critical - PRIMARY METHOD)
@@ -199,16 +215,24 @@ networking.firewall.denylist = [
 
 - **flake.nix** - Flake inputs, dual exports, nixosConfigurations, packages
 - **library/makeDualExport.nix** - The core dual-export pattern implementation
-- **modules/profiles/standard.nix** - Base config applied to ALL systems
+- **library/makeUser.nix** - User creation with bind-mounted homes
+- **modules/profiles/standard.nix** - Base config applied to ALL systems (includes firewall.nix)
 - **modules/profiles/secrets.nix** - Secrets module options definition
 - **modules/profiles/meshNetwork/meshTopology.nix** - Centralized mesh node definitions (used by fleet tools)
+- **modules/profiles/containers/default.nix** - Docker configuration with mesh integration
 - **hosts/devenv.nix** - Development environment with fleet management tools (`rebuildHost`, `updateInfra`)
+- **hosts/rp1.nix** - Reverse proxy with Technitium DNS
+- **hosts/apps1.nix** - Application server 1 (Hudu, DNS primary)
+- **hosts/apps2.nix** - Application server 2 (DNS secondary, UniFi)
 - **docs/** - Comprehensive documentation (reference for detailed examples)
 
 ## Common Pitfalls
 
 - Don't use `makeConfiguration` or `generateVMAImage` directly - use `makeDualExport`
 - Always provide `vmId` for VMA exports (required by Proxmox)
-- Secrets files must exist in `modules/secrets/` with examples in `modules/secrets.example/` 
+- Secrets files must exist in `modules/secrets/` with examples in `modules/secrets.example/`
 - `/mnt/data` bind mounts require `mountData.nix` profile AND a second disk configured
 - systemd-networkd requires explicit interface matching (use `matchConfig.Path` for PCI devices)
+- Mesh network private key is sourced from `secrets.meshNetwork.file` - ensure it's configured
+- ACME certificates are generated via security.acme with Technitium DNS provider
+- Docker volumes are bind-mounted from `/mnt/data/docker/volumes`

@@ -211,11 +211,29 @@ infrastructure/
 │   │   ├── firewall.nix     # Allowlist/denylist firewall
 │   │   ├── secrets.nix      # Secrets management
 │   │   ├── containers/      # Docker profile (directory)
+│   │   │   ├── default.nix
+│   │   │   ├── containerTools.nix
+│   │   │   └── tools/
+│   │   │       └── migrate-volumes.sh
 │   │   └── meshNetwork/     # Mesh network (directory)
-│   │       └── meshTopology.nix  # Centralized node definitions
+│   │       ├── default.nix
+│   │       ├── meshTools.nix
+│   │       ├── meshTopology.nix  # Centralized node definitions
+│   │       └── tools/
+│   │           ├── mesh-keygen.sh
+│   │           ├── mesh-status.sh
+│   │           └── mesh-test.sh
 │   ├── secrets/             # Actual secret definitions (gitignored)
+│   │   ├── apps1.nix
+│   │   ├── apps2.nix
+│   │   ├── devenv.nix
+│   │   └── rp1.nix
 │   └── secrets.example/     # Example secret definitions
 ├── hosts/                   # Host-specific configurations
+│   ├── apps1.nix           # App server 1 (Hudu, DNS primary)
+│   ├── apps2.nix           # App server 2 (DNS secondary, UniFi)
+│   ├── devenv.nix          # Dev environment with fleet tools
+│   └── rp1.nix             # Reverse proxy
 ├── overrides/               # Package overrides
 │   └── vma.nix              # Custom QEMU with VMA support
 └── docs/                    # Documentation

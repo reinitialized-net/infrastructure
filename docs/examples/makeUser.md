@@ -30,36 +30,47 @@ The `makeUser` function handles:
   outputs = { self, reinitialized-infra }:
     let
       library = reinitialized-infra.lib;
+      infra = "${reinitialized-infra}";
+      
+      dualSystems = {
+        app-server = library.makeDualExport "app-server" {
+          system = "x86_64-linux";
+          vmId = 200;
+          
+          disks = [
+            { storage = "hotData"; size = 20; }
+            { storage = "coldData"; size = 50; }  # Required for mountData
+          ];
+          
+          modules = [
+            # Required: mount data profile
+            "${infra}/modules/profiles/mountData.nix"
+            
+            # Create user with proper home directory
+            ((import "${infra}/library/makeUser.nix" {}) {
+              username = "myapp";
+              uid = 1001;
+            })
+            
+            # Additional configuration
+            {
+              systemd.services.myapp = {
+                description = "My Application";
+                wantedBy = [ "multi-user.target" ];
+                serviceConfig = {
+                  User = "myapp";
+                  WorkingDirectory = "/home/myapp";
+                  ExecStart = "/home/myapp/app";
+                };
+              };
+            }
+          ];
+        };
+      };
     in
     {
-      packages.x86_64-linux.app-server = library.generateVMAImage "app-server" {
-        system = "x86_64-linux";
-        vmId = 200;
-        
-        modules = [
-          # Required: mount data profile
-          "${reinitialized-infra.inputs.self}/modules/profiles/mountData.nix"
-          
-          # Create user with proper home directory
-          (library.makeUser {
-            username = "myapp";
-            uid = 1001;
-          })
-          
-          # Additional configuration
-          {
-            systemd.services.myapp = {
-              description = "My Application";
-              wantedBy = [ "multi-user.target" ];
-              serviceConfig = {
-                User = "myapp";
-                WorkingDirectory = "/home/myapp";
-                ExecStart = "/home/myapp/app";
-              };
-            };
-          }
-        ];
-      };
+      nixosConfigurations.app-server = dualSystems.app-server.nixosSystem;
+      packages.x86_64-linux.app-server = dualSystems.app-server.package;
     };
 }
 ```
@@ -69,10 +80,10 @@ The `makeUser` function handles:
 ```nix
 {
   modules = [
-    "${reinitialized-infra.inputs.self}/modules/profiles/mountData.nix"
+    "${inputs.self}/modules/profiles/mountData.nix"
     
     # Web application user
-    (library.makeUser {
+    ((import "${inputs.self}/library/makeUser.nix" {}) {
       username = "webapp";
       uid = 1001;
       group = "webapps";
@@ -84,7 +95,7 @@ The `makeUser` function handles:
     })
     
     # API user
-    (library.makeUser {
+    ((import "${inputs.self}/library/makeUser.nix" {}) {
       username = "api";
       uid = 1002;
       group = "webapps";
@@ -95,7 +106,7 @@ The `makeUser` function handles:
     })
     
     # Database user with custom home
-    (library.makeUser {
+    ((import "${inputs.self}/library/makeUser.nix" {}) {
       username = "postgres";
       uid = 1003;
       homeDirectory = "/var/lib/postgresql";

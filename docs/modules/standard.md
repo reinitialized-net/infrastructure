@@ -126,7 +126,7 @@ users.users.rnetadmin = {
 - SSH key authentication
 - Default password (override in production!)
 
-**Important:** When using `generateVMAImage`, a random password is generated and saved to `CREDENTIALS.txt` in the build output.
+**Important:** When using `makeDualExport` to generate VMA images, a random password is generated and saved to `CREDENTIALS.txt` in the build output.
 
 ### User System Configuration
 
