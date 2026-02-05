@@ -208,7 +208,6 @@ in {
   # Configure MeshNetwork
   services.meshNetwork = {
     enable = true;
-    nodeId = 2;
     dockerIntegration = false;
   };
   # Ensure container directories exist

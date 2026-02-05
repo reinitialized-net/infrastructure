@@ -45,8 +45,14 @@ in {
 
     nodeId = lib.mkOption {
       type = lib.types.int;
+      default = let
+        node = meshTopology.getNodeByHostname config.networking.hostName;
+      in
+        if node != null then node.nodeId
+        else builtins.throw "meshNetwork: hostname '${config.networking.hostName}' not found in meshTopology.nix. Either add it to meshTopology or set services.meshNetwork.nodeId explicitly.";
       description = ''
         Unique node ID (1-254) for this mesh member.
+        Defaults to the nodeId from meshTopology.nix matching this host's networking.hostName.
       '';
       example = 1;
     };

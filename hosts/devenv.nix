@@ -263,7 +263,6 @@ in {
     vscode-server.enable = true;
     meshNetwork = {
       enable = true;
-      nodeId = 1;
     };
   };
   # Install development tools

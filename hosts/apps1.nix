@@ -28,7 +28,6 @@
   # Configure MeshNetwork
   services.meshNetwork = {
       enable = true;
-      nodeId = 3;
   };
   # ACME certificate generation for Technitium DNS (dnsOne)
   # Generates certificate with PKCS#12 for direct use by Technitium

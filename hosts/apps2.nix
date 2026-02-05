@@ -28,7 +28,6 @@
   # Configure MeshNetwork
   services.meshNetwork = {
       enable = true;
-      nodeId = 4;
   };
   # ACME certificate generation for Technitium DNS (dnsTwo)
   # Generates certificate with PKCS#12 for direct use by Technitium
