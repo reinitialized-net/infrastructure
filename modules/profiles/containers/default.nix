@@ -51,6 +51,6 @@
       group = lib.mkForce "docker";
       initialHashedPassword = lib.mkForce "!";
     };
-    users.rnetadmin.extraGroups = lib.mkAfter [ "docker" ];
+    #users.rnetadmin.extraGroups = lib.mkAfter [ "docker" ];
   };
 }
