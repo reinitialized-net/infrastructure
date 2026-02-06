@@ -103,43 +103,52 @@
     };
   };
 
-  # Ensure polkit is properly started and rules are loaded
-  systemd.services.polkit = {
+  # Workaround for systemd 258 + NixOS daemon-reexec DBus disconnect issue.
+  # When switch-to-configuration triggers a daemon-reexec, systemd PID 1 can lose
+  # its connection to the DBus system bus ("Got disconnect on API bus"), causing
+  # systemd-run/systemctl and logind to fail. This happens because after reexec,
+  # PID 1's serialized bus connection state becomes stale.
+  #
+  # Fix: A timer-triggered service that detects when org.freedesktop.systemd1 is
+  # missing from the bus (indicating PID 1 lost its connection) and recovers by
+  # restarting dbus and logind. This is safer than forcing dbus restarts during
+  # switch-to-configuration (which NixOS upstream explicitly warns against).
+  systemd.services.dbus-reconnect = {
+    description = "Recover systemd DBus connection after daemon-reexec";
+    after = [ "dbus.service" ];
     serviceConfig = {
-      # Ensure polkit can read all rules
-      ReadOnlyPaths = [
-        "/etc/polkit-1/rules.d"
-        "/run/current-system/sw/share/polkit-1/rules.d"
-      ];
+      Type = "oneshot";
+      ExecCondition = pkgs.writeScript "check-dbus-disconnect" ''
+        #!${pkgs.bash}/bin/bash
+        # Check if org.freedesktop.systemd1 is missing from the bus
+        # If busctl can see it, the connection is fine — exit 1 to skip
+        if ${pkgs.systemd}/bin/busctl --system list --no-pager 2>/dev/null | grep -q "org.freedesktop.systemd1"; then
+          exit 1
+        fi
+        # systemd1 missing from bus — need recovery
+        exit 0
+      '';
+      ExecStart = pkgs.writeScript "dbus-reconnect" ''
+        #!${pkgs.bash}/bin/bash
+        echo "dbus-reconnect: org.freedesktop.systemd1 not found on bus, restarting dbus to recover..."
+        ${pkgs.systemd}/bin/systemctl restart dbus.service
+        sleep 2
+        # Also restart logind as it loses its bus connection too
+        ${pkgs.systemd}/bin/systemctl restart systemd-logind.service
+        echo "dbus-reconnect: recovery complete"
+      '';
     };
   };
 
-  # Allow wheel group to access systemd DBus without authentication
-  services.dbus.packages = [ 
-    (pkgs.writeTextFile {
-      name = "nixos-rebuild-dbus-policy";
-      destination = "/share/dbus-1/system.d/nixos-rebuild.conf";
-      text = ''
-        <!DOCTYPE busconfig PUBLIC
-         "-//freedesktop//DTD D-BUS Bus Configuration 1.0//EN"
-         "http://www.freedesktop.org/standards/dbus/1.0/busconfig.dtd">
-        <busconfig>
-          <policy user="root">
-            <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.systemd1.Manager"/>
-            <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.DBus.Properties"/>
-          </policy>
-          <policy group="wheel">
-            <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.systemd1.Manager"/>
-            <allow send_destination="org.freedesktop.systemd1"
-                   send_interface="org.freedesktop.DBus.Properties"/>
-          </policy>
-        </busconfig>
-      '';
-    })
-  ];
+  systemd.timers.dbus-reconnect = {
+    description = "Periodically check for systemd DBus disconnect";
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "30s";
+      OnUnitActiveSec = "30s";
+      AccuracySec = "5s";
+    };
+  };
 
   nix.settings = {
     auto-optimise-store = lib.mkForce true;

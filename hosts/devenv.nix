@@ -126,9 +126,29 @@
 
       # Execute nixos-rebuild from devenv with --target-host
       echo "→ Building and deploying to $TARGET_IP as $SSH_USER..."
-      nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
+      if nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
         --target-host "$SSH_USER@$TARGET_IP" \
-        --sudo
+        --sudo; then
+        :
+      elif [[ "$ACTION" == "switch" ]]; then
+        echo ""
+        echo "⚠ Switch failed — attempting DBus recovery on $TARGET..."
+        echo "  (This can happen when daemon-reexec disconnects PID 1 from the system bus)"
+        echo ""
+
+        # Recover dbus + logind on the remote host
+        if ssh "$SSH_USER@$TARGET_IP" 'sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null; then
+          echo "→ DBus recovered, retrying switch..."
+          nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
+            --target-host "$SSH_USER@$TARGET_IP" \
+            --sudo
+        else
+          echo "✗ DBus recovery failed on $TARGET"
+          exit 1
+        fi
+      else
+        exit 1
+      fi
     fi
     
     echo ""
@@ -192,6 +212,12 @@
             --sudo; then
           SUCCESS_HOSTS+=("$host")
           echo "✓ $host updated successfully"
+        elif ssh "$SSH_USER@$TARGET_IP" 'sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null && \
+             nixos-rebuild switch --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host" \
+               --target-host "$SSH_USER@$TARGET_IP" \
+               --sudo; then
+          SUCCESS_HOSTS+=("$host")
+          echo "✓ $host updated successfully (after DBus recovery)"
         else
           FAILED_HOSTS+=("$host")
           echo "✗ $host update failed"
