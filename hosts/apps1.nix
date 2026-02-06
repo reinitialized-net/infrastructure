@@ -37,10 +37,11 @@
       email = "admin@reinitialized.net";
       dnsProvider = "technitium";
       credentialsFile = "${config.secrets.acmeDns.file}";
-      dnsResolver = "10.255.0.3:53,10.255.0.4:53";
+      dnsResolver = "10.255.0.3:53";
       extraLegoFlags = [ 
         "--pfx"
         "--pfx.pass="
+        "--dns.resolvers=10.255.0.4:53"
         "--dns.propagation-wait=10s"
         "--dns-timeout=120"
       ];
@@ -147,6 +148,7 @@
         "backend"
       ];
       ports = [
+        "10.255.0.3:5380:5380"
         "10.255.0.3:53443:53443"
         "10.255.0.3:53:53/tcp"
         "10.255.0.3:53:53/udp"

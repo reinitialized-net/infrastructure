@@ -74,6 +74,7 @@ tablet: 1
 ${netLines}
 ${scsiLines}
 efidisk0: ${firstDisk.storage}:vm-${toString vmId}-disk-0,efitype=4m,pre-enrolled-keys=0,size=4M
+serial0: socket
 tpmstate0: ${firstDisk.storage}:vm-${toString vmId}-disk-${toString (1 + builtins.length disks)},size=4M,version=v2.0
 ${scsiMapLines}
 #qmdump#map:efidisk0:drive-efidisk0:${firstDisk.storage}:raw:

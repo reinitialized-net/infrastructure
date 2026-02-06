@@ -1,4 +1,6 @@
 {
+  config,
+  lib,
   defaultStateVersion,
   ...
 }:let
@@ -214,11 +216,11 @@ in {
   systemd.tmpfiles.rules = [
     "d /mnt/containers/nginx/var/lib/acme 0750 root root -"
   ];
-  # Ensure nginx container waits for WireGuard mesh to be online before starting
-  # This is needed because ACME uses Technitium DNS API via mesh network
+  # Increase startup timeout for nginx container to allow ACME certificate
+  # provisioning to complete (DNS-01 challenges with propagation waits can
+  # take several minutes, especially when multiple certs are issued at boot)
   systemd.services."container@nginx" = {
-    after = [ "sys-devices-virtual-net-wg\\x2dmesh.device" ];
-    wants = [ "sys-devices-virtual-net-wg\\x2dmesh.device" ];
+    serviceConfig.TimeoutStartSec = lib.mkForce "5min";
   };
   # Configure Nginx Reverse Proxy
   containers.nginx = {
@@ -240,10 +242,28 @@ in {
         extraGroups = [ "acme" ];
       };      
       # Enable ACME for automatic SSL certificates
+      # Uses DNS-01 challenge via Technitium DNS API (over mesh network)
+      # This works for all domains including internal-only *.in.reinitialized.net
       security.acme = {
         acceptTerms = true;
         defaults = {
           email = "admin@reinitialized.net";
+          #server = "https://acme-staging-v02.api.letsencrypt.org/directory";
+          profile = "shortlived";
+          dnsProvider = "technitium";
+          credentialsFile = "${config.secrets.acmeDns.file}";
+          dnsResolver = "10.255.0.3:53";
+          extraLegoFlags = [
+            "--dns.resolvers=10.255.0.4:53"
+            "--dns.propagation-wait=10s"
+            "--dns-timeout=120"
+          ];
+          group = "nginx";
+        };
+        # Certs that are not associated with a virtualHost (e.g. stream SSL termination)
+        # must still be defined explicitly here.
+        certs = {
+          "mail.reinitialized.net" = {};
         };
       };
       # Nginx
@@ -540,10 +560,12 @@ in {
           };
 
           "mail.reinitialized.net" = {
-            # HTTP-only: serves ACME HTTP-01 challenges and redirects to HTTPS
+            # HTTP-only: redirects to HTTPS
             # HTTPS is handled by stream SSL termination with PROXY protocol
+            # Certificate managed by security.acme.certs (DNS-01 via Technitium)
+            # Must use useACMEHost because the cert is consumed by stream, not this virtualHost
             onlySSL = false;
-            enableACME = true;
+            useACMEHost = "mail.reinitialized.net";
             addSSL = false;
             listen = [
               { addr = "10.1.12.2"; port = 80; ssl = false; }
@@ -554,24 +576,10 @@ in {
             };
           };
 
-          "mail2.reinitialized.net" = {
-            # HTTP-only: serves ACME HTTP-01 challenges and redirects to HTTPS
-            # HTTPS is handled by stream SSL termination with PROXY protocol
-            onlySSL = false;
-            enableACME = true;
-            addSSL = false;
-            listen = [
-              { addr = "10.1.12.3"; port = 80; ssl = false; }
-            ];
-
-            locations."/" = {
-              return = "301 https://$host$request_uri";
-            };
-          };
-
           "docs.reinitialized.net" = {
             forceSSL = true;
             enableACME = true;
+            acmeRoot = null;
             listenAddresses = [ 
               "10.1.12.4"
             ];
@@ -624,6 +632,7 @@ in {
           "media.reinitialized.me" = {
             forceSSL = true;
             enableACME = true;
+            acmeRoot = null;
             listenAddresses = [ 
               "10.1.12.4"
             ];
@@ -636,6 +645,7 @@ in {
           "unifi.in.reinitialized.net" = {
             forceSSL = true;
             enableACME = true;
+            acmeRoot = null;
             listenAddresses = [
               "10.1.12.4"
             ];
@@ -646,6 +656,18 @@ in {
                 ${internalOnly}
                 proxy_ssl_verify off;
               '';
+            };
+          };
+          "pgadmin.in.reinitialized.net" = {
+            forceSSL = true;
+            enableACME = true;
+            acmeRoot = null;
+            listenAddresses = [
+              "10.1.12.4"
+            ];
+
+            locations."/" = { 
+              proxyPass = "http://10.255.0.5:80";
             };
           };
         };

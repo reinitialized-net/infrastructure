@@ -153,6 +153,34 @@
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
+        apps3 = library.makeDualExport "apps3" {
+          system = "x86_64-linux";
+          vmId = 206;
+          enableProtection = true;
+          memory = 8192;
+          disks = [
+            { 
+              storage = "hotData";
+              size = 20; 
+            }
+            { 
+              storage = "coldData";
+              size = 50;
+            }
+          ];
+          networking = [
+            { 
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 11;
+            }
+          ];
+          modules = [
+            inputs.vscodeServer.nixosModules.default
+            "${inputs.self}/modules/profiles/containers"
+            "${inputs.self}/modules/profiles/mountData.nix"
+          ];
+        };
       };
     in
     {
@@ -172,8 +200,8 @@
         rp1 = dualSystems.rp1.nixosSystem;
         apps1 = dualSystems.apps1.nixosSystem;
         apps2 = dualSystems.apps2.nixosSystem;
+        apps3 = dualSystems.apps3.nixosSystem;
       };
-
       packages = library.forAllSystems (system:
         {
             # Reference VMA package from dual export
@@ -181,6 +209,7 @@
             rp1 = dualSystems.rp1.package;
             apps1 = dualSystems.apps1.package;
             apps2 = dualSystems.apps2.package;
+            apps3 = dualSystems.apps3.package;
         }
       );
     };
