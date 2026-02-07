@@ -217,12 +217,6 @@ in {
   systemd.tmpfiles.rules = [
     "d /mnt/containers/nginx/var/lib/acme 0750 root root -"
   ];
-  # Increase startup timeout for nginx container to allow ACME certificate
-  # provisioning to complete (DNS-01 challenges with propagation waits can
-  # take several minutes, especially when multiple certs are issued at boot)
-  systemd.services."container@nginx" = {
-    serviceConfig.TimeoutStartSec = lib.mkForce "5min";
-  };
   # Configure Nginx Reverse Proxy
   containers.nginx = {
     ephemeral = true;
@@ -241,7 +235,43 @@ in {
       # Ensure nginx user can access ACME files
       users.users.nginx = {
         extraGroups = [ "acme" ];
-      };      
+      };
+
+      # ── Prevent ACME cert ordering from blocking container startup ──
+      # systemd-nspawn --notify-ready=yes waits for the container's
+      # startup transaction (all boot-enqueued jobs) to finish.  The
+      # NixOS ACME module's acme-<domain>.service (WantedBy=multi-user)
+      # pulls acme-order-renew-<domain> into that transaction via Wants=.
+      # If lego hangs (e.g. Let's Encrypt 429 rate-limit retries), the
+      # container never signals READY and the host kills it after
+      # TimeoutStartSec, causing a restart loop.
+      #
+      # Fix: give every acme-order-renew-* service a startup timeout so
+      # the boot transaction always completes.  On timeout systemd sends
+      # SIGTERM to lego; the renewal timer will retry later.  Nginx
+      # continues serving with the existing (or self-signed) certs.
+      systemd.services = let
+        # All certificate domains managed in this container
+        acmeDomains = [
+          "docs.reinitialized.net"
+          "mail.reinitialized.net"
+          "mail2.reinitialized.net"
+          "media.reinitialized.me"
+          "pgadmin.in.reinitialized.net"
+          "unifi.in.reinitialized.net"
+        ];
+        # Generate an override for each acme-order-renew-<domain> service
+        mkAcmeOverride = domain: lib.nameValuePair
+          "acme-order-renew-${domain}" {
+            serviceConfig = {
+              # Allow up to 3 minutes for DNS-01 propagation + ACME order.
+              # If it takes longer (rate-limit, network issue) let it fail
+              # gracefully; the renewal timer will retry.
+              TimeoutStartSec = lib.mkForce "3min";
+            };
+          };
+      in builtins.listToAttrs (map mkAcmeOverride acmeDomains);
+
       # Enable ACME for automatic SSL certificates
       # Uses DNS-01 challenge via Technitium DNS API (over mesh network)
       # This works for all domains including internal-only *.in.reinitialized.net
@@ -265,22 +295,8 @@ in {
           # sufficient for the stream module).
           postRun = "systemctl restart nginx.service";
         };
-        # Certs that are not associated with a virtualHost (e.g. stream SSL termination)
-        # must still be defined explicitly here.
-        certs = let
-          # Disable the default nginx reload — stream SSL contexts
-          # don't re-initialise on SIGHUP. The postRun hook above
-          # performs a full restart instead. We must force-override
-          # because the nginx module explicitly sets reloadServices
-          # = ["nginx.service"] on every cert it manages.
-          noReload = { reloadServices = lib.mkForce []; };
-        in {
-          "mail.reinitialized.net" = noReload;
-          "mail2.reinitialized.net" = noReload;
-          "docs.reinitialized.net" = noReload;
-          "media.reinitialized.me" = noReload;
-          "unifi.in.reinitialized.net" = noReload;
-          "pgadmin.in.reinitialized.net" = noReload;
+        certs = {
+          "mail.reinitialized.net" = {};
         };
       };
 
