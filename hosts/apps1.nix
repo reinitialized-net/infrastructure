@@ -76,6 +76,9 @@
       networks = [ 
         "backend"
       ];
+      ports = [
+        "10.255.0.3:5432:5432/tcp"
+      ];
       volumes = [
         "hudu_postgres1Data:/var/lib/postgresql/data"
       ];
