@@ -65,6 +65,16 @@ if [[ ! -f "$FLAKE_PATH/hosts/$TARGET.nix" ]] && [[ ! -d "$FLAKE_PATH/hosts/$TAR
   exit 1
 fi
 
+# Guard: don't run as root/sudo for remote targets (SSH keys won't work)
+if [[ "$TARGET" != "devenv" && $(id -u) -eq 0 ]]; then
+  echo "ERROR: Do not use sudo for remote targets."
+  echo "  rebuildHost uses SSH as '$SSH_USER' and --sudo on the remote side."
+  echo "  Running as root breaks SSH key authentication."
+  echo ""
+  echo "Usage: rebuildHost $TARGET $([[ \"$ACTION\" == \"boot\" ]] && echo '--boot' || true)"
+  exit 1
+fi
+
 # Check if target is local (devenv) or remote
 if [[ "$TARGET" == "devenv" ]]; then
   echo "╔══════════════════════════════════════════════════════════════╗"

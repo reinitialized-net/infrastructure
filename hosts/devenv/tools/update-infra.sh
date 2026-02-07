@@ -14,6 +14,17 @@ get_host_ip() {
   esac
 }
 
+# Guard: fleet update includes remote hosts, don't run as root/sudo
+if [[ $(id -u) -eq 0 ]]; then
+  echo "ERROR: Do not use sudo for updateInfra."
+  echo "  Remote hosts are deployed via SSH as '$SSH_USER' with --sudo."
+  echo "  Running as root breaks SSH key authentication."
+  echo "  The local devenv rebuild will use sudo internally."
+  echo ""
+  echo "Usage: updateInfra"
+  exit 1
+fi
+
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║  NixOS Fleet Update                                          ║"
 echo "╠══════════════════════════════════════════════════════════════╣"

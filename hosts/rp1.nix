@@ -4,6 +4,7 @@
   defaultStateVersion,
   ...
 }:let
+  hostConfig = config;
   internalOnly = ''
     allow 10.0.0.0/8;
     allow 172.16.0.0/12;
@@ -235,7 +236,7 @@ in {
       };
     };
 
-    config = { lib, pkgs, ... }: {
+    config = { config, lib, pkgs, ... }: {
       system.stateVersion = lib.mkDefault defaultStateVersion;      
       # Ensure nginx user can access ACME files
       users.users.nginx = {
@@ -251,7 +252,7 @@ in {
           #server = "https://acme-staging-v02.api.letsencrypt.org/directory";
           profile = "shortlived";
           dnsProvider = "technitium";
-          credentialsFile = "${config.secrets.acmeDns.file}";
+          credentialsFile = hostConfig.secrets.acmeDns.file;
           dnsResolver = "10.255.0.3:53";
           extraLegoFlags = [
             "--dns.resolvers=10.255.0.4:53"
@@ -259,13 +260,30 @@ in {
             "--dns-timeout=120"
           ];
           group = "nginx";
+          # After a cert is renewed, fully restart nginx so that stream
+          # SSL contexts are re-initialised (a reload/SIGHUP is not
+          # sufficient for the stream module).
+          postRun = "systemctl restart nginx.service";
         };
         # Certs that are not associated with a virtualHost (e.g. stream SSL termination)
         # must still be defined explicitly here.
-        certs = {
-          "mail.reinitialized.net" = {};
+        certs = let
+          # Disable the default nginx reload — stream SSL contexts
+          # don't re-initialise on SIGHUP. The postRun hook above
+          # performs a full restart instead. We must force-override
+          # because the nginx module explicitly sets reloadServices
+          # = ["nginx.service"] on every cert it manages.
+          noReload = { reloadServices = lib.mkForce []; };
+        in {
+          "mail.reinitialized.net" = noReload;
+          "mail2.reinitialized.net" = noReload;
+          "docs.reinitialized.net" = noReload;
+          "media.reinitialized.me" = noReload;
+          "unifi.in.reinitialized.net" = noReload;
+          "pgadmin.in.reinitialized.net" = noReload;
         };
       };
+
       # Nginx
       services.nginx = {
         enable = true;

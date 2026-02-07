@@ -14,6 +14,7 @@
         host = "OPNSENSE_HOST_OR_IP";
         port = "443";
         apiKey = "PLACE_API_KEY_HERE";
+        apiSecret = "PLACE_API_SECRET_HERE";
       };
     };
   };

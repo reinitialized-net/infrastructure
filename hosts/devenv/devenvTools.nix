@@ -72,6 +72,7 @@
       secretsHost = opnsenseKeys.host or "";
       secretsPort = opnsenseKeys.port or "443";
       secretsApiKey = opnsenseKeys.apiKey or "";
+      secretsApiSecret = opnsenseKeys.apiSecret or "";
       secretsApiSecretFile = opnsenseSecretFile;
     })
   ];
