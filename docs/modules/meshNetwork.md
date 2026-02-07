@@ -38,15 +38,16 @@ services.meshNetwork.enable = true;
 
 **Type:** `int` (1-254)
 
-**Required:** Yes (unless set via secrets)
+**Required:** No (auto-resolves from `meshTopology.nix` based on `networking.hostName`)
 
 **Description:** Unique node identifier for this mesh member. Used to calculate the mesh IP address (`10.255.0.<nodeId>`).
 
-**Auto-configuration:** Can be sourced from `secrets.meshNetwork.keys.nodeId`
+**Auto-configuration:** Automatically resolved by looking up `networking.hostName` in `meshTopology.nix`. If the hostname is not found in the topology, the module will throw an error and require an explicit `nodeId`. Can also be set manually to override the auto-resolved value.
 
 ```nix
 services.meshNetwork.nodeId = 1;
 # Results in mesh IP: 10.255.0.1
+# If not set, defaults to nodeId from meshTopology.nix matching networking.hostName
 ```
 
 #### `listenPort`

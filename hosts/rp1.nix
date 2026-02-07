@@ -325,73 +325,46 @@ in {
           }
           # UniFi Controller
           upstream unifiWeb {
-            server 10.255.0.4:1028;
+            server 10.255.0.4:1027;
           }
           upstream unifiComm {
-            server 10.255.0.4:1031;
+            server 10.255.0.4:1030;
           }
           upstream unifiStun {
-            server 10.255.0.4:1029;
+            server 10.255.0.4:1028;
           }
           upstream unifiDiscovery {
-            server 10.255.0.4:1030;
+            server 10.255.0.4:1029;
           }
           # Stalwart Mail HTTP backends (for stream SSL termination + PROXY protocol)
           upstream stalwartOneHttp {
-            server 10.255.0.3:1030;
+            server 10.255.0.3:1029;
           }
           upstream stalwartOneSmtp {
-            server 10.255.0.3:1031;
+            server 10.255.0.3:1030;
           }
           upstream stalwartOneSmtps {
-            server 10.255.0.3:1033;
+            server 10.255.0.3:1031;
           }
           upstream stalwartOneSubmission {
-            server 10.255.0.3:1034;
-          }
-          upstream stalwartOneImap {
             server 10.255.0.3:1032;
           }
+          upstream stalwartOneImap {
+            server 10.255.0.3:1033;
+          }
           upstream stalwartOneImaps {
-            server 10.255.0.3:1035;
+            server 10.255.0.3:1034;
           }
           upstream stalwartOnePop3s {
-            server 10.255.0.3:1036;
+            server 10.255.0.3:1035;
           }
           upstream stalwartOneSieve {
-            server 10.255.0.3:1037;
+            server 10.255.0.3:1036;
           }
           # Stalwart Mail (stalwartTwo on apps2 - future)
-          upstream stalwartTwoHttp {
-            server 10.255.0.4:1033;
-          }
-          upstream stalwartTwoSmtp {
-            server 10.255.0.4:1034;
-          }
-          upstream stalwartTwoSmtps {
-            server 10.255.0.4:1035;
-          }
-          upstream stalwartTwoSubmission {
-            server 10.255.0.4:1036;
-          }
-          upstream stalwartTwoImap {
-            server 10.255.0.4:1037;
-          }
-          upstream stalwartTwoImaps {
-            server 10.255.0.4:1038;
-          }
-          upstream stalwartTwoPop3s {
-            server 10.255.0.4:1039;
-          }
-          upstream stalwartTwoSieve {
-            server 10.255.0.4:1040;
-          }
           # Local mail SSL termination upstreams (stream terminates SSL, then forwards HTTP)
           upstream mailLocalTermination {
             server 127.0.0.1:8443;
-          }
-          upstream mail2LocalTermination {
-            server 127.0.0.1:8444;
           }
 
           ## SNI routing maps for HTTPS on shared IPs
@@ -404,7 +377,6 @@ in {
           # 10.1.12.3: two.dns (passthrough) vs mail2 (local SSL termination)
           map $ssl_preread_server_name $https_backend_12_3 {
             two.dns.reinitialized.net dnsTwoUI;
-            mail2.reinitialized.net   mail2LocalTermination;
             default                   dnsTwoUI;
           }
 
@@ -520,44 +492,6 @@ in {
           server {
             listen 10.1.12.2:4190;
             proxy_pass stalwartOneSieve;
-            proxy_protocol on;
-          }
-
-          ## Stalwart Mail Listeners on 10.1.12.3 (stalwartTwo - future)
-          ## All include proxy_protocol so Stalwart receives real client IPs
-          server {
-            listen 10.1.12.3:25;
-            proxy_pass stalwartTwoSmtp;
-            proxy_protocol on;
-          }
-          server {
-            listen 10.1.12.3:465;
-            proxy_pass stalwartTwoSmtps;
-            proxy_protocol on;
-          }
-          server {
-            listen 10.1.12.3:587;
-            proxy_pass stalwartTwoSubmission;
-            proxy_protocol on;
-          }
-          server {
-            listen 10.1.12.3:143;
-            proxy_pass stalwartTwoImap;
-            proxy_protocol on;
-          }
-          server {
-            listen 10.1.12.3:993;
-            proxy_pass stalwartTwoImaps;
-            proxy_protocol on;
-          }
-          server {
-            listen 10.1.12.3:995;
-            proxy_pass stalwartTwoPop3s;
-            proxy_protocol on;
-          }
-          server {
-            listen 10.1.12.3:4190;
-            proxy_pass stalwartTwoSieve;
             proxy_protocol on;
           }
         '';

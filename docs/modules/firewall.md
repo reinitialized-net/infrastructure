@@ -54,9 +54,10 @@ This enables common patterns like "deny all, allow specific":
 ### Generated Rule Order
 
 Rules are generated in this order:
-1. **Allowlist overrides** - Specific allowlist sources that match catch-all denylist entries (ACCEPT)
-2. **Denylist rules** - All denylist entries including catch-all (DROP)
-3. **Normal allowlist** - Allowlist entries for ports without catch-all denies (ACCEPT)
+1. **Denylist exclusions** - Specific IPs exempted from deny rules via `exclude` option (ACCEPT)
+2. **Allowlist overrides** - Specific allowlist sources that match catch-all denylist entries (ACCEPT)
+3. **Denylist rules** - All denylist entries including catch-all (DROP)
+4. **Normal allowlist** - Allowlist entries for ports without catch-all denies (ACCEPT)
 
 ## Option: `networking.firewall.allowlist`
 
@@ -408,11 +409,35 @@ iptables -A INPUT -4 -p tcp -s 10.0.0.0/8 --dport 443 -j ACCEPT
 listOf (submodule)
 ```
 
-A list of denylist entries, each specifying a port and blocked source IPs. Uses the same submodule options as `allowlist`.
+A list of denylist entries, each specifying a port and blocked source IPs. Uses the same submodule options as `allowlist`, plus an additional `exclude` option.
 
 ### Submodule Options
 
 Same as `allowlist`: `port`, `protocol`, `ipType`, `source`
+
+Plus:
+
+#### `exclude`
+
+**Type:** `listOf str`
+
+**Default:** `[]`
+
+**Description:** List of source IP addresses or CIDR blocks to exclude from this deny rule. These IPs will be allowed even though they match the deny rule's `source`. Exclusion rules are processed before deny rules in the generated firewall configuration.
+
+**Example:**
+```nix
+{
+  networking.firewall.denylist = [
+    {
+      port = 53;
+      protocol = "tcp_udp";
+      source = [ "10.0.0.0/8" ];
+      exclude = [ "10.1.11.2" "10.1.11.3" ];  # Allow DNS servers
+    }
+  ];
+}
+```
 
 ### Denylist Examples
 

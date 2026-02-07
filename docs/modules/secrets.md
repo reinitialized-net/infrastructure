@@ -350,14 +350,24 @@ secrets.infrastructure = {
 
 ```nix
 # flake.nix
-{
-  nixosConfigurations = {
-    dev = makeConfiguration "dev" {
+let
+  dualSystems = {
+    dev = library.makeDualExport "dev" {
+      system = "x86_64-linux";
+      vmId = 100;
       modules = [ ./secrets/dev.nix ];
     };
-    prod = makeConfiguration "prod" {
+    prod = library.makeDualExport "prod" {
+      system = "x86_64-linux";
+      vmId = 101;
       modules = [ ./secrets/prod.nix ];
     };
+  };
+in
+{
+  nixosConfigurations = {
+    dev = dualSystems.dev.nixosSystem;
+    prod = dualSystems.prod.nixosSystem;
   };
 }
 ```
@@ -411,10 +421,13 @@ secrets.tls = {
 
 ## Examples in This Repository
 
-See example secret configurations:
+See example secret configurations in `modules/secrets.example/`:
 
-- [`modules/secrets.example/mesh.nix`](../../modules/secrets.example/mesh.nix) - Mesh network secrets
-- [`modules/secrets.example/hudu.nix`](../../modules/secrets.example/hudu.nix) - Application secrets
+- [`modules/secrets.example/devenv.nix`](../../modules/secrets.example/devenv.nix) - Development environment secrets
+- [`modules/secrets.example/rp1.nix`](../../modules/secrets.example/rp1.nix) - Reverse proxy secrets
+- [`modules/secrets.example/apps1.nix`](../../modules/secrets.example/apps1.nix) - Application server 1 secrets
+- [`modules/secrets.example/apps2.nix`](../../modules/secrets.example/apps2.nix) - Application server 2 secrets
+- [`modules/secrets.example/db1.nix`](../../modules/secrets.example/db1.nix) - Database server secrets
 
 ## See Also
 

@@ -21,7 +21,6 @@ Simple profile for mounting and managing a secondary data disk, typically used f
 ```nix
 {
   fileSystems."/mnt/data" = lib.mkForce {
-    label = "data";
     fsType = "ext4";
     device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
     options = [ "defaults" ];
@@ -46,7 +45,7 @@ Expects the data disk to be the second SCSI disk:
 If the disk is unformatted on first boot, it will be automatically formatted with ext4:
 
 ```
-mkfs.ext4 -L data /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+mkfs.ext4 /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
 ```
 
 ### Automatic Resizing
@@ -61,31 +60,38 @@ Data is mounted at `/mnt/data` with standard mount options.
 
 ### In VM Images
 
-When building VM images with multiple disks:
+When building VM images with multiple disks using `makeDualExport`:
 
 ```nix
-{
-  packages.x86_64-linux.my-vm = generateVMAImage "my-vm" {
-    vmId = 100;
-    
-    disks = [
-      {
-        storage = "local-lvm";
-        size = 50;  # OS disk (scsi0)
-      }
-      {
-        storage = "local-lvm";
-        size = 500;  # Data disk (scsi1)
-      }
-    ];
-    
-    modules = [
-      "${reinitialized-infra}/modules/profiles/mountData.nix"
-      {
-        # Data disk is now available at /mnt/data
-      }
-    ];
+let
+  dualSystems = {
+    my-vm = library.makeDualExport "my-vm" {
+      system = "x86_64-linux";
+      vmId = 100;
+      
+      disks = [
+        {
+          storage = "local-lvm";
+          size = 50;  # OS disk (scsi0)
+        }
+        {
+          storage = "local-lvm";
+          size = 500;  # Data disk (scsi1)
+        }
+      ];
+      
+      modules = [
+        "${inputs.self}/modules/profiles/mountData.nix"
+        {
+          # Data disk is now available at /mnt/data
+        }
+      ];
+    };
   };
+in
+{
+  nixosConfigurations.my-vm = dualSystems.my-vm.nixosSystem;
+  packages.x86_64-linux.my-vm = dualSystems.my-vm.package;
 }
 ```
 

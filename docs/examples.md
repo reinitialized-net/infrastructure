@@ -159,22 +159,18 @@ PostgreSQL database with a large data disk.
       effective_cache_size = "24GB";
     };
     
-              authentication = ''
-                host all all 10.0.0.0/8 md5
-              '';
-            };
-            
-            networking.firewall.allowlist = [
-              {
-                port = 5432;
-                protocol = "tcp";
-                source = [ "10.0.0.0/8" ];  # Internal network only
-              }
-            ];
-          }
-        ];
-      };
-    };
+    authentication = ''
+      host all all 10.0.0.0/8 md5
+    '';
+  };
+  
+  networking.firewall.allowlist = [
+    {
+      port = 5432;
+      protocol = "tcp";
+      source = [ "10.0.0.0/8" ];  # Internal network only
+    }
+  ];
 }
 ```
 

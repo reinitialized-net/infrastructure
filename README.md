@@ -38,24 +38,27 @@ This flake exports the following systems:
 
 ### Current Infrastructure
 
-| Host | VM ID | Purpose | VLAN |
-|------|-------|---------|------|
-| devenv | 202 | Development environment with fleet tools | 200 |
-| rp1 | 203 | Reverse proxy (Technitium DNS, nginx) | 12 |
-| apps1 | 204 | Application server (Hudu, DNS primary) | 11 |
-| apps2 | 205 | Application server (DNS secondary, UniFi) | 11 |
+| Host | VM ID | Purpose | VLAN | Mesh Node ID |
+|------|-------|---------|------|------|
+| devenv | 202 | Development environment with fleet tools | 200 | 1 |
+| rp1 | 203 | Reverse proxy (Technitium DNS, nginx) | 12 | 2 |
+| apps1 | 204 | Application server (Hudu, DNS primary) | 11 | 3 |
+| apps2 | 205 | Application server (DNS secondary, UniFi) | 11 | 4 |
+| db1 | 206 | Database server (PostgreSQL, Valkey) | 11 | 11 |
 
 #### NixOS System Configurations
 - `nixosConfigurations.devenv` - Development environment VM
 - `nixosConfigurations.rp1` - Reverse proxy server VM
 - `nixosConfigurations.apps1` - Application server 1 VM
 - `nixosConfigurations.apps2` - Application server 2 VM
+- `nixosConfigurations.db1` - Database server VM
 
 #### Proxmox VMA Packages  
 - `packages.x86_64-linux.devenv` - Proxmox VMA image for devenv
 - `packages.x86_64-linux.rp1` - Proxmox VMA image for rp1
 - `packages.x86_64-linux.apps1` - Proxmox VMA image for apps1
 - `packages.x86_64-linux.apps2` - Proxmox VMA image for apps2
+- `packages.x86_64-linux.db1` - Proxmox VMA image for db1
 
 ### Building VMA Images for Proxmox
 

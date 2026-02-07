@@ -1,0 +1,4 @@
+- Please review all documentation within the repository.
+- Ensure documentation and examples accurately reflect the current state of code.
+- Ensure documentation accurately reflects all information, including but not limited to IPs and ports.
+- After completing the initial draft, go through and double check your work. Accuracy is essential and makes you cool.

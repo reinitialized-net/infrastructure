@@ -2,11 +2,13 @@
 
 **Last Updated:** 2026-01-26
 
-**Status:** Implementation Plan
+**Status:** Implementation Plan (Partially Implemented)
 
 ## Overview
 
 This document describes the architecture for a Technitium DNS authoritative cluster with centralized certificate management, mesh network cluster communication, and split-horizon DNS resolution.
+
+> **Current State:** The DNS cluster is operational with **local ACME certificate generation** on each host (apps1 and apps2 each generate their own certificates via DNS-01 challenge through Technitium). The centralized certificate distribution architecture described below is the **planned target state** but has not yet been implemented. Items marked with `[x]` in the implementation checklist reflect the target plan, not current deployment.
 
 ## Goals
 
@@ -32,6 +34,7 @@ This document describes the architecture for a Technitium DNS authoritative clus
 |---------|------|----------|---------|---------|
 | DNS | 53 | TCP/UDP | Physical IP | Public DNS resolution |
 | DoT | 853 | TCP | Physical IP | DNS over TLS |
+| DHCP | 67 | UDP | Physical IP | DHCP service |
 | Admin Web UI | 5380 | TCP | Mesh IP | Web management interface |
 | Cluster Sync | 53443 | TCP/TLS | Mesh IP | Zone replication, cluster sync |
 
@@ -124,6 +127,14 @@ In the Technitium web admin (`Settings > Web Service`):
 | Web Service HTTPS Port | 53443 | 53443 |
 | TLS Certificate Path | /etc/dns/certs/cert.pfx | /etc/dns/certs/cert.pfx |
 | Enable DNS over HTTPS | Yes (mesh only) | Yes (mesh only) |
+
+**Note on Mesh Port Mappings:** The container-internal ports (5380, 53443) are consistent, but the *mesh-side* ports differ between hosts:
+
+| Container Port | dnsOne (apps1) Mesh Port | dnsTwo (apps2) Mesh Port |
+|------|------|------|
+| 5380 (Admin UI) | 10.255.0.3:1026 | 10.255.0.4:1024 |
+| 53443 (Cluster Sync) | 10.255.0.3:1027 | 10.255.0.4:1025 |
+| 53 (DNS) | 10.255.0.3:1028 | 10.255.0.4:1026 |
 
 ### Cluster Formation
 
@@ -344,14 +355,14 @@ Certificates auto-renew via Let's Encrypt. The postRun hook triggers distributio
 
 ## Implementation Checklist
 
-- [x] Configure ACME certs on rp1 with postRun hooks
-- [x] Create certificate distribution service on rp1
-- [x] Create path watcher for trigger file
-- [x] Update apps1.nix to remove local ACME
-- [x] Update apps2.nix to remove local ACME  
-- [x] Add sudo-rs rules for docker restart on apps1/apps2
-- [x] Add firewall allowlist for mesh-only cluster ports
-- [x] Configure SSH key for rp1 → apps1/apps2 mesh access (via secrets)
+- [ ] Configure ACME certs on rp1 with postRun hooks (currently using local ACME on each host)
+- [ ] Create certificate distribution service on rp1
+- [ ] Create path watcher for trigger file
+- [ ] Update apps1.nix to remove local ACME
+- [ ] Update apps2.nix to remove local ACME  
+- [ ] Add sudo-rs rules for docker restart on apps1/apps2
+- [ ] Add firewall allowlist for mesh-only cluster ports
+- [ ] Configure SSH key for rp1 → apps1/apps2 mesh access (via secrets)
 - [ ] Generate SSH keypair and add to secrets files
 - [ ] Deploy configuration changes
 - [ ] Configure Technitium cluster in web UI

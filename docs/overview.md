@@ -226,14 +226,22 @@ infrastructure/
 │   ├── secrets/             # Actual secret definitions (gitignored)
 │   │   ├── apps1.nix
 │   │   ├── apps2.nix
+│   │   ├── db1.nix
 │   │   ├── devenv.nix
 │   │   └── rp1.nix
 │   └── secrets.example/     # Example secret definitions
 ├── hosts/                   # Host-specific configurations
 │   ├── apps1.nix           # App server 1 (Hudu, DNS primary)
 │   ├── apps2.nix           # App server 2 (DNS secondary, UniFi)
-│   ├── devenv.nix          # Dev environment with fleet tools
-│   └── rp1.nix             # Reverse proxy
+│   ├── db1.nix             # Database server (PostgreSQL, Valkey)
+│   ├── devenv.nix          # Dev environment entry point
+│   ├── rp1.nix             # Reverse proxy
+│   └── devenv/             # Dev environment modules
+│       ├── devenvTools.nix  # Fleet management tool loader
+│       └── tools/
+│           ├── rebuild-host.sh
+│           ├── update-infra.sh
+│           └── update-network-firewall-rules.sh
 ├── overrides/               # Package overrides
 │   └── vma.nix              # Custom QEMU with VMA support
 └── docs/                    # Documentation

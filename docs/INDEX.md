@@ -194,20 +194,30 @@ updateInfra                 # Updates all hosts from meshTopology.nix
 
 ```
 docs/
-├── README.md                    # Main entry point
 ├── INDEX.md                     # This file
 ├── overview.md                  # Architecture overview
 ├── library-functions.md         # Library function reference
 ├── profiles.md                  # System profiles summary
 ├── examples.md                  # Complete examples
+├── bash-script-tools.md         # Bash tool organization patterns
+├── mesh-network-ports.md        # Port allocation reference
+├── architecture/
+│   └── technitium-dns-cluster.md # DNS cluster architecture
+├── examples/
+│   └── makeUser.md              # User management examples
+├── investigations/
+│   ├── nixos-rebuild-access-denied.md
+│   ├── port-mapping-scheme-migration.md
+│   ├── stalwart-imap-auth-failure.md
+│   └── stalwart-migration-lock-loop.md
 └── modules/
-    ├── README.md               # Modules overview
-    ├── secrets.md              # Secrets module
-    ├── firewall.md             # Firewall module
-    ├── meshNetwork.md         # Mesh network module
-    ├── containers.md           # Containers profile
-    ├── standard.md             # Standard profile
-    └── mountData.md           # Mount data profile
+    ├── README.md                # Modules overview
+    ├── secrets.md               # Secrets module
+    ├── firewall.md              # Firewall module
+    ├── meshNetwork.md           # Mesh network module
+    ├── containers.md            # Containers profile
+    ├── standard.md              # Standard profile
+    └── mountData.md             # Mount data profile
 ```
 
 ## Contributing
@@ -229,6 +239,6 @@ When adding new features:
 
 ---
 
-**Last Updated:** February 4, 2026
+**Last Updated:** February 7, 2026
 
 **Repository:** [reinitialized-net/infrastructure](https://github.com/reinitialized-net/infrastructure)

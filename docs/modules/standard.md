@@ -35,6 +35,21 @@ Override in your configuration:
 time.timeZone = "Europe/London";
 ```
 
+### NTP Time Synchronization
+
+```nix
+services.timesyncd = {
+  enable = lib.mkDefault true;
+  servers = lib.mkDefault [
+    "10.1.11.1"
+  ];
+};
+```
+
+- Uses systemd-timesyncd for NTP
+- Points to internal NTP server at 10.1.11.1
+- Override to use public NTP servers if needed
+
 ### Networking
 
 - **NetworkManager**: Disabled (uses systemd-networkd instead)
@@ -161,6 +176,38 @@ security = {
 - More secure than traditional sudo
 - wheel group doesn't need password by default
 
+#### polkit
+
+Configures polkit rules for systemd management:
+
+```nix
+security.polkit = {
+  enable = lib.mkDefault true;
+  extraConfig = ''
+    polkit.addRule(function(action, subject) {
+      if ((action.id == "org.freedesktop.systemd1.manage-units" ||
+           action.id == "org.freedesktop.systemd1.manage-unit-files" ||
+           action.id == "org.freedesktop.systemd1.reload-daemon") &&
+          subject.isInGroup("wheel")) {
+        return polkit.Result.YES;
+      }
+    });
+    
+    // Allow root user to manage systemd units (needed for sudo + systemd-run)
+    polkit.addRule(function(action, subject) {
+      if (action.id == "org.freedesktop.systemd1.manage-units" &&
+          subject.user == "root") {
+        return polkit.Result.YES;
+      }
+    });
+  '';
+};
+```
+
+- Allows wheel group to manage systemd units without authentication
+- Required for `nixos-rebuild` with `sudo-rs` over SSH
+- Also allows root to manage units (needed for `sudo + systemd-run`)
+
 #### Nix Settings
 
 ```nix
@@ -189,6 +236,37 @@ system.autoUpgrade = {
 - Daily updates at 2:00 AM (±45 minutes)
 - Pulls from GitHub repository
 - Keeps systems up to date automatically
+
+### DBus Reconnect Workaround
+
+A timer-triggered service that recovers from a systemd 258 + NixOS daemon-reexec DBus disconnect issue:
+
+```nix
+systemd.services.dbus-reconnect = {
+  description = "Recover systemd DBus connection after daemon-reexec";
+  after = [ "dbus.service" ];
+  serviceConfig = {
+    Type = "oneshot";
+    ExecCondition = /* script that checks if org.freedesktop.systemd1 is on the bus */;
+    ExecStart = /* script that restarts dbus and logind to recover */;
+  };
+};
+
+systemd.timers.dbus-reconnect = {
+  description = "Periodically check for systemd DBus disconnect";
+  wantedBy = [ "timers.target" ];
+  timerConfig = {
+    OnBootSec = "30s";
+    OnUnitActiveSec = "30s";
+    AccuracySec = "5s";
+  };
+};
+```
+
+- **Problem:** When `switch-to-configuration` triggers a daemon-reexec, systemd PID 1 can lose its DBus connection ("Got disconnect on API bus"), causing `systemd-run`/`systemctl` and logind to fail
+- **Detection:** Timer runs every 30s, checks if `org.freedesktop.systemd1` is present on the bus
+- **Recovery:** If missing, restarts `dbus.service` and `systemd-logind.service` to restore connectivity
+- See [nixos-rebuild access denied investigation](../investigations/nixos-rebuild-access-denied.md) for details
 
 ## Customization
 
@@ -260,41 +338,32 @@ All settings use `lib.mkDefault`, so you can override them:
 4. **Firewall Rules**: Configure appropriate firewall rules for your services
 5. **Auto-Updates**: Ensure the update source is trusted
 
-## Usage in VM Images
+## Usage
 
-The standard profile is automatically included when using `generateVMAImage`:
+The standard profile is automatically included when using `makeDualExport` (the recommended pattern for all hosts):
 
 ```nix
-{
-  packages.x86_64-linux.my-vm = generateVMAImage "my-vm" {
-    vmId = 100;
-    # standard profile is automatically included
-    
-    modules = [
-      {
-        # Your additional configuration
-        networking.hostName = "my-vm";
-      }
-    ];
+let
+  dualSystems = {
+    my-vm = library.makeDualExport "my-vm" {
+      system = "x86_64-linux";
+      vmId = 100;
+      # standard profile is automatically included
+      modules = [
+        {
+          networking.hostName = "my-vm";
+        }
+      ];
+    };
   };
+in
+{
+  nixosConfigurations.my-vm = dualSystems.my-vm.nixosSystem;
+  packages.x86_64-linux.my-vm = dualSystems.my-vm.package;
 }
 ```
 
-## Usage in Regular Configurations
-
-Also included when using `makeConfiguration`:
-
-```nix
-{
-  nixosConfigurations.my-host = makeConfiguration "my-host" {
-    modules = [
-      {
-        # Your configuration
-      }
-    ];
-  };
-}
-```
+**Note:** Do not use `generateVMAImage` or `makeConfiguration` directly — always use `makeDualExport`.
 
 ## See Also
 

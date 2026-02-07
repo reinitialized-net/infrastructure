@@ -117,3 +117,5 @@ Read detailed documentation for each module:
 - [Firewall Allowlist/Denylist](firewall.md)
 - [Mesh Network](meshNetwork.md)
 - [Containers Profile](containers.md)
+- [Standard Profile](standard.md)
+- [Mount Data Profile](mountData.md)

@@ -37,10 +37,11 @@
       email = "admin@reinitialized.net";
       dnsProvider = "technitium";
       credentialsFile = "${config.secrets.acmeDns.file}";
-      dnsResolver = "10.255.0.3:53,10.255.0.4:53";
+      dnsResolver = "10.255.0.3:1028";
       extraLegoFlags = [ 
         "--pfx"
         "--pfx.pass="
+        "--dns.resolvers=10.255.0.4:1026"
         "--dns.propagation-wait=10s"
         "--dns-timeout=120"
       ];
@@ -78,7 +79,7 @@
         "10.255.0.4:1024:5380"
         "10.255.0.4:1025:53443"
         "10.255.0.4:1026:53/tcp"
-        "10.255.0.4:1027:53/udp"
+        "10.255.0.4:1026:53/udp"
 
         "10.1.11.3:53:53/tcp"
         "10.1.11.3:53:53/udp"
@@ -128,10 +129,10 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:1028:8443/tcp"     # UniFi web admin
-        "10.255.0.4:1029:3478/udp"     # STUN
-        "10.255.0.4:1030:10001/udp"   # Device discovery
-        "10.255.0.4:1031:8080/tcp"     # Device communication
+        "10.255.0.4:1027:8443/tcp"      # UniFi web admin
+        "10.255.0.4:1028:3478/udp"      # STUN
+        "10.255.0.4:1029:10001/udp"     # Device discovery
+        "10.255.0.4:1030:8080/tcp"      # Device communication
       ];
       volumes = [
         "unifi_config:/config"
@@ -151,7 +152,7 @@
         "backend"
       ];
       ports = [  
-        "10.255.0.4:1032:80/tcp"     # pgAdmin4 web interface
+        "10.255.0.4:1031:80/tcp"     # pgAdmin4 web interface
       ];
       volumes = [
         "pgadmin4_data:/var/lib/pgadmin"

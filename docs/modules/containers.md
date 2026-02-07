@@ -43,9 +43,18 @@ virtualisation.oci-containers.backend = "docker";
 
 ### Storage
 
-Bind mounts Docker data to persistent storage:
+Bind mounts Docker data to persistent storage using a two-mount approach:
 
 ```nix
+# Docker volumes are mounted first (dependency for main Docker mount)
+fileSystems."/var/lib/docker/volumes" = {
+  device = "/mnt/data/docker/volumes";
+  depends = [ "/mnt/data" ];
+  fsType = "none";
+  options = [ "bind" ];
+};
+
+# Main Docker directory depends on volumes being mounted
 fileSystems."/var/lib/docker" = {
   device = "/mnt/data/docker";
   depends = [ "/mnt/data/docker/volumes" ];
@@ -57,7 +66,7 @@ fileSystems."/var/lib/docker" = {
 **Storage Layout:**
 ```
 /mnt/data/docker/           # Docker root
-  ├── volumes/              # Docker volumes
+  ├── volumes/              # Docker volumes (mounted first)
   ├── containers/           # Container data
   ├── image/               # Image layers
   └── ...                  # Other Docker data

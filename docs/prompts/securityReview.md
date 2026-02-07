@@ -1,0 +1,3 @@
+- Perform a comphrensive security review of the entire repository so far.
+- Perform research to determine best practices for hardening the infrastructure. Keep in mind this will provide public facing services, and should be hardened for such.
+- Based on your research, refactor the repository to ensure best practices and hardening technqiues, all while ensuring all existing services, remote management, and deployment continue to work.

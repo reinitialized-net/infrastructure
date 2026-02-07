@@ -18,13 +18,20 @@ modules/profiles/
 │   ├── meshTools.nix         # Tool loading module
 │   └── tools/
 │       ├── mesh-keygen.sh    # Script with package substitution
-│       ├── mesh-status.sh    # Standalone script
+│       ├── mesh-status.sh    # Script with package substitution
 │       └── mesh-test.sh      # Script with package substitution
 └── containers/
     ├── default.nix           # Main containers module
     ├── containerTools.nix    # Tool loading module
     └── tools/
-        └── migrate-volumes.sh # Standalone bash script
+        └── migrate-volumes.sh # Script with package substitution
+
+hosts/devenv/
+├── devenvTools.nix          # Fleet management tool loader
+└── tools/
+    ├── rebuild-host.sh       # Script with dynamic substitution
+    ├── update-infra.sh       # Script with dynamic substitution
+    └── update-network-firewall-rules.sh  # Script with package substitution
 ```
 
 ## Pattern 1: Scripts with Package Substitution (meshNetwork)
@@ -77,15 +84,15 @@ in {
 - Conditionally install tools based on feature enablement
 - Import this module in the main profile module
 
-## Pattern 2: Standalone Scripts (containers)
+## Pattern 2: Scripts with Package Substitution (containers)
 
-For pure bash scripts that don't need Nix packages:
+Container tools also use package substitution, with explicitly listed scripts and their dependencies:
 
 ### Script File (tools/migrate-volumes.sh)
 ```bash
 #!/bin/bash
-# Standard bash script - no placeholders needed
-docker volume ls
+# Uses @package@ placeholders for Nix packages
+@docker@/bin/docker volume ls
 # ... rest of script
 ```
 
@@ -96,33 +103,44 @@ docker volume ls
   pkgs,
   ...
 }: let
-  makeToolScript = name: scriptPath:
-    pkgs.writeScriptBin name (builtins.readFile scriptPath);
-  
-  toolsDir = ./tools;
-  scriptFiles = builtins.attrNames (builtins.readDir toolsDir);
-  
-  toolScripts = map (filename:
+  # Helper function to create a script with package substitution
+  makeToolScript = name: scriptPath: substitutions:
     let
-      scriptName = lib.removeSuffix ".sh" filename;
-      scriptPath = "${toolsDir}/${filename}";
+      scriptContent = builtins.readFile scriptPath;
+      replacedContent = lib.replaceStrings
+        (map (key: "@${key}@") (builtins.attrNames substitutions))
+        (builtins.attrValues substitutions)
+        scriptContent;
     in
-      makeToolScript scriptName scriptPath
-  ) (builtins.filter (name: lib.hasSuffix ".sh" name) scriptFiles);
+      pkgs.writeScriptBin name replacedContent;
+  
+  toolScripts = with pkgs; [
+    (makeToolScript "migrate-volumes" ./tools/migrate-volumes.sh {
+      docker = "${docker}";
+      sudo = "${sudo}";
+      coreutils = "${coreutils}";
+      gawk = "${gawk}";
+      gzip = "${gzip}";
+      bzip2 = "${bzip2}";
+      xz = "${xz}";
+      openssh = "${openssh}";
+      gnugrep = "${gnugrep}";
+    })
+  ];
 in {
   environment.systemPackages = toolScripts;
 }
 ```
 
 **Key Points:**
-- No substitution needed - scripts are loaded as-is
-- Automatically discovers all `.sh` files in tools directory
-- Simple and straightforward for pure bash scripts
+- Uses the same `makeToolScript` pattern as meshNetwork tools
+- Explicitly lists each script with its required package substitutions
+- Scripts use `@package@` placeholders resolved to Nix store paths
 - Import this module in the main profile module
 
 ## Integration
 
-Both patterns require importing the tool module in the main profile module:
+All patterns require importing the tool module in the parent module:
 
 ```nix
 # modules/profiles/meshNetwork/default.nix
@@ -146,9 +164,77 @@ Both patterns require importing the tool module in the main profile module:
 }
 ```
 
+```nix
+# hosts/devenv.nix
+{
+  imports = [
+    ./devenv/devenvTools.nix
+  ];
+  
+  # ... rest of host config
+}
+```
+
+## Pattern 3: Dynamic Substitution from Nix Data (devenvTools)
+
+For scripts that need computed data from Nix expressions (e.g., mesh topology data):
+
+### Script File (tools/rebuild-host.sh)
+```bash
+#!/usr/bin/env bash
+# Uses @placeholder@ for Nix-computed values
+VALID_HOSTS="@validHosts@"
+
+get_host_ip() {
+  local host="$1"
+  case "$host" in
+@hostIpCases@
+    *) echo "ERROR: Unknown host" >&2; return 1 ;;
+  esac
+}
+```
+
+### Tool Module (devenvTools.nix)
+```nix
+{
+  self,
+  lib,
+  pkgs,
+  config,
+  ...
+}: let
+  meshTopology = import "${self}/modules/profiles/meshNetwork/meshTopology.nix" { inherit lib; };
+  validHosts = builtins.attrNames meshTopology.nodes;
+  validHostsStr = lib.concatStringsSep " " validHosts;
+
+  hostIpCases = lib.concatStringsSep "\n" (
+    lib.mapAttrsToList (name: ip:
+      "      ${name}) echo \"${ip}\" ;;"
+    ) hostIpMap
+  );
+
+  makeToolScript = name: scriptPath: substitutions: /* ... */;
+
+  toolScripts = with pkgs; [
+    (makeToolScript "rebuildHost" ./tools/rebuild-host.sh {
+      validHosts = validHostsStr;
+      hostIpCases = hostIpCases;
+    })
+  ];
+in {
+  environment.systemPackages = toolScripts;
+}
+```
+
+**Key Points:**
+- Substitution values are computed from Nix data (mesh topology, secrets module)
+- Host IPs and valid hostnames are automatically derived from `meshTopology.nix`
+- Changes to mesh topology automatically update the scripts on rebuild
+- Available only on the `devenv` host
+
 ## Adding New Scripts
 
-### With Package Substitution (Pattern 1)
+### With Package Substitution (Pattern 1 or 2)
 
 1. Create script file in `tools/` directory with `@package-name@` placeholders
 2. Add entry to tool module's `toolScripts` list with appropriate substitutions:
@@ -158,10 +244,16 @@ Both patterns require importing the tool module in the main profile module:
    })
    ```
 
-### Standalone Script (Pattern 2)
+### With Dynamic Nix Data (Pattern 3)
 
-1. Create script file in `tools/` directory
-2. No changes needed - automatically discovered by `builtins.readDir`
+1. Create script file in `tools/` directory with `@placeholder@` for computed values
+2. Compute substitution values from Nix expressions in the tool module
+3. Add entry to tool module's `toolScripts` list:
+   ```nix
+   (makeToolScript "my-tool" ./tools/my-tool.sh {
+     computedValue = myNixExpression;
+   })
+   ```
 
 ## Benefits
 

@@ -8,8 +8,8 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 |------|---------|----------|-------------|
 | 1024 | hudu_postgres1 | TCP | PostgreSQL database for Hudu |
 | 1025 | hudu1 | TCP | Hudu web application interface |
-| 1026 | dnsOne | TCP | Technitium DNS web admin UI |
-| 1027 | dnsOne | TCP | Technitium DNS cluster sync (HTTPS) |
+| 1026 | dnsOne | TCP | Technitium DNS web admin UI (HTTP/5380) |
+| 1027 | dnsOne | TCP | Technitium DNS web admin UI (HTTPS/53443) |
 | 1028 | dnsOne | TCP | Technitium DNS service (TCP) |
 | 1029 | dnsOne | UDP | Technitium DNS service (UDP) |
 | 1030 | stalwartOne | TCP | Stalwart Mail HTTP/web interface |
@@ -27,8 +27,8 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 
 | Port | Service | Protocol | Description |
 |------|---------|----------|-------------|
-| 1024 | dnsTwo | TCP | Technitium DNS web admin UI |
-| 1025 | dnsTwo | TCP | Technitium DNS cluster sync (HTTPS) |
+| 1024 | dnsTwo | TCP | Technitium DNS web admin UI (HTTP/5380) |
+| 1025 | dnsTwo | TCP | Technitium DNS web admin UI (HTTPS/53443) |
 | 1026 | dnsTwo | TCP | Technitium DNS service (TCP) |
 | 1027 | dnsTwo | UDP | Technitium DNS service (UDP) |
 | 1028 | unifi | TCP | UniFi Network web admin |
@@ -74,9 +74,16 @@ External services are accessed through rp1's nginx reverse proxy:
 # Hudu web interface
 https://docs.reinitialized.net → http://10.255.0.3:1025
 
-# DNS admin UIs
-https://one.dns.reinitialized.net → https://10.255.0.3:1026
+# DNS admin UIs (HTTPS passthrough to backend)
+https://one.dns.reinitialized.net → https://10.255.0.3:1027
 https://two.dns.reinitialized.net → https://10.255.0.4:1025
+
+# DNS admin UIs (legacy HTTP port on rp1, proxied to HTTPS admin)
+http://10.1.12.2:53443 → https://10.255.0.3:1027
+http://10.1.12.3:53443 → https://10.255.0.4:1025
+
+# Jellyfin media server
+https://media.reinitialized.me → http://10.1.11.21:8096
 
 # UniFi controller
 https://unifi.in.reinitialized.net → https://10.255.0.4:1028

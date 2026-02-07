@@ -563,7 +563,7 @@ makeConfiguration :: String -> AttrSet -> NixOSConfiguration
 
 **`host`** (String, required)
 - The hostname for the configuration
-- Used to locate host-specific configuration in `modules/hosts/`
+- Used to locate host-specific configuration in `hosts/` and secrets in `modules/secrets/`
 - Example: `"webserver"`
 
 **Configuration AttrSet:**
@@ -605,7 +605,8 @@ makeConfiguration :: String -> AttrSet -> NixOSConfiguration
 Automatically imports:
 - Hardware module (`modules/hardware/${hardware}.nix`)
 - Standard profile (`modules/profiles/standard.nix`)
-- Host-specific config (`modules/hosts/${host}.nix`) if it exists
+- Firewall module (`modules/profiles/firewall.nix`)
+- Host-specific config (`hosts/${host}.nix`) and secrets (`modules/secrets/${host}.nix`)
 - Sets `system.stateVersion` to the flake default
 
 #### Building
@@ -669,7 +670,7 @@ Returns an attribute set with:
       dualSystems = {
         devenv = library.makeDualExport "devenv" {
           system = "x86_64-linux";
-          vmId = 203;
+          vmId = 202;
           cores = 4;
           memory = 8192;
           disks = [

@@ -12,6 +12,7 @@ NixOS infrastructure flake for building Proxmox VMA (VM Archive) images and mana
 | rp1 | 203 | Reverse proxy (Technitium DNS, nginx) | 12 | 2 |
 | apps1 | 204 | Application server (Hudu, DNS primary) | 11 | 3 |
 | apps2 | 205 | Application server (DNS secondary, UniFi) | 11 | 4 |
+| db1 | 206 | Database server (PostgreSQL, Valkey) | 11 | 11 |
 
 ### Flake Inputs
 
