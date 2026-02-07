@@ -318,7 +318,7 @@ in {
             server 10.1.11.3:53;
           }
           upstream dnsOneUI {
-            server 10.255.0.3:1026;
+            server 10.255.0.3:1027;
           }
           upstream dnsTwoUI {
             server 10.255.0.4:1025;
