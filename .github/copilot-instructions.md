@@ -236,3 +236,19 @@ networking.firewall.denylist = [
 - Mesh network private key is sourced from `secrets.meshNetwork.file` - ensure it's configured
 - ACME certificates are generated via security.acme with Technitium DNS provider
 - Docker volumes are bind-mounted from `/mnt/data/docker/volumes`
+
+# Hard Rules:
+- Always investigate for a root cause when diagnosing issues - don't just apply a quick fix without understanding the underlying problem.
+- After determining root cause, apply a fix that addresses the root cause directly, rather than implementing a workaround that may only mask symptoms.
+- After confirming the fix resolves the issue, document the root cause and the fix under the `/docs/investigations` directory. This documentation should include:
+  - A clear description of the root cause
+  - The steps taken to identify the root cause
+  - The specific changes made to fix the issue
+  - Any relevant logs, error messages, or screenshots that illustrate the problem and the solution
+- Always look for existing documentation before creating new documentation. If a similar issue has already been documented, update the existing documentation with any new insights or details rather than creating a duplicate entry.
+- When implementing or refactoring code, ensure all related documentation is updated to reflect the changes. This includes inline code comments, README files, and any relevant sections in the `/docs` directory.
+- If an implementation or refactor takes a reasonable amount of consideration, document the architectural decisions made during the process under `/docs/architecture`. This should include:
+  - The different options considered
+  - The pros and cons of each option
+  - The rationale for the final decision
+  - Any trade-offs that were made
