@@ -4,13 +4,13 @@
 }:{
   # Networking Configuration
   networking = {
-    hostName = "apps3";
+    hostName = "db1";
     useDHCP = false;
   };
   systemd.network.networks = {
     "eth0" = {
       address = [
-        "10.1.11.4/24"
+        "10.1.11.11/24"
       ];
       dns = [
         "10.1.11.2"
@@ -32,23 +32,6 @@
   # Hosted Services
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
-    ### PGAdmin4
-    pgadmin4 = {
-      autoStart = true;
-      hostname = "pgadmin4";
-      image = "dpage/pgadmin4:latest";
-      environment = config.secrets.pgAdmin4.keys;
-      networks = [
-        "backend"
-      ];
-      ports = [  
-        "10.255.0.5:80:80/tcp"     # pgAdmin4 web interface
-      ];
-      volumes = [
-        "pgadmin4_data:/var/lib/pgadmin"
-      ];
-    };
-
     ### postgres1
     postgres1 = {
       autoStart = true;
@@ -59,15 +42,15 @@
         "backend"
       ];
       ports = [
-        "10.255.0.5:5432:5432/tcp"
+        "10.255.0.11:1024:5432/tcp"
       ];
       volumes = [
         "postgres1_data:/var/lib/postgresql/data"
       ];
     };
 
-    ### redis1
-    redis1 = {
+    ### valkey1
+    valkey1 = {
       autoStart = true;
       hostname = "valkey1";
       image = "valkey/valkey:9-alpine";
@@ -75,7 +58,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.5:6379:6379/tcp"
+        "10.255.0.11:1025:6379/tcp"
       ];
       volumes = [
         "valkey1_data:/data"

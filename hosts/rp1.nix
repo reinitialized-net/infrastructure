@@ -318,73 +318,73 @@ in {
             server 10.1.11.3:53;
           }
           upstream dnsOneUI {
-            server 10.255.0.3:53443;
+            server 10.255.0.3:1026;
           }
           upstream dnsTwoUI {
-            server 10.255.0.4:53443;
+            server 10.255.0.4:1025;
           }
           # UniFi Controller
           upstream unifiWeb {
-            server 10.255.0.4:8443;
+            server 10.255.0.4:1028;
           }
           upstream unifiComm {
-            server 10.255.0.4:8080;
+            server 10.255.0.4:1031;
           }
           upstream unifiStun {
-            server 10.255.0.4:3478;
+            server 10.255.0.4:1029;
           }
           upstream unifiDiscovery {
-            server 10.255.0.4:10001;
+            server 10.255.0.4:1030;
           }
           # Stalwart Mail HTTP backends (for stream SSL termination + PROXY protocol)
           upstream stalwartOneHttp {
-            server 10.255.0.3:8080;
+            server 10.255.0.3:1030;
           }
           upstream stalwartOneSmtp {
-            server 10.255.0.3:25;
+            server 10.255.0.3:1031;
           }
           upstream stalwartOneSmtps {
-            server 10.255.0.3:465;
+            server 10.255.0.3:1033;
           }
           upstream stalwartOneSubmission {
-            server 10.255.0.3:587;
+            server 10.255.0.3:1034;
           }
           upstream stalwartOneImap {
-            server 10.255.0.3:143;
+            server 10.255.0.3:1032;
           }
           upstream stalwartOneImaps {
-            server 10.255.0.3:993;
+            server 10.255.0.3:1035;
           }
           upstream stalwartOnePop3s {
-            server 10.255.0.3:995;
+            server 10.255.0.3:1036;
           }
           upstream stalwartOneSieve {
-            server 10.255.0.3:4190;
+            server 10.255.0.3:1037;
           }
           # Stalwart Mail (stalwartTwo on apps2 - future)
           upstream stalwartTwoHttp {
-            server 10.255.0.4:8080;
+            server 10.255.0.4:1033;
           }
           upstream stalwartTwoSmtp {
-            server 10.255.0.4:25;
+            server 10.255.0.4:1034;
           }
           upstream stalwartTwoSmtps {
-            server 10.255.0.4:465;
+            server 10.255.0.4:1035;
           }
           upstream stalwartTwoSubmission {
-            server 10.255.0.4:587;
+            server 10.255.0.4:1036;
           }
           upstream stalwartTwoImap {
-            server 10.255.0.4:143;
+            server 10.255.0.4:1037;
           }
           upstream stalwartTwoImaps {
-            server 10.255.0.4:993;
+            server 10.255.0.4:1038;
           }
           upstream stalwartTwoPop3s {
-            server 10.255.0.4:995;
+            server 10.255.0.4:1039;
           }
           upstream stalwartTwoSieve {
-            server 10.255.0.4:4190;
+            server 10.255.0.4:1040;
           }
           # Local mail SSL termination upstreams (stream terminates SSL, then forwards HTTP)
           upstream mailLocalTermination {
@@ -633,7 +633,7 @@ in {
               };
               # WebSocket cable proxy
               "/cable" = {
-                proxyPass = "http://10.255.0.3:3000/cable";
+                proxyPass = "http://10.255.0.3:1025/cable";
                 proxyWebsockets = true;
               };
               # Main proxy with Rails-specific settings
@@ -658,7 +658,7 @@ in {
                   proxy_buffers 32 4k;
                   proxy_headers_hash_bucket_size 128;
                   proxy_headers_hash_max_size 1024;
-                  proxy_pass http://10.255.0.3:3000;
+                  proxy_pass http://10.255.0.3:1025;
                 '';
               };
             };
@@ -685,7 +685,7 @@ in {
             ];
 
             locations."/" = {
-              proxyPass = "https://10.255.0.4:8443";
+              proxyPass = "https://10.255.0.4:1028";
               extraConfig = ''
                 ${internalOnly}
                 proxy_ssl_verify off;
@@ -701,7 +701,7 @@ in {
             ];
 
             locations."/" = { 
-              proxyPass = "http://10.255.0.5:80";
+              proxyPass = "http://10.255.0.4:1032";
             };
           };
         };

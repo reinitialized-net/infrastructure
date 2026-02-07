@@ -153,7 +153,7 @@
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
-        apps3 = library.makeDualExport "apps3" {
+        db1 = library.makeDualExport "db1" {
           system = "x86_64-linux";
           vmId = 206;
           enableProtection = true;
@@ -197,19 +197,25 @@
       nixosConfigurations = {
         # Reference nixosSystem from dual export
         devenv = dualSystems.devenv.nixosSystem;
+
         rp1 = dualSystems.rp1.nixosSystem;
+
         apps1 = dualSystems.apps1.nixosSystem;
         apps2 = dualSystems.apps2.nixosSystem;
-        apps3 = dualSystems.apps3.nixosSystem;
+
+        db1 = dualSystems.db1.nixosSystem;
       };
       packages = library.forAllSystems (system:
         {
             # Reference VMA package from dual export
             devenv = dualSystems.devenv.package;
+            
             rp1 = dualSystems.rp1.package;
+
             apps1 = dualSystems.apps1.package;
             apps2 = dualSystems.apps2.package;
-            apps3 = dualSystems.apps3.package;
+            
+            db1 = dualSystems.db1.package;
         }
       );
     };

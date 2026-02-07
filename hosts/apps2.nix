@@ -75,10 +75,10 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:5380:5380"
-        "10.255.0.4:53443:53443"
-        "10.255.0.4:53:53/tcp"
-        "10.255.0.4:53:53/udp"
+        "10.255.0.4:1024:5380"
+        "10.255.0.4:1025:53443"
+        "10.255.0.4:1026:53/tcp"
+        "10.255.0.4:1027:53/udp"
 
         "10.1.11.3:53:53/tcp"
         "10.1.11.3:53:53/udp"
@@ -128,16 +128,33 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:8443:8443/tcp"     # UniFi web admin
-        "10.255.0.4:3478:3478/udp"     # STUN
-        "10.255.0.4:10001:10001/udp"   # Device discovery
-        "10.255.0.4:8080:8080/tcp"     # Device communication
+        "10.255.0.4:1028:8443/tcp"     # UniFi web admin
+        "10.255.0.4:1029:3478/udp"     # STUN
+        "10.255.0.4:1030:10001/udp"   # Device discovery
+        "10.255.0.4:1031:8080/tcp"     # Device communication
       ];
       volumes = [
         "unifi_config:/config"
       ];
       dependsOn = [
         "unifi_mongodb"
+      ];
+    };
+
+    ### PGAdmin4
+    pgadmin4 = {
+      autoStart = true;
+      hostname = "pgadmin4";
+      image = "dpage/pgadmin4:latest";
+      environment = config.secrets.pgAdmin4.keys;
+      networks = [
+        "backend"
+      ];
+      ports = [  
+        "10.255.0.4:1032:80/tcp"     # pgAdmin4 web interface
+      ];
+      volumes = [
+        "pgadmin4_data:/var/lib/pgadmin"
       ];
     };
   };
