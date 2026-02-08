@@ -206,6 +206,7 @@ docs/
 ├── examples/
 │   └── makeUser.md              # User management examples
 ├── investigations/
+│   ├── docker-volume-migration-permissions.md # Docker volume migration sudo fix
 │   ├── nixos-rebuild-access-denied.md
 │   ├── port-mapping-scheme-migration.md
 │   ├── stalwart-imap-auth-failure.md

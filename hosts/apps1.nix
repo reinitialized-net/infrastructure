@@ -35,8 +35,10 @@
     acceptTerms = true;
     defaults = {
       email = "admin@reinitialized.net";
+      #server = "https://acme-staging-v02.api.letsencrypt.org/directory";
+      profile = "shortlived";
       dnsProvider = "technitium";
-      credentialsFile = "${config.secrets.acmeDns.file}";
+      credentialsFile = config.secrets.acmeDns.file;
       dnsResolver = "10.255.0.3:1028";
       extraLegoFlags = [ 
         "--pfx"

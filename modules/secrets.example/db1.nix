@@ -23,5 +23,9 @@
         POSTGRES_PASSWORD = "changeMe";  # Initial setup only
       };
     };
+    volumeMigration = {
+      description = "SSH private key for docker volume migration between hosts";
+      file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+    };
   };
 }

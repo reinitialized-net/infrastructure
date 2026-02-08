@@ -17,5 +17,9 @@
         apiSecret = "PLACE_API_SECRET_HERE";
       };
     };
+    volumeMigration = {
+      description = "SSH private key for docker volume migration between hosts";
+      file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+    };
   };
 }

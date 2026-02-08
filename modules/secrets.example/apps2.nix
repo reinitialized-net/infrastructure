@@ -29,5 +29,9 @@
         MONGO_AUTHSOURCE = "admin";
       };
     };
+    volumeMigration = {
+      description = "SSH private key for docker volume migration between hosts";
+      file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+    };
   };
 }

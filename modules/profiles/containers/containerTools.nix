@@ -20,12 +20,8 @@
   toolScripts = with pkgs; [
     (makeToolScript "migrate-volumes" ./tools/migrate-volumes.sh {
       docker = "${docker}";
-      sudo = "${sudo}";
       coreutils = "${coreutils}";
       gawk = "${gawk}";
-      gzip = "${gzip}";
-      bzip2 = "${bzip2}";
-      xz = "${xz}";
       openssh = "${openssh}";
       gnugrep = "${gnugrep}";
     })

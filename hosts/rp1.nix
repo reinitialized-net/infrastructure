@@ -237,41 +237,6 @@ in {
         extraGroups = [ "acme" ];
       };
 
-      # ── Prevent ACME cert ordering from blocking container startup ──
-      # systemd-nspawn --notify-ready=yes waits for the container's
-      # startup transaction (all boot-enqueued jobs) to finish.  The
-      # NixOS ACME module's acme-<domain>.service (WantedBy=multi-user)
-      # pulls acme-order-renew-<domain> into that transaction via Wants=.
-      # If lego hangs (e.g. Let's Encrypt 429 rate-limit retries), the
-      # container never signals READY and the host kills it after
-      # TimeoutStartSec, causing a restart loop.
-      #
-      # Fix: give every acme-order-renew-* service a startup timeout so
-      # the boot transaction always completes.  On timeout systemd sends
-      # SIGTERM to lego; the renewal timer will retry later.  Nginx
-      # continues serving with the existing (or self-signed) certs.
-      systemd.services = let
-        # All certificate domains managed in this container
-        acmeDomains = [
-          "docs.reinitialized.net"
-          "mail.reinitialized.net"
-          "mail2.reinitialized.net"
-          "media.reinitialized.me"
-          "pgadmin.in.reinitialized.net"
-          "unifi.in.reinitialized.net"
-        ];
-        # Generate an override for each acme-order-renew-<domain> service
-        mkAcmeOverride = domain: lib.nameValuePair
-          "acme-order-renew-${domain}" {
-            serviceConfig = {
-              # Allow up to 3 minutes for DNS-01 propagation + ACME order.
-              # If it takes longer (rate-limit, network issue) let it fail
-              # gracefully; the renewal timer will retry.
-              TimeoutStartSec = lib.mkForce "3min";
-            };
-          };
-      in builtins.listToAttrs (map mkAcmeOverride acmeDomains);
-
       # Enable ACME for automatic SSL certificates
       # Uses DNS-01 challenge via Technitium DNS API (over mesh network)
       # This works for all domains including internal-only *.in.reinitialized.net
@@ -283,17 +248,14 @@ in {
           profile = "shortlived";
           dnsProvider = "technitium";
           credentialsFile = hostConfig.secrets.acmeDns.file;
-          dnsResolver = "10.255.0.3:53";
-          extraLegoFlags = [
-            "--dns.resolvers=10.255.0.4:53"
+          dnsResolver = "10.255.0.3:1028";
+          extraLegoFlags = [ 
+            "--pfx"
+            "--pfx.pass="
+            "--dns.resolvers=10.255.0.4:1026"
             "--dns.propagation-wait=10s"
             "--dns-timeout=120"
           ];
-          group = "nginx";
-          # After a cert is renewed, fully restart nginx so that stream
-          # SSL contexts are re-initialised (a reload/SIGHUP is not
-          # sufficient for the stream module).
-          postRun = "systemctl restart nginx.service";
         };
         certs = {
           "mail.reinitialized.net" = {};
@@ -361,7 +323,6 @@ in {
           upstream stalwartOneSieve {
             server 10.255.0.3:1036;
           }
-          # Stalwart Mail (stalwartTwo on apps2 - future)
           # Local mail SSL termination upstreams (stream terminates SSL, then forwards HTTP)
           upstream mailLocalTermination {
             server 127.0.0.1:8443;
@@ -388,13 +349,6 @@ in {
             ssl_certificate /var/lib/acme/mail.reinitialized.net/fullchain.pem;
             ssl_certificate_key /var/lib/acme/mail.reinitialized.net/key.pem;
             proxy_pass stalwartOneHttp;
-            proxy_protocol on;
-          }
-          server {
-            listen 127.0.0.1:8444 ssl;
-            ssl_certificate /var/lib/acme/mail2.reinitialized.net/fullchain.pem;
-            ssl_certificate_key /var/lib/acme/mail2.reinitialized.net/key.pem;
-            proxy_pass stalwartTwoHttp;
             proxy_protocol on;
           }
 
@@ -635,7 +589,7 @@ in {
             ];
 
             locations."/" = { 
-              proxyPass = "http://10.255.0.4:1032";
+              proxyPass = "http://10.255.0.4:1031";
             };
           };
         };
