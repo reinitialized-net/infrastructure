@@ -160,5 +160,76 @@
         "pgadmin4_data:/var/lib/pgadmin"
       ];
     };
+
+    ### Redis Insight
+    redisInsight = {
+      autoStart = true;
+      hostname = "redisInsight";
+      image = "redis/redisinsight:latest";
+      environment = config.secrets.redisInsight.keys;
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.4:1032:5540"     # Redis Insight web interface
+      ];
+      volumes = [
+        "redisInsight_data:/data"
+      ];
+    };
+
+    ### Forgejo Runner (CI/CD)
+    forgejoRunner = {
+      autoStart = true;
+      hostname = "forgejoRunner";
+      image = "code.forgejo.org/forgejo/runner:12";
+      cmd = [
+        "bash" "-c"
+        ''
+          # Generate config.yml if it doesn't exist
+          if [ ! -f /data/config.yml ]; then
+            forgejo-runner generate-config > /data/config.yml
+            echo "Generated default config.yml"
+
+            # Patch config.yml with desired settings
+            sed -i 's|^  capacity: 1|  capacity: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_CAPACITY}|' /data/config.yml
+            sed -i 's|^  fetch_timeout: 5s|  fetch_timeout: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_FETCH_TIMEOUT}|' /data/config.yml
+            sed -i 's|^  fetch_interval: 2s|  fetch_interval: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_FETCH_INTERVAL}|' /data/config.yml
+            
+            # Configure Docker socket access - automount will automatically find and mount the socket
+            sed -i 's|^  docker_host: "-"|  docker_host: "automount"|' /data/config.yml
+          fi
+
+          # Register the runner if not already registered
+          if [ ! -f /data/.runner ]; then
+            forgejo-runner register \
+              --no-interactive \
+              --instance "${config.secrets.forgejoRunner.keys.FORGEJO_INSTANCE_URL}" \
+              --token "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_REGISTRATION_TOKEN}" \
+              --name "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_NAME}" \
+              --labels "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_LABELS}" \
+              --config /data/config.yml
+            echo "Runner registered successfully"
+          fi
+
+          # Start the runner daemon
+          exec forgejo-runner daemon --config /data/config.yml
+        ''
+      ];
+      networks = [
+        "backend"
+      ];
+      volumes = [
+        "forgejoRunner_data:/data"
+        "/var/run/docker.sock:/var/run/docker.sock"
+      ];
+      workdir = "/data";
+      extraOptions = [
+        "--privileged"
+        # Add docker group (GID 999) for socket access
+        # Must use numeric GID since the container doesn't have 'docker' in /etc/group
+        "--group-add=999"
+      ];
+    };
   };
 }

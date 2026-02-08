@@ -326,14 +326,15 @@ in {
 
       ## Mail HTTPS - Stream SSL termination
       # rp1 terminates SSL using ACME certs, then forwards plain HTTP
-      # to Stalwart's web UI port.  No PROXY protocol here — Stalwart's
-      # HTTP listener (port 8080) does not expect it and returns 400
-      # if it receives a PROXY header as the first bytes.
+      # to Stalwart's web UI port. PROXY protocol is REQUIRED because
+      # Stalwart has trusted-networks configured (10.1.12.0/24) and expects
+      # PROXY protocol headers from trusted sources to preserve client IPs.
       server {
         listen 127.0.0.1:8443 ssl;
         ssl_certificate /var/lib/acme/mail.reinitialized.net/fullchain.pem;
         ssl_certificate_key /var/lib/acme/mail.reinitialized.net/key.pem;
         proxy_pass stalwartOneHttp;
+        proxy_protocol on;
       }
 
       ## DNS Service Listeners (Layer 4)
@@ -467,7 +468,8 @@ in {
 
       "mail.reinitialized.net" = {
         # HTTP-only: redirects to HTTPS
-        # HTTPS is handled by stream SSL termination with PROXY protocol
+        # HTTPS is handled by stream SSL termination (see streamConfig above)
+        # with PROXY protocol enabled (required for Stalwart trusted-networks)
         # Certificate managed by security.acme.certs (DNS-01 via Technitium)
         # Must use useACMEHost because the cert is consumed by stream, not this virtualHost
         onlySSL = false;
@@ -575,6 +577,34 @@ in {
 
         locations."/" = { 
           proxyPass = "http://10.255.0.4:1031";
+        };
+      };
+      "redisadmin.in.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.4:1032";
+          proxyWebsockets = true;
+        };
+      };
+      "git.ds.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.3:1037";
+          extraConfig = ''
+            client_max_body_size 512M;
+          '';
         };
       };
     };

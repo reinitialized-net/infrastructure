@@ -36,6 +36,10 @@
         STAGING = "false";
         DISABLE_SSL = "true";
 
+        # Database connection - use container hostname for local DB
+        # For remote database, use IP address and separate port:
+        #   DB_HOST = "10.255.0.11";
+        #   DB_PORT = "1024";
         DB_HOST = "postgres1";
         DB_USERNAME = "postgres";
         DB_PASSWORD = "";

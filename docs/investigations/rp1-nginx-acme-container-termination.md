@@ -88,7 +88,12 @@ The `acmeDomains` list included `"mail2.reinitialized.net"`, which had no corres
 4. **Removed `"mail2.reinitialized.net"` from `acmeDomains`:**
    No cert definition exists for this domain. The override was targeting a nonexistent service.
 
+## Subsequent Changes
+
+**2026-02-08:** The removal of `proxy_protocol on` from the HTTP listener was later reversed when Stalwart was configured with `trusted-networks`. See [stalwart-trusted-networks-proxy-protocol.md](stalwart-trusted-networks-proxy-protocol.md) for details. The change documented here was correct at the time, but application configuration changes required corresponding infrastructure updates.
+
 ## Related
 
+- [Stalwart Trusted Networks PROXY Protocol](stalwart-trusted-networks-proxy-protocol.md) — Subsequent re-enablement of PROXY protocol after trusted-networks configuration
 - [Port Mapping Scheme Migration](port-mapping-scheme-migration.md) — Concurrent fix for mismatched stalwart upstream ports in rp1
 - [Mesh Network Port Reference](../mesh-network-ports.md) — Updated port allocations

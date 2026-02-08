@@ -238,7 +238,7 @@ networking.firewall.denylist = [
 - ACME certificates are generated via security.acme with Technitium DNS provider
 - Docker volumes are bind-mounted from `/mnt/data/docker/volumes`
 
-# Hard Rules:
+# Documentation & Investigation Rules:
 - Always investigate for a root cause when diagnosing issues - don't just apply a quick fix without understanding the underlying problem.
 - After determining root cause, apply a fix that addresses the root cause directly, rather than implementing a workaround that may only mask symptoms.
 - After confirming the fix resolves the issue, document the root cause and the fix under the `/docs/investigations` directory. This documentation should include:

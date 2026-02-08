@@ -70,43 +70,11 @@
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
     ### Hudu
-    hudu_postgres1 = {
-      autoStart = true;
-      hostname = "hudu_postgres1";
-      image = "docker.io/library/postgres:18-alpine";
-      environment = config.secrets.hudu.keys;
-      networks = [ 
-        "backend"
-      ];
-      ports = [
-        "10.255.0.3:1024:5432/tcp"
-      ];
-      volumes = [
-        "hudu_postgres1Data:/var/lib/postgresql/data"
-      ];
-    };
-    hudu_redis1 = {
-      autoStart = true;
-      hostname = "hudu_redis1";
-      image = "docker.io/library/redis:8-alpine";
-      environment = config.secrets.hudu.keys;
-      cmd = [ "redis-server" ];
-      networks = [ 
-        "backend"
-      ];
-      volumes = [
-        "hudu_redis1Data:/var/lib/redis/data"
-      ];
-    };
     hudu1 = {
       autoStart = true;      
       hostname = "hudu1";
       image = "hududocker/hudu:latest";
       environment = config.secrets.hudu.keys;
-      dependsOn = [
-        "hudu_postgres1"
-        "hudu_redis1"
-      ];
       networks = [ 
         "backend"
       ];
@@ -130,10 +98,6 @@
         "sidekiq" 
         "-C" 
         "config/sidekiq.yml"
-      ];
-      dependsOn = [
-        "hudu_postgres1"
-        "hudu_redis1"
       ];
       networks = [ 
         "backend"
@@ -196,6 +160,25 @@
       ];
       volumes = [
         "stalwart_data:/opt/stalwart"
+      ];
+    };
+
+    ### Forgejo Git Forge
+    forgejo = {
+      autoStart = true;
+      hostname = "forgejo";
+      image = "code.forgejo.org/forgejo/forgejo:14";
+      #environment = config.secrets.forgejo.keys;
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.3:1037:3000"
+      ];
+      volumes = [
+        "forgejo_data:/data"
+        "/etc/timezone:/etc/timezone:ro"
+        "/etc/localtime:/etc/localtime:ro"
       ];
     };
   };

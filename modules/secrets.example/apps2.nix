@@ -33,5 +33,14 @@
       description = "SSH private key for docker volume migration between hosts";
       file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
     };
+
+    redisInsight = {
+      description = "Redis Insight configuration";
+      keys = {
+        RI_REDIS_HOST1 = "VALKEY_MESH_IP";
+        RI_REDIS_PORT1 = "VALKEY_MESH_PORT";
+        RI_REDIS_ALIAS1 = "valkey1";
+      };
+    };
   };
 }
