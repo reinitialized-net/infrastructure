@@ -12,16 +12,16 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1027 | dnsOne | TCP | Technitium DNS web admin UI (HTTPS/53443) |
 | 1028 | dnsOne | TCP | Technitium DNS service (TCP) |
 | 1029 | dnsOne | UDP | Technitium DNS service (UDP) |
-| 1030 | stalwartOne | TCP | Stalwart Mail HTTP/web interface |
-| 1031 | stalwartOne | TCP | Stalwart Mail SMTP (port 25) |
-| 1032 | stalwartOne | TCP | Stalwart Mail IMAP (port 143) |
-| 1033 | stalwartOne | TCP | Stalwart Mail SMTPS (port 465) |
-| 1034 | stalwartOne | TCP | Stalwart Mail Submission (port 587) |
-| 1035 | stalwartOne | TCP | Stalwart Mail IMAPS (port 993) |
-| 1036 | stalwartOne | TCP | Stalwart Mail POP3S (port 995) |
-| 1037 | stalwartOne | TCP | Stalwart Mail Sieve (port 4190) |
+| 1029 | stalwartOne | TCP | Stalwart Mail HTTP/web interface |
+| 1030 | stalwartOne | TCP | Stalwart Mail SMTP (port 25) |
+| 1031 | stalwartOne | TCP | Stalwart Mail IMAP (port 143) |
+| 1032 | stalwartOne | TCP | Stalwart Mail SMTPS (port 465) |
+| 1033 | stalwartOne | TCP | Stalwart Mail Submission (port 587) |
+| 1034 | stalwartOne | TCP | Stalwart Mail IMAPS (port 993) |
+| 1035 | stalwartOne | TCP | Stalwart Mail POP3S (port 995) |
+| 1036 | stalwartOne | TCP | Stalwart Mail Sieve (port 4190) |
 
-**Next Available Port:** 1038
+**Next Available Port:** 1037
 
 ## apps2 (10.255.0.4)
 
@@ -31,21 +31,21 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1025 | dnsTwo | TCP | Technitium DNS web admin UI (HTTPS/53443) |
 | 1026 | dnsTwo | TCP | Technitium DNS service (TCP) |
 | 1027 | dnsTwo | UDP | Technitium DNS service (UDP) |
-| 1028 | unifi | TCP | UniFi Network web admin |
-| 1029 | unifi | UDP | UniFi STUN protocol |
-| 1030 | unifi | UDP | UniFi device discovery |
-| 1031 | unifi | TCP | UniFi device communication |
-| 1032 | pgadmin4 | TCP | pgAdmin4 web interface |
-| 1033 | stalwartTwo (future) | TCP | Stalwart Mail HTTP/web interface |
-| 1034 | stalwartTwo (future) | TCP | Stalwart Mail SMTP (port 25) |
-| 1035 | stalwartTwo (future) | TCP | Stalwart Mail SMTPS (port 465) |
-| 1036 | stalwartTwo (future) | TCP | Stalwart Mail Submission (port 587) |
-| 1037 | stalwartTwo (future) | TCP | Stalwart Mail IMAP (port 143) |
-| 1038 | stalwartTwo (future) | TCP | Stalwart Mail IMAPS (port 993) |
-| 1039 | stalwartTwo (future) | TCP | Stalwart Mail POP3S (port 995) |
-| 1040 | stalwartTwo (future) | TCP | Stalwart Mail Sieve (port 4190) |
+| 1027 | unifi | TCP | UniFi Network web admin |
+| 1028 | unifi | UDP | UniFi STUN protocol |
+| 1029 | unifi | UDP | UniFi device discovery |
+| 1030 | unifi | TCP | UniFi device communication |
+| 1031 | pgadmin4 | TCP | pgAdmin4 web interface |
+| 1032 | stalwartTwo (future) | TCP | Stalwart Mail HTTP/web interface |
+| 1033 | stalwartTwo (future) | TCP | Stalwart Mail SMTP (port 25) |
+| 1034 | stalwartTwo (future) | TCP | Stalwart Mail SMTPS (port 465) |
+| 1035 | stalwartTwo (future) | TCP | Stalwart Mail Submission (port 587) |
+| 1036 | stalwartTwo (future) | TCP | Stalwart Mail IMAP (port 143) |
+| 1037 | stalwartTwo (future) | TCP | Stalwart Mail IMAPS (port 993) |
+| 1038 | stalwartTwo (future) | TCP | Stalwart Mail POP3S (port 995) |
+| 1039 | stalwartTwo (future) | TCP | Stalwart Mail Sieve (port 4190) |
 
-**Next Available Port:** 1041
+**Next Available Port:** 1040
 
 ## db1 (10.255.0.11)
 
@@ -86,23 +86,23 @@ http://10.1.12.3:53443 → https://10.255.0.4:1025
 https://media.reinitialized.me → http://10.1.11.21:8096
 
 # UniFi controller
-https://unifi.in.reinitialized.net → https://10.255.0.4:1028
+https://unifi.in.reinitialized.net → https://10.255.0.4:1027
 
 # pgAdmin4
-https://pgadmin.in.reinitialized.net → http://10.255.0.4:1032
+https://pgadmin.in.reinitialized.net → http://10.255.0.4:1031
 ```
 
 ### Mail Services via rp1
 Mail protocols are proxied through rp1's nginx stream module with PROXY protocol:
 ```
 Public → rp1 (10.1.12.2) → stalwartOne (10.255.0.3)
-  SMTP:25    → mesh:1031
-  SMTPS:465  → mesh:1033
-  Submission:587 → mesh:1034
-  IMAP:143   → mesh:1032
-  IMAPS:993  → mesh:1035
-  POP3S:995  → mesh:1036
-  Sieve:4190 → mesh:1037
+  SMTP:25    → mesh:1030
+  SMTPS:465  → mesh:1032
+  Submission:587 → mesh:1033
+  IMAP:143   → mesh:1031
+  IMAPS:993  → mesh:1034
+  POP3S:995  → mesh:1035
+  Sieve:4190 → mesh:1036
 ```
 
 ## Notes

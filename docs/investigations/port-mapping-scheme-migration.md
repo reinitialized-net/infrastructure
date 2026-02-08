@@ -27,14 +27,14 @@ The new incremental scheme simplifies port management by:
 | dnsOne (Cluster) | 53443 | 1027 | 53443 | Technitium cluster sync |
 | dnsOne (DNS TCP) | 53 | 1028 | 53 | DNS service |
 | dnsOne (DNS UDP) | 53 | 1029 | 53 | DNS service |
-| stalwartOne (HTTP) | 8080 | 1030 | 8080 | Mail web interface |
-| stalwartOne (SMTP) | 25 | 1031 | 25 | Mail SMTP |
-| stalwartOne (IMAP) | 143 | 1032 | 143 | Mail IMAP |
-| stalwartOne (SMTPS) | 465 | 1033 | 465 | Mail SMTP over SSL |
-| stalwartOne (Submission) | 587 | 1034 | 587 | Mail submission |
-| stalwartOne (IMAPS) | 993 | 1035 | 993 | Mail IMAP over SSL |
-| stalwartOne (POP3S) | 995 | 1036 | 995 | Mail POP3 over SSL |
-| stalwartOne (Sieve) | 4190 | 1037 | 4190 | Mail Sieve |
+| stalwartOne (HTTP) | 8080 | 1029 | 8080 | Mail web interface |
+| stalwartOne (SMTP) | 25 | 1030 | 25 | Mail SMTP |
+| stalwartOne (IMAP) | 143 | 1031 | 143 | Mail IMAP |
+| stalwartOne (SMTPS) | 465 | 1032 | 465 | Mail SMTP over SSL |
+| stalwartOne (Submission) | 587 | 1033 | 587 | Mail submission |
+| stalwartOne (IMAPS) | 993 | 1034 | 993 | Mail IMAP over SSL |
+| stalwartOne (POP3S) | 995 | 1035 | 995 | Mail POP3 over SSL |
+| stalwartOne (Sieve) | 4190 | 1036 | 4190 | Mail Sieve |
 
 ### apps2 (10.255.0.4) Port Mappings
 
@@ -44,11 +44,11 @@ The new incremental scheme simplifies port management by:
 | dnsTwo (Cluster) | 53443 | 1025 | 53443 | Technitium cluster sync |
 | dnsTwo (DNS TCP) | 53 | 1026 | 53 | DNS service |
 | dnsTwo (DNS UDP) | 53 | 1027 | 53 | DNS service |
-| unifi (Web) | 8443 | 1028 | 8443 | UniFi web admin |
-| unifi (STUN) | 3478 | 1029 | 3478 | UniFi STUN |
-| unifi (Discovery) | 10001 | 1030 | 10001 | UniFi device discovery |
-| unifi (Communication) | 8080 | 1031 | 8080 | UniFi device comm |
-| pgadmin4 | 80 (wrong host) | 1032 | 80 | pgAdmin4 web UI |
+| unifi (Web) | 8443 | 1027 | 8443 | UniFi web admin |
+| unifi (STUN) | 3478 | 1028 | 3478 | UniFi STUN |
+| unifi (Discovery) | 10001 | 1029 | 10001 | UniFi device discovery |
+| unifi (Communication) | 8080 | 1030 | 8080 | UniFi device comm |
+| pgadmin4 | 80 (wrong host) | 1031 | 80 | pgAdmin4 web UI |
 
 **Note:** pgAdmin4 was incorrectly mapped to 10.255.0.11 (db1) and has been corrected to 10.255.0.4 (apps2).
 
@@ -79,25 +79,25 @@ The new incremental scheme simplifies port management by:
 ### Specific Changes in rp1.nix
 
 **Nginx Stream Upstreams:**
-- dnsOneUI: `10.255.0.3:53443` → `10.255.0.3:1026`
+- dnsOneUI: `10.255.0.3:53443` → `10.255.0.3:1027`
 - dnsTwoUI: `10.255.0.4:53443` → `10.255.0.4:1025`
-- unifiWeb: `10.255.0.4:8443` → `10.255.0.4:1028`
-- unifiComm: `10.255.0.4:8080` → `10.255.0.4:1031`
-- unifiStun: `10.255.0.4:3478` → `10.255.0.4:1029`
-- unifiDiscovery: `10.255.0.4:10001` → `10.255.0.4:1030`
-- stalwartOneHttp: `10.255.0.3:8080` → `10.255.0.3:1030`
-- stalwartOneSmtp: `10.255.0.3:25` → `10.255.0.3:1031`
-- stalwartOneImap: `10.255.0.3:143` → `10.255.0.3:1032`
-- stalwartOneSmtps: `10.255.0.3:465` → `10.255.0.3:1033`
-- stalwartOneSubmission: `10.255.0.3:587` → `10.255.0.3:1034`
-- stalwartOneImaps: `10.255.0.3:993` → `10.255.0.3:1035`
-- stalwartOnePop3s: `10.255.0.3:995` → `10.255.0.3:1036`
-- stalwartOneSieve: `10.255.0.3:4190` → `10.255.0.3:1037`
+- unifiWeb: `10.255.0.4:8443` → `10.255.0.4:1027`
+- unifiComm: `10.255.0.4:8080` → `10.255.0.4:1030`
+- unifiStun: `10.255.0.4:3478` → `10.255.0.4:1028`
+- unifiDiscovery: `10.255.0.4:10001` → `10.255.0.4:1029`
+- stalwartOneHttp: `10.255.0.3:8080` → `10.255.0.3:1029`
+- stalwartOneSmtp: `10.255.0.3:25` → `10.255.0.3:1030`
+- stalwartOneImap: `10.255.0.3:143` → `10.255.0.3:1031`
+- stalwartOneSmtps: `10.255.0.3:465` → `10.255.0.3:1032`
+- stalwartOneSubmission: `10.255.0.3:587` → `10.255.0.3:1033`
+- stalwartOneImaps: `10.255.0.3:993` → `10.255.0.3:1034`
+- stalwartOnePop3s: `10.255.0.3:995` → `10.255.0.3:1035`
+- stalwartOneSieve: `10.255.0.3:4190` → `10.255.0.3:1036`
 
 **Nginx virtualHost Locations:**
 - docs.reinitialized.net (Hudu): `10.255.0.3:3000` → `10.255.0.3:1025`
-- unifi.in.reinitialized.net: `10.255.0.4:8443` → `10.255.0.4:1028`
-- pgadmin.in.reinitialized.net: `10.255.0.11:80` → `10.255.0.4:1032`
+- unifi.in.reinitialized.net: `10.255.0.4:8443` → `10.255.0.4:1027`
+- pgadmin.in.reinitialized.net: `10.255.0.11:80` → `10.255.0.4:1031`
 
 ## Verification Steps
 
