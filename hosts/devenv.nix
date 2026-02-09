@@ -69,5 +69,20 @@
 
     nixd
     nixfmt-rfc-style
+    
+    # GPG tools - pinentry must be in PATH for GPG agent
+    pinentry-curses
   ];
+  # Enable required programs
+  programs.gnupg.agent = {
+    enable = true;
+    # Pick a flavor (e.g., "curses" for terminal, "gnome3" or "qt" for GUI)
+    pinentryPackage = pkgs.pinentry-curses;
+  };
+  # Nix Settings
+  nix.settings = {
+    # Increase download buffer size to prevent warnings during large downloads
+    # Default is 64 MiB (67108864), setting to 256 MiB (268435456)
+    download-buffer-size = 268435456;
+  };
 }
