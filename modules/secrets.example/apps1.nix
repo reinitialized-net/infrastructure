@@ -65,9 +65,41 @@
 
         REDIS_URL = "redis://redis1";
       };
-    };
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
       file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
-    };  };
+    };
+
+    };
+
+    jaeger = {
+      description = "Jaeger telemetry backend configuration";
+      keys = {
+        SPAN_STORAGE_TYPE = "badger";
+        BADGER_EPHEMERAL = "false";
+        BADGER_DIRECTORY_VALUE = "/badger/data";
+        BADGER_DIRECTORY_KEY = "/badger/key";
+        COLLECTOR_OTLP_ENABLED = "true";
+      };
+    };
+
+    grafana = {
+      description = "Grafana visualization configuration";
+      keys = {
+        GF_SECURITY_ADMIN_USER = "admin";
+        GF_SECURITY_ADMIN_PASSWORD = "CHANGE_ME_SECURE_PASSWORD";
+        GF_INSTALL_PLUGINS = "";
+        GF_SERVER_ROOT_URL = "http://grafana.example.com";
+      };
+    };
+
+    stalwart = {
+      description = "Stalwart telemetry and monitoring configuration";
+      keys = {
+        # These environment variables are for future use
+        # Telemetry is configured via Stalwart's config.toml file
+        # which is persisted in the stalwart_data volume
+      };
+    };
+  };
 }

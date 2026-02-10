@@ -20,8 +20,13 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1034 | stalwartOne | TCP | Stalwart Mail IMAPS (port 993) |
 | 1035 | stalwartOne | TCP | Stalwart Mail POP3S (port 995) |
 | 1036 | stalwartOne | TCP | Stalwart Mail Sieve (port 4190) |
+| 1037 | forgejo | TCP | Forgejo Git forge web interface |
+| 1038 | jaeger | TCP | Jaeger OTLP gRPC receiver (from OTel Collector) |
+| 1039 | jaeger | TCP | Jaeger UI for trace visualization |
+| 1040 | grafana | TCP | Grafana metrics visualization web UI |
+| 1041 | stalwartOne | TCP | Stalwart Prometheus metrics endpoint (optional) |
 
-**Next Available Port:** 1037
+**Next Available Port:** 1042
 
 ## apps2 (10.255.0.4)
 
@@ -53,8 +58,12 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 |------|---------|----------|-------------|
 | 1024 | postgres1 | TCP | PostgreSQL database server |
 | 1025 | valkey1 | TCP | Valkey (Redis-compatible) cache |
+| 1026 | otel-collector | TCP | OpenTelemetry Collector OTLP gRPC receiver |
+| 1027 | otel-collector | TCP | OpenTelemetry Collector OTLP HTTP receiver |
+| 1028 | otel-collector | TCP | OpenTelemetry Collector Prometheus metrics exporter |
+| 1029 | prometheus | TCP | Prometheus time-series database web UI and API |
 
-**Next Available Port:** 1026
+**Next Available Port:** 1030
 
 ## Access Patterns
 

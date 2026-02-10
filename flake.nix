@@ -153,6 +153,7 @@
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
+
         db1 = library.makeDualExport "db1" {
           system = "x86_64-linux";
           vmId = 206;
@@ -164,7 +165,7 @@
               size = 20; 
             }
             { 
-              storage = "coldData";
+              storage = "hotData"; # Using hotData for both disks to optimize for performance of the database
               size = 50;
             }
           ];

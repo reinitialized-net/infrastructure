@@ -607,6 +607,55 @@ in {
           '';
         };
       };
+
+      # Telemetry and Observability Services
+      "jaeger.in.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.3:1039";
+          extraConfig = ''
+            ${internalOnly}
+          '';
+        };
+      };
+
+      "grafana.in.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.3:1040";
+          extraConfig = ''
+            ${internalOnly}
+          '';
+        };
+      };
+
+      "prometheus.in.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.11:1029";
+          extraConfig = ''
+            ${internalOnly}
+          '';
+        };
+      };
     };
   };
 }

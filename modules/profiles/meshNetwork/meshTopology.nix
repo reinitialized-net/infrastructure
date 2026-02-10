@@ -31,7 +31,7 @@
       endpoint = "10.1.11.3:51820";
       publicKey = "IifQOSQL9gZyWoQKErF8yzCyvjuJSaq5MhDV6D3kT10=";
     };
-
+    
     db1 = {
       nodeId = 11;
       hostname = "db1";

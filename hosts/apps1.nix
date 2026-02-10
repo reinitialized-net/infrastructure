@@ -139,15 +139,16 @@
       autoStart = true;
       hostname = "stalwart";
       image = "stalwartlabs/stalwart:latest";
-      environment = {
-
-      };
+      environment = config.secrets.stalwart.keys;
       networks = [
         "backend"
       ];
       ports = [
         # Web UI and ACME
         "10.255.0.3:1029:8080"
+
+        # Prometheus metrics endpoint (if enabled in config.toml)
+        "10.255.0.3:1041:9090"
 
         # Mail protocols
         "10.255.0.3:1030:25"
@@ -179,6 +180,41 @@
         "forgejo_data:/data"
         "/etc/timezone:/etc/timezone:ro"
         "/etc/localtime:/etc/localtime:ro"
+      ];
+    };
+
+    ### Jaeger UI (Tracing Visualization)
+    jaeger = {
+      autoStart = true;
+      hostname = "jaeger";
+      image = "jaegertracing/all-in-one:latest";
+      environment = config.secrets.jaeger.keys;
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.3:1038:4317/tcp"   # OTLP gRPC receiver (from OTel Collector)
+        "10.255.0.3:1039:16686/tcp"  # Jaeger UI
+      ];
+      volumes = [
+        "jaeger_data:/badger"
+      ];
+    };
+
+    ### Grafana (Metrics Visualization)
+    grafana = {
+      autoStart = true;
+      hostname = "grafana";
+      image = "grafana/grafana:latest";
+      environment = config.secrets.grafana.keys;
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.3:1040:3000/tcp"  # Grafana web UI
+      ];
+      volumes = [
+        "grafana_data:/var/lib/grafana"
       ];
     };
   };
