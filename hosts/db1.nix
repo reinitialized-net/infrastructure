@@ -158,7 +158,10 @@
         "10.255.0.11:1024:5432/tcp"
       ];
       volumes = [
-        "postgres1_data:/var/lib/postgresql/data"
+        # PostgreSQL 18+ requires mounting at /var/lib/postgresql (not /data subdirectory)
+        # This is a breaking change from PostgreSQL 17 and below
+        # See: https://hub.docker.com/_/postgres (PGDATA section)
+        "postgres1_data:/var/lib/postgresql"
       ];
     };
 

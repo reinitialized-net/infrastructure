@@ -139,7 +139,6 @@
       autoStart = true;
       hostname = "stalwart";
       image = "stalwartlabs/stalwart:latest";
-      environment = config.secrets.stalwart.keys;
       networks = [
         "backend"
       ];
@@ -169,7 +168,6 @@
       autoStart = true;
       hostname = "forgejo";
       image = "code.forgejo.org/forgejo/forgejo:14";
-      #environment = config.secrets.forgejo.keys;
       networks = [
         "backend"
       ];
