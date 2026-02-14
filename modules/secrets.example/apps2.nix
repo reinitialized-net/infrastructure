@@ -42,5 +42,17 @@
         RI_REDIS_ALIAS1 = "valkey1";
       };
     };
+    forgejoRunner = {
+      description = "Forgejo Runner CI/CD configuration";
+      keys = {
+        FORGEJO_INSTANCE_URL = "PLACE FORGEJO INSTANCE URL HERE";
+        FORGEJO_RUNNER_REGISTRATION_TOKEN = "PLACE REGISTRATION TOKEN HERE";
+        FORGEJO_RUNNER_NAME = "runner-1";
+        FORGEJO_RUNNER_LABELS = "docker:docker://node:20-bookworm";
+        FORGEJO_RUNNER_CAPACITY = "2";
+        FORGEJO_RUNNER_FETCH_TIMEOUT = "10s";
+        FORGEJO_RUNNER_FETCH_INTERVAL = "5s";
+      };
+    };
   };
 }

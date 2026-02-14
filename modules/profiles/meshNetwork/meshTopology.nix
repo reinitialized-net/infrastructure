@@ -31,6 +31,12 @@
       endpoint = "10.1.11.3:51820";
       publicKey = "IifQOSQL9gZyWoQKErF8yzCyvjuJSaq5MhDV6D3kT10=";
     };
+    apps3 = {
+      nodeId = 5;
+      hostname = "apps3";
+      endpoint = "10.1.11.4:51820";
+      publicKey = "OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=";
+    };
     
     db1 = {
       nodeId = 11;

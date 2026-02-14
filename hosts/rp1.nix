@@ -656,6 +656,84 @@ in {
           '';
         };
       };
+
+      "photos.reinitialized.me" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.5:1001";
+          proxyWebsockets = true;
+          extraConfig = ''
+            # allow large file uploads (0 = no limit)
+            client_max_body_size 0;
+            # disable buffering to prevent OOM and make uploads ~2x faster
+            proxy_request_buffering off;
+            # increase body buffer to avoid limiting upload speed (default 8k/16k)
+            client_body_buffer_size 1024k;
+            # set timeouts for large uploads
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            send_timeout 600s;
+          '';
+        };
+      };
+
+      # Matrix Homeserver (Conduwuit on apps3)
+      "matrix.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations = {
+          # Well-known client discovery (required by Matrix spec)
+          "/.well-known/matrix/client" = {
+            extraConfig = ''
+              default_type application/json;
+              add_header Access-Control-Allow-Origin *;
+              return 200 '{"m.homeserver": {"base_url": "https://matrix.reinitialized.net"}}';
+            '';
+          };
+          # Well-known server discovery
+          "/.well-known/matrix/server" = {
+            extraConfig = ''
+              default_type application/json;
+              return 200 '{"m.server": "matrix.reinitialized.net:443"}';
+            '';
+          };
+          # Matrix client and server API
+          "/" = {
+            proxyPass = "http://10.255.0.5:1025";
+            proxyWebsockets = true;
+            extraConfig = ''
+              client_max_body_size 100M;
+              proxy_read_timeout 600s;
+              proxy_send_timeout 600s;
+            '';
+          };
+        };
+      };
+
+      # Cinny Matrix Web Client (on apps2)
+      "chat.reinitialized.me" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.4:1040";
+        };
+      };
     };
   };
 }

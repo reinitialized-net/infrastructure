@@ -153,6 +153,34 @@
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
+        apps3 = library.makeDualExport "apps3" {
+          system = "x86_64-linux";
+          vmId = 207;
+          enableProtection = true;
+          memory = 8192;
+          disks = [
+            { 
+              storage = "hotData";
+              size = 20; 
+            }
+            { 
+              storage = "coldData";
+              size = 25;
+            }
+          ];
+          networking = [
+            { 
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 11;
+            }
+          ];
+          modules = [
+            inputs.vscodeServer.nixosModules.default
+            "${inputs.self}/modules/profiles/containers"
+            "${inputs.self}/modules/profiles/mountData.nix"
+          ];
+        };
 
         db1 = library.makeDualExport "db1" {
           system = "x86_64-linux";
@@ -203,6 +231,7 @@
 
         apps1 = dualSystems.apps1.nixosSystem;
         apps2 = dualSystems.apps2.nixosSystem;
+        apps3 = dualSystems.apps3.nixosSystem;
 
         db1 = dualSystems.db1.nixosSystem;
       };
@@ -215,6 +244,7 @@
 
             apps1 = dualSystems.apps1.package;
             apps2 = dualSystems.apps2.package;
+            apps3 = dualSystems.apps3.package;
             
             db1 = dualSystems.db1.package;
         }

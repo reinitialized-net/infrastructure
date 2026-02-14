@@ -12,6 +12,7 @@ NixOS infrastructure flake for building Proxmox VMA (VM Archive) images and mana
 | rp1 | 203 | Reverse proxy (Technitium DNS, nginx) | 12 | 2 |
 | apps1 | 204 | Application server (Hudu, DNS primary) | 11 | 3 |
 | apps2 | 205 | Application server (DNS secondary, UniFi) | 11 | 4 |
+| apps3 | 207 | Application server (Immich) | 11 | 5 |
 | db1 | 206 | Database server (PostgreSQL, Valkey) | 11 | 11 |
 
 ### Flake Inputs
@@ -238,7 +239,7 @@ networking.firewall.denylist = [
 - ACME certificates are generated via security.acme with Technitium DNS provider
 - Docker volumes are bind-mounted from `/mnt/data/docker/volumes`
 
-# Documentation & Investigation Rules:
+# Documentation & Implementation Rules:
 - Always investigate for a root cause when diagnosing issues - don't just apply a quick fix without understanding the underlying problem.
 - After determining root cause, apply a fix that addresses the root cause directly, rather than implementing a workaround that may only mask symptoms.
 - After confirming the fix resolves the issue, document the root cause and the fix under the `/docs/investigations` directory. This documentation should include:
@@ -253,3 +254,20 @@ networking.firewall.denylist = [
   - The pros and cons of each option
   - The rationale for the final decision
   - Any trade-offs that were made
+- After completing a feature implementation, create tests based off the implementation plan. Ensure the updated code matches the expectations of the implementation plan and that all tests pass successfully. If tests fail, investigate the root cause of the failure and address it before considering the implementation complete.- Always investigate for a root cause when diagnosing issues - don't just apply a quick fix without understanding the underlying problem.
+- After determining root cause, apply a fix that addresses the root cause directly, rather than implementing a workaround that may only mask symptoms.
+- After confirming the fix resolves the issue, document the root cause and the fix under the `/docs/investigations` directory. This documentation should include:
+  - A clear description of the root cause
+  - The steps taken to identify the root cause
+  - The specific changes made to fix the issue
+  - Any relevant logs, error messages, or screenshots that illustrate the problem and the solution
+- Always look for existing documentation before creating new documentation. If a similar issue has already been documented, update the existing documentation with any new insights or details rather than creating a duplicate entry.
+- When implementing or refactoring code, ensure all related documentation is updated to reflect the changes. This includes inline code comments, README files, and any relevant sections in the `/docs` directory.
+- If an implementation or refactor takes a reasonable amount of consideration, document the architectural decisions made during the process under `/docs/architecture`. This should include:
+  - The different options considered
+  - The pros and cons of each option
+  - The rationale for the final decision
+  - Any trade-offs that were made
+- Whenever you make a feature modification, ensure to update the package version identifier according to [semver rules](https://semver.org) and document the change in the `CHANGELOG.md` file.
+- If you believe a task is going to take a long time to complete, consider using subagents. This ensures that the main agent remains responsive and can continue to assist with other tasks while the long-running task is being completed by the subagent, while also reducing timeout issues.
+- If you come across something which you feel like applies to copilot-instructions.md, but isn't already documented there, please add it to the file. This file is meant to be a living document that captures all relevant instructions and guidelines for the project, so any new information that is relevant should be added to ensure it remains comprehensive and up-to-date.

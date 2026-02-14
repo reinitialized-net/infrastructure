@@ -1,5 +1,6 @@
 {
   config,
+  pkgs,
   ...
 }:{
   # Networking Configuration
@@ -229,6 +230,26 @@
         # Add docker group (GID 999) for socket access
         # Must use numeric GID since the container doesn't have 'docker' in /etc/group
         "--group-add=999"
+      ];
+    };
+
+    ### Cinny Matrix Web Client
+    cinny = {
+      autoStart = true;
+      hostname = "cinny";
+      image = "ghcr.io/cinnyapp/cinny:v4.3.0";
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.4:1040:80/tcp"  # Cinny web UI
+      ];
+      volumes = [
+        "${pkgs.writeText "cinny-config" (builtins.toJSON {
+          defaultHomeserver = 0;
+          homeserverList = [ "matrix.reinitialized.net" ];
+          allowCustomHomeservers = 1;
+        })}:/usr/share/nginx/html/config.json:ro"
       ];
     };
   };

@@ -149,7 +149,11 @@
     postgres1 = {
       autoStart = true;
       hostname = "postgres1";
-      image = "docker.io/library/postgres:18-alpine";
+      # pgvector/pgvector:pg18 provides PostgreSQL 18 with the pgvector extension
+      # Required for Immich on apps3. Same PG18 major version as before;
+      # volume mount and PGDATA path are unchanged — no data migration needed.
+      # Back up postgres1_data volume before first deploy with this image.
+      image = "pgvector/pgvector:pg18";
       environment = config.secrets.postgres1.keys;
       networks = [
         "backend"

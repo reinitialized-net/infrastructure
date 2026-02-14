@@ -49,8 +49,9 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1037 | stalwartTwo (future) | TCP | Stalwart Mail IMAPS (port 993) |
 | 1038 | stalwartTwo (future) | TCP | Stalwart Mail POP3S (port 995) |
 | 1039 | stalwartTwo (future) | TCP | Stalwart Mail Sieve (port 4190) |
+| 1040 | cinny | TCP | Cinny Matrix web client |
 
-**Next Available Port:** 1040
+**Next Available Port:** 1041
 
 ## db1 (10.255.0.11)
 
@@ -64,6 +65,15 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1029 | prometheus | TCP | Prometheus time-series database web UI and API |
 
 **Next Available Port:** 1030
+
+## apps3 (10.255.0.5)
+
+| Port | Service | Protocol | Description |
+|------|---------|----------|-------------|
+| 1024 | immich-server | TCP | Immich web UI and API |
+| 1025 | conduwuit | TCP | Conduwuit Matrix homeserver HTTP API |
+
+**Next Available Port:** 1026
 
 ## Access Patterns
 
@@ -99,6 +109,12 @@ https://unifi.in.reinitialized.net → https://10.255.0.4:1027
 
 # pgAdmin4
 https://pgadmin.in.reinitialized.net → http://10.255.0.4:1031
+
+# Matrix homeserver (Conduwuit)
+https://matrix.reinitialized.net → http://10.255.0.5:1025
+
+# Cinny Matrix client
+https://chat.reinitialized.me → http://10.255.0.4:1040
 ```
 
 ### Mail Services via rp1
