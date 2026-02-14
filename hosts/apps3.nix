@@ -67,12 +67,12 @@
       ];
     };
 
-    ### Conduwuit Matrix Homeserver
-    conduwuit = {
+    ### Tuwunel Matrix Homeserver (successor to Conduwuit)
+    tuwunel = {
       autoStart = true;
-      hostname = "conduwuit";
-      image = "ghcr.io/girlbossceo/conduwuit:v0.5.0";
-      environment = config.secrets.conduwuit.keys;
+      hostname = "tuwunel";
+      image = "ghcr.io/matrix-construct/tuwunel:v1.5.0";
+      environment = config.secrets.tuwunel.keys;
       networks = [
         "backend"
       ];
@@ -80,7 +80,7 @@
         "10.255.0.5:1025:8008/tcp"  # Matrix client/server API
       ];
       volumes = [
-        "conduwuit_data:/var/lib/conduwuit"
+        "tuwunel_data:/var/lib/tuwunel"
       ];
     };
   };

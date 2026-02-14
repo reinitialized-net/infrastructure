@@ -71,7 +71,7 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | Port | Service | Protocol | Description |
 |------|---------|----------|-------------|
 | 1024 | immich-server | TCP | Immich web UI and API |
-| 1025 | conduwuit | TCP | Conduwuit Matrix homeserver HTTP API |
+| 1025 | tuwunel | TCP | Tuwunel Matrix homeserver HTTP API |
 
 **Next Available Port:** 1026
 
@@ -110,7 +110,7 @@ https://unifi.in.reinitialized.net → https://10.255.0.4:1027
 # pgAdmin4
 https://pgadmin.in.reinitialized.net → http://10.255.0.4:1031
 
-# Matrix homeserver (Conduwuit)
+# Matrix homeserver (Tuwunel)
 https://matrix.reinitialized.net → http://10.255.0.5:1025
 
 # Cinny Matrix client

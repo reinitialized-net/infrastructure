@@ -153,7 +153,7 @@
   nix.settings = {
     auto-optimise-store = lib.mkForce true;
     experimental-features = lib.mkForce [ "nix-command" "flakes" ];
-    trusted-users = lib.mkForce [ "root" "rnetadmin" ];
+    trusted-users = lib.mkForce [ "rnetadmin" ];
   };
 
   system.autoUpgrade = {

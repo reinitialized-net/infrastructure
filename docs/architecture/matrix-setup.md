@@ -110,11 +110,11 @@ After deployment, create the first admin user:
 
 ```bash
 # Register using the registration token
-curl -X POST https://matrix.reinitialized.net/_matrix/client/v3/register \
+curl -X POST https://reinitialized.me/_matrix/client/v3/register \
   -H "Content-Type: application/json" \
   -d '{
-    "username": "admin",
-    "password": "YOUR_SECURE_PASSWORD",
+    "username": "rnetadmin",
+    "password": "YOUR_SECURE_PASSWO\",
     "auth": {
       "type": "m.login.registration_token",
       "token": "YOUR_REGISTRATION_TOKEN"

@@ -682,45 +682,6 @@ in {
           '';
         };
       };
-
-      # Matrix Homeserver (Conduwuit on apps3)
-      "matrix.reinitialized.net" = {
-        forceSSL = true;
-        enableACME = true;
-        acmeRoot = null;
-        listenAddresses = [
-          "10.1.12.4"
-        ];
-
-        locations = {
-          # Well-known client discovery (required by Matrix spec)
-          "/.well-known/matrix/client" = {
-            extraConfig = ''
-              default_type application/json;
-              add_header Access-Control-Allow-Origin *;
-              return 200 '{"m.homeserver": {"base_url": "https://matrix.reinitialized.net"}}';
-            '';
-          };
-          # Well-known server discovery
-          "/.well-known/matrix/server" = {
-            extraConfig = ''
-              default_type application/json;
-              return 200 '{"m.server": "matrix.reinitialized.net:443"}';
-            '';
-          };
-          # Matrix client and server API
-          "/" = {
-            proxyPass = "http://10.255.0.5:1025";
-            proxyWebsockets = true;
-            extraConfig = ''
-              client_max_body_size 100M;
-              proxy_read_timeout 600s;
-              proxy_send_timeout 600s;
-            '';
-          };
-        };
-      };
-
       # Cinny Matrix Web Client (on apps2)
       "chat.reinitialized.me" = {
         forceSSL = true;
@@ -732,6 +693,45 @@ in {
 
         locations."/" = {
           proxyPass = "http://10.255.0.4:1040";
+        };
+      };
+
+      # Matrix Homeserver (Conduwuit on apps3) + well-known discovery
+      "reinitialized.me" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        serverAliases = [ "matrix.reinitialized.me" ];
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations = {
+          # Well-known client discovery (required by Matrix spec)
+          "/.well-known/matrix/client" = {
+            extraConfig = ''
+              default_type application/json;
+              add_header Access-Control-Allow-Origin *;
+              return 200 '{"m.homeserver": {"base_url": "https://reinitialized.me"}}';
+            '';
+          };
+          # Well-known server discovery
+          "/.well-known/matrix/server" = {
+            extraConfig = ''
+              default_type application/json;
+              return 200 '{"m.server": "reinitialized.me:443"}';
+            '';
+          };
+          # Matrix client and server API
+          "/_matrix" = {
+            proxyPass = "http://10.255.0.5:1025";
+            proxyWebsockets = true;
+            extraConfig = ''
+              client_max_body_size 100M;
+              proxy_read_timeout 600s;
+              proxy_send_timeout 600s;
+            '';
+          };
         };
       };
     };
