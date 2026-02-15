@@ -143,13 +143,16 @@
         "backend"
       ];
       ports = [
-        # Web UI and ACME
+        # Web UI HTTP (ACME HTTP-01 challenges, API, metrics)
         "10.255.0.3:1029:8080"
+
+        # Web UI HTTPS (TLS terminated by Stalwart via native ACME)
+        "10.255.0.3:1042:443"
 
         # Prometheus metrics endpoint (if enabled in config.toml)
         "10.255.0.3:1041:9090"
 
-        # Mail protocols
+        # Mail protocols (TLS handled by Stalwart for implicit-TLS ports)
         "10.255.0.3:1030:25"
         "10.255.0.3:1031:143"
         "10.255.0.3:1032:465"

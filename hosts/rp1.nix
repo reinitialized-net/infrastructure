@@ -87,16 +87,7 @@ in {
           "192.168.0.0/16"
         ];
       }
-      {
-        port = 8443;
-        protocol = "tcp";
-        ipType = "ipv4";
-        source = [
-          "10.0.0.0/8"
-          "172.16.0.0/24"
-          "192.168.0.0/16"
-        ];
-      }
+      # port 8443 removed: mail SSL termination moved to Stalwart native ACME
       {
         port = 8080;
         protocol = "tcp";
@@ -237,11 +228,7 @@ in {
         "--dns-timeout=300"
       ];
     };
-    certs = {
-      "mail.reinitialized.net" = {
-        reloadServices = [ "nginx.service" ];
-      };
-    };
+    # mail.reinitialized.net cert removed: Stalwart handles its own TLS via native ACME (HTTP-01)
   };
 
   # Nginx Reverse Proxy
@@ -280,9 +267,13 @@ in {
       upstream unifiDiscovery {
         server 10.255.0.4:1029;
       }
-      # Stalwart Mail HTTP backends (for stream SSL termination + PROXY protocol)
+      # Stalwart Mail backends (TCP passthrough with PROXY protocol)
+      # Stalwart handles TLS natively via its built-in ACME (HTTP-01)
       upstream stalwartOneHttp {
         server 10.255.0.3:1029;
+      }
+      upstream stalwartOneHttps {
+        server 10.255.0.3:1042;
       }
       upstream stalwartOneSmtp {
         server 10.255.0.3:1030;
@@ -306,35 +297,24 @@ in {
         server 10.255.0.3:1036;
       }
 
-      # Local mail SSL termination upstreams (stream terminates SSL, then forwards HTTP)
-      upstream mailLocalTermination {
+      # Local intermediate for mail HTTPS: adds PROXY protocol before
+      # forwarding to Stalwart's HTTPS listener. Needed because the SNI routing
+      # server block also handles DNS UI traffic which must NOT receive PROXY protocol.
+      upstream mailProxyProtocol {
         server 127.0.0.1:8443;
       }
 
       ## SNI routing maps for HTTPS on shared IPs
-      # 10.1.12.2: one.dns (passthrough) vs mail (local SSL termination)
+      # 10.1.12.2: one.dns (passthrough) vs mail (via local PROXY protocol relay)
       map $ssl_preread_server_name $https_backend_12_2 {
         one.dns.reinitialized.net dnsOneUI;
-        mail.reinitialized.net    mailLocalTermination;
+        mail.reinitialized.net    mailProxyProtocol;
         default                   dnsOneUI;
       }
-      # 10.1.12.3: two.dns (passthrough) vs mail2 (local SSL termination)
+      # 10.1.12.3: two.dns (passthrough only, no other services currently)
       map $ssl_preread_server_name $https_backend_12_3 {
         two.dns.reinitialized.net dnsTwoUI;
         default                   dnsTwoUI;
-      }
-
-      ## Mail HTTPS - Stream SSL termination
-      # rp1 terminates SSL using ACME certs, then forwards plain HTTP
-      # to Stalwart's web UI port. PROXY protocol is REQUIRED because
-      # Stalwart has trusted-networks configured (10.1.12.0/24) and expects
-      # PROXY protocol headers from trusted sources to preserve client IPs.
-      server {
-        listen 127.0.0.1:8443 ssl;
-        ssl_certificate /var/lib/acme/mail.reinitialized.net/fullchain.pem;
-        ssl_certificate_key /var/lib/acme/mail.reinitialized.net/key.pem;
-        proxy_pass stalwartOneHttp;
-        proxy_protocol on;
       }
 
       ## DNS Service Listeners (Layer 4)
@@ -364,12 +344,34 @@ in {
       ## HTTPS with SNI routing (Layer 4)
       # Routes based on hostname:
       # - DNS UI: passthrough to backend (backend handles cert)
-      # - Mail: route to local nginx for SSL termination (rp1 handles cert)
+      # - Mail: routed to local relay that adds PROXY protocol, then to Stalwart
       server {
         listen 10.1.12.2:443;
         ssl_preread on;
         proxy_pass $https_backend_12_2;
         proxy_connect_timeout 10s;
+      }
+
+      ## Mail HTTPS - PROXY protocol relay
+      # Receives mail HTTPS from SNI routing above, adds PROXY protocol header,
+      # then forwards TCP stream to Stalwart's HTTPS listener (port 443 in container).
+      # PROXY protocol is REQUIRED because Stalwart's trusted-networks includes
+      # rp1's mesh IP (10.255.0.2/32) and expects PROXY headers to preserve client IPs.
+      server {
+        listen 127.0.0.1:8443;
+        proxy_pass stalwartOneHttps;
+        proxy_protocol on;
+      }
+
+      ## Mail HTTP - PROXY protocol relay for ACME challenges
+      # nginx virtualHost (port 80) proxies /.well-known/acme-challenge/ to this relay.
+      # The relay adds PROXY protocol before forwarding to Stalwart's HTTP listener,
+      # because direct HTTP proxy_pass from rp1 (10.255.0.2) would be rejected by
+      # Stalwart's trusted-networks without PROXY protocol headers.
+      server {
+        listen 127.0.0.1:8480;
+        proxy_pass stalwartOneHttp;
+        proxy_protocol on;
       }
       server {
         listen 10.1.12.3:443;
@@ -467,20 +469,29 @@ in {
       };
 
       "mail.reinitialized.net" = {
-        # HTTP-only: redirects to HTTPS
-        # HTTPS is handled by stream SSL termination (see streamConfig above)
-        # with PROXY protocol enabled (required for Stalwart trusted-networks)
-        # Certificate managed by security.acme.certs (DNS-01 via Technitium)
-        # Must use useACMEHost because the cert is consumed by stream, not this virtualHost
+        # HTTP listener for:
+        # 1. Proxying ACME HTTP-01 challenges to Stalwart (native cert management)
+        # 2. Redirecting all other HTTP traffic to HTTPS
+        # HTTPS is handled by stream TCP passthrough to Stalwart (see streamConfig)
         onlySSL = false;
-        useACMEHost = "mail.reinitialized.net";
+        enableACME = false;
         addSSL = false;
         listen = [
           { addr = "10.1.12.2"; port = 80; ssl = false; }
         ];
 
-        locations."/" = {
-          return = "301 https://$host$request_uri";
+        locations = {
+          # Proxy ACME HTTP-01 challenge to Stalwart via local stream relay
+          # Let's Encrypt validates at http://mail.reinitialized.net/.well-known/acme-challenge/<TOKEN>
+          # Must go through stream relay (127.0.0.1:8480) to add PROXY protocol headers,
+          # because Stalwart's trusted-networks (10.255.0.2/32) rejects plain HTTP from rp1's mesh IP
+          "/.well-known/acme-challenge/" = {
+            proxyPass = "http://127.0.0.1:8480";
+          };
+          # Redirect everything else to HTTPS
+          "/" = {
+            return = "301 https://$host$request_uri";
+          };
         };
       };
 
@@ -701,7 +712,6 @@ in {
         forceSSL = true;
         enableACME = true;
         acmeRoot = null;
-        serverAliases = [ "matrix.reinitialized.me" ];
         listenAddresses = [
           "10.1.12.4"
         ];

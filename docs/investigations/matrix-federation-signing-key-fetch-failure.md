@@ -62,18 +62,23 @@ All of the following tests **passed**:
 
 The issue is on the remote server's side. The friend operating `ins4.xyz` needs to:
 
-1. **Add `matrix.reinitialized.net` to their `CONDUWUIT_TRUSTED_SERVERS`** — This is the most likely fix if their server uses trusted_servers as a federation allowlist
-2. **Verify outbound connectivity** — Ensure the Tuwunel Docker container can reach `https://matrix.reinitialized.net/_matrix/key/v2/server` from within its network namespace
-3. **Check DNS resolution** — Ensure the container can resolve `matrix.reinitialized.net` to `47.190.182.79`
+1. **Add `matrix.org` to their `CONDUWUIT_TRUSTED_SERVERS`** — This provides a key notary fallback for signing key verification when direct fetch fails
+2. **Verify outbound connectivity** — Ensure the Tuwunel Docker container can reach `https://reinitialized.me/_matrix/key/v2/server` from within its network namespace
+3. **Check DNS resolution** — Ensure the container can resolve `reinitialized.me` (our current server name, changed from `matrix.reinitialized.net`)
+
+> **Note (2026-02-14):** The server name has since been changed from `matrix.reinitialized.net` to `reinitialized.me`. The 403 error in this investigation referenced the old origin. See the follow-up investigation `matrix-federation-ins4xyz-key-notary.md` for the full resolution including fixing our own `CONDUWUIT_TRUSTED_SERVERS` config.
 
 ## Key Learnings
 
 ### `CONDUWUIT_TRUSTED_SERVERS` Behavior in Tuwunel
 
-- **Empty `[]`**: Blocks all federation — no servers are allowed
-- **`["server.name"]`**: Federation allowlist — only listed servers can participate
-- This is **bidirectional**: both servers must include each other in their trusted lists
-- Setting `CONDUWUIT_ALLOW_FEDERATION = "true"` is necessary but not sufficient — `trusted_servers` must also be populated
+> **Correction (2026-02-14):** The original learnings below incorrectly described `trusted_servers` as a federation allowlist. It is actually a **key notary** list per the Matrix Server-Server spec. See updated description:
+
+- `trusted_servers` specifies **key notary servers** — servers that can vouch for other servers' signing keys when direct key fetch fails
+- **Empty `[]`**: No key notary fallback. Direct signing key fetch from remote servers must succeed for federation to work. If a remote server's key endpoint is unreachable (e.g., behind Cloudflare Tunnel), federation with that server silently fails
+- **`["matrix.org"]`** (recommended): Uses matrix.org as a key notary. When direct key fetch from a remote server fails, your server asks matrix.org to provide the remote server's signing keys instead
+- This is NOT a federation allowlist — any server can federate as long as signing keys can be verified (directly or via notary)
+- Setting `CONDUWUIT_ALLOW_FEDERATION = "true"` enables federation; `trusted_servers` determines whether there's a fallback for key verification
 
 ### Tuwunel Log Levels
 

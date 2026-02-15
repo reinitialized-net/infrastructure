@@ -25,8 +25,9 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1039 | jaeger | TCP | Jaeger UI for trace visualization |
 | 1040 | grafana | TCP | Grafana metrics visualization web UI |
 | 1041 | stalwartOne | TCP | Stalwart Prometheus metrics endpoint (optional) |
+| 1042 | stalwartOne | TCP | Stalwart Mail HTTPS listener (port 443, for TLS passthrough) |
 
-**Next Available Port:** 1042
+**Next Available Port:** 1043
 
 ## apps2 (10.255.0.4)
 

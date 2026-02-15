@@ -247,7 +247,7 @@
       volumes = [
         "${pkgs.writeText "cinny-config" (builtins.toJSON {
           defaultHomeserver = 0;
-          homeserverList = [ "matrix.reinitialized.me" ];
+          homeserverList = [ "reinitialized.me" ];
           allowCustomHomeservers = 1;
         })}:/usr/share/nginx/html/config.json:ro"
       ];

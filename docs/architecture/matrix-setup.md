@@ -2,21 +2,21 @@
 
 ## Overview
 
-Self-hosted Matrix chat deployment using Conduwuit (homeserver) and Cinny (web client), reverse-proxied through rp1.
+Self-hosted Matrix chat deployment using Tuwunel (homeserver, successor to Conduwuit) and Cinny (web client), reverse-proxied through rp1.
 
 | Component | Host | Mesh Address | Domain |
 |-----------|------|-------------|--------|
-| Conduwuit (homeserver) | apps3 | 10.255.0.5:1025 | matrix.reinitialized.net |
+| Tuwunel (homeserver) | apps3 | 10.255.0.5:1025 | reinitialized.me |
 | Cinny (web client) | apps2 | 10.255.0.4:1040 | chat.reinitialized.me |
 
 ## Design Decisions
 
-### Homeserver: Conduwuit over Synapse
+### Homeserver: Tuwunel over Synapse
 
-**Chosen:** Conduwuit (Rust-based Matrix homeserver, community fork of Conduit)
+**Chosen:** Tuwunel (Rust-based Matrix homeserver, successor to Conduwuit, community fork of Conduit)
 
-| Factor | Conduwuit | Synapse |
-|--------|-----------|---------|
+| Factor | Tuwunel | Synapse |
+|--------|---------|---------|
 | Language | Rust | Python |
 | Memory usage | ~50-100MB | ~500MB-1GB+ |
 | Database | RocksDB (embedded) | PostgreSQL (required) |
@@ -24,13 +24,13 @@ Self-hosted Matrix chat deployment using Conduwuit (homeserver) and Cinny (web c
 | Federation | Supported | Supported |
 | Maintenance burden | Low (single binary) | Higher (Python deps, workers) |
 
-**Rationale:** Federation is disabled and this is a private instance. Conduwuit's lighter resource footprint and simpler operational model (no external database dependency) make it the better fit. The Rust implementation provides better performance per resource unit on the shared apps3 host alongside Immich.
+**Rationale:** Tuwunel's lighter resource footprint and simpler operational model (no external database dependency) make it the better fit for a small instance with selective federation. The Rust implementation provides better performance per resource unit on the shared apps3 host alongside Immich.
 
 ### Database: RocksDB (embedded) over PostgreSQL
 
 **Chosen:** RocksDB embedded storage on apps3
 
-Conduwuit uses RocksDB as its storage engine — it does not support PostgreSQL as a backend. Data is stored in a Docker volume (`conduwuit_data`) on apps3's data disk. This means db1 is not involved for this service, which reduces cross-host dependencies and network latency for database operations.
+Tuwunel uses RocksDB as its storage engine — it does not support PostgreSQL as a backend. Data is stored in a Docker volume (`tuwunel_data`) on apps3's data disk. This means db1 is not involved for this service, which reduces cross-host dependencies and network latency for database operations.
 
 ### Web Client: Cinny over Element Web
 
@@ -43,22 +43,22 @@ Conduwuit uses RocksDB as its storage engine — it does not support PostgreSQL 
 
 ### Domains
 
-- **Server name:** `matrix.reinitialized.net` — User IDs will be `@user:matrix.reinitialized.net`. This was chosen over bare `reinitialized.net` to avoid needing `.well-known` delegation on the root domain and to keep the Matrix namespace clearly separated.
+- **Server name:** `reinitialized.me` — User IDs are `@user:reinitialized.me`. The `.well-known` Matrix discovery endpoints are served by nginx on rp1 under the `reinitialized.me` virtualHost.
 - **Client domain:** `chat.reinitialized.me` — Uses the `.me` TLD per preference, managed by Technitium DNS for ACME DNS-01 challenges.
 
-### Access: Public without Federation
+### Access: Public with Federation
 
-The server is publicly accessible (no `internalOnly` restriction on rp1) but federation is disabled (`CONDUWUIT_ALLOW_FEDERATION=false`, `CONDUWUIT_TRUSTED_SERVERS=[]`). This allows access from any network while keeping the instance isolated from the broader Matrix network.
+The server is publicly accessible (no `internalOnly` restriction on rp1) with federation enabled (`CONDUWUIT_ALLOW_FEDERATION=true`). Federation key verification uses `matrix.org` as a trusted key notary server (`CONDUWUIT_TRUSTED_SERVERS=["matrix.org"]`), providing a fallback when direct signing key fetches from remote servers fail.
 
-Registration is closed (`CONDUWUIT_ALLOW_REGISTRATION=false`). New accounts are created via the registration token using the Matrix client registration API.
+Registration uses a token (`CONDUWUIT_ALLOW_REGISTRATION=true` with `CONDUWUIT_REGISTRATION_TOKEN`). New accounts are created via the registration token using the Matrix client registration API.
 
 ## Network Architecture
 
 ```
 Internet
   │
-  ├─ https://matrix.reinitialized.net ─→ rp1 (10.1.12.4:443)
-  │     nginx virtualHost (ACME TLS) ─→ Conduwuit (10.255.0.5:1025)
+  ├─ https://reinitialized.me ─────────→ rp1 (10.1.12.4:443)
+  │     nginx virtualHost (ACME TLS) ─→ Tuwunel (10.255.0.5:1025)
   │
   └─ https://chat.reinitialized.me ───→ rp1 (10.1.12.4:443)
         nginx virtualHost (ACME TLS) ─→ Cinny (10.255.0.4:1040)
@@ -66,29 +66,29 @@ Internet
 
 ### Well-Known Endpoints
 
-The `.well-known` Matrix discovery endpoints are served directly by nginx on rp1 (not proxied to Conduwuit):
+The `.well-known` Matrix discovery endpoints are served directly by nginx on rp1 (not proxied to Tuwunel):
 
-- `/.well-known/matrix/client` → Returns `{"m.homeserver": {"base_url": "https://matrix.reinitialized.net"}}` with `Access-Control-Allow-Origin: *` (CORS required by Matrix spec)
-- `/.well-known/matrix/server` → Returns `{"m.server": "matrix.reinitialized.net:443"}`
+- `/.well-known/matrix/client` → Returns `{"m.homeserver": {"base_url": "https://reinitialized.me"}}` with `Access-Control-Allow-Origin: *` (CORS required by Matrix spec)
+- `/.well-known/matrix/server` → Returns `{"m.server": "reinitialized.me:443"}`
 
-All other paths under `matrix.reinitialized.net` are proxied to Conduwuit with WebSocket support enabled (required for Matrix `/sync` long-polling).
+All other paths under `reinitialized.me` are proxied to Tuwunel with WebSocket support enabled (required for Matrix `/sync` long-polling).
 
 ## Configuration
 
-### Conduwuit Environment Variables
+### Tuwunel Environment Variables
 
-All configuration is passed via environment variables (sourced from `config.secrets.conduwuit.keys`):
+All configuration is passed via environment variables (sourced from `config.secrets.tuwunel.keys`):
 
 | Variable | Purpose |
-|----------|---------|
-| `CONDUWUIT_SERVER_NAME` | Matrix server name (appears in user IDs) |
+|----------|---------|--------|
+| `CONDUWUIT_SERVER_NAME` | Matrix server name (appears in user IDs): `reinitialized.me` |
 | `CONDUWUIT_ADDRESS` | Listen address inside container |
 | `CONDUWUIT_PORT` | Listen port inside container (mapped to mesh 1025) |
 | `CONDUWUIT_DATABASE_PATH` | RocksDB data directory (Docker volume mount point) |
-| `CONDUWUIT_ALLOW_REGISTRATION` | Disable open registration |
-| `CONDUWUIT_ALLOW_FEDERATION` | Disable federation |
-| `CONDUWUIT_TRUSTED_SERVERS` | Empty list (no federation peers) |
-| `CONDUWUIT_REGISTRATION_TOKEN` | Token for admin account creation |
+| `CONDUWUIT_ALLOW_REGISTRATION` | Token-based registration enabled |
+| `CONDUWUIT_ALLOW_FEDERATION` | Federation enabled |
+| `CONDUWUIT_TRUSTED_SERVERS` | Key notary servers for signing key verification fallback |
+| `CONDUWUIT_REGISTRATION_TOKEN` | Token for account creation |
 | `CONDUWUIT_MAX_REQUEST_SIZE` | 100MB limit for media uploads |
 | `CONDUWUIT_LOG` | Log level configuration |
 
@@ -99,7 +99,7 @@ Cinny is configured via a Nix-generated `config.json` bind-mounted into the cont
 ```json
 {
   "defaultHomeserver": 0,
-  "homeserverList": ["matrix.reinitialized.net"],
+  "homeserverList": ["reinitialized.me"],
   "allowCustomHomeservers": 1
 }
 ```

@@ -236,7 +236,8 @@ networking.firewall.denylist = [
 - `/mnt/data` bind mounts require `mountData.nix` profile AND a second disk configured
 - systemd-networkd requires explicit interface matching (use `matchConfig.Path` for PCI devices)
 - Mesh network private key is sourced from `secrets.meshNetwork.file` - ensure it's configured
-- ACME certificates are generated via security.acme with Technitium DNS provider
+- ACME certificates for nginx-proxied services are generated via security.acme with Technitium DNS provider (DNS-01)
+- Stalwart Mail Server manages its own TLS certificate via native ACME (HTTP-01 challenge), proxied through rp1 port 80
 - Docker volumes are bind-mounted from `/mnt/data/docker/volumes`
 
 # Documentation & Implementation Rules:

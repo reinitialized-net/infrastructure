@@ -94,11 +94,12 @@
     };
 
     stalwart = {
-      description = "Stalwart telemetry and monitoring configuration";
+      description = "Stalwart configuration (TLS managed via Stalwart's native ACME HTTP-01)";
       keys = {
-        # These environment variables are for future use
-        # Telemetry is configured via Stalwart's config.toml file
-        # which is persisted in the stalwart_data volume
+        # No environment variables needed — Stalwart's ACME is configured
+        # in config.toml (persisted in stalwart_data volume).
+        # Certificate domain: mail.reinitialized.net
+        # ACME challenge is proxied: rp1 port 80 → Stalwart HTTP listener
       };
     };
   };
