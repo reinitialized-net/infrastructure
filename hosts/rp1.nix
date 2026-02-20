@@ -744,6 +744,47 @@ in {
           };
         };
       };
+
+      "admin.staging.bleupigs.club" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.1:4006";
+        };
+        locations."/ws/" = {
+          proxyPass = "http://10.255.0.1:4003";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_read_timeout 86400;
+            proxy_send_timeout 86400;
+          '';
+        };
+      };
+      "membership.staging.bleupigs.club" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.1:4003";
+        };
+        locations."/ws/" = {
+          proxyPass = "http://10.255.0.1:4003";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_read_timeout 86400;
+            proxy_send_timeout 86400;
+          '';
+        };
+      };
     };
   };
 }
