@@ -8,6 +8,19 @@
   networking = {
     hostName = "ai1";
     useDHCP = false;
+
+    firewall.allowlist = [
+      {
+        port = 11434;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [
+          "10.0.0.0/8"
+          "172.16.0.0/24"
+          "192.168.0.0/16"
+        ];
+      }
+    ];
   };
   systemd.network.networks = {
     "eth0" = {
@@ -49,7 +62,12 @@
     "d /mnt/data/models 0755 ollama ollama -"
   ];
   # Prevent ollama from using a DynamicUser
-  systemd.services.ollama.serviceConfig.DynamicUser = lib.mkForce false;
+  systemd.services.ollama = {
+    serviceConfig.DynamicUser = lib.mkForce false;
+    environment = {
+      OLLAMA_HOST = lib.mkForce "0.0.0.0:11434";
+    };
+  };
   # Enable required services
   services = {
     meshNetwork.enable = true;
@@ -59,6 +77,10 @@
       package = self.inputs.nixpkgsOllama.legacyPackages.${system}.ollama;
       user = "ollama";
       group = "ollama";
+
+      environmentVariables = {
+        OLLAMA_HOST = "0.0.0.0:11434";
+      };
       
       models = "/mnt/data/models"; 
     };
