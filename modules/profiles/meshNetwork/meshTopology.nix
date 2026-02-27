@@ -37,6 +37,13 @@
       endpoint = "10.1.11.4:51820";
       publicKey = "OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=";
     };
+
+    ai1 = {
+      nodeId = 9;
+      hostname = "ai1";
+      endpoint = "10.1.11.9:51820";
+      publicKey = "zzXC78U2OFN9X3sHdjA/W6MnFRxoPpaGY2O1Kzuj4WM=";
+    };
     
     db1 = {
       nodeId = 11;

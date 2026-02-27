@@ -668,6 +668,28 @@ in {
         };
       };
 
+      "ollama.in.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.9:1024";
+          proxyWebsockets = true;
+          
+          extraConfig = ''
+            ${internalOnly}
+            proxy_connect_timeout 300s;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            send_timeout 300s;
+          '';
+        };
+      };
+
       "photos.reinitialized.me" = {
         forceSSL = true;
         enableACME = true;
@@ -757,7 +779,7 @@ in {
           proxyPass = "http://10.255.0.1:4006";
         };
         locations."/ws/" = {
-          proxyPass = "http://10.255.0.1:4003";
+          proxyPass = "http://10.255.0.1:4006";
           proxyWebsockets = true;
           extraConfig = ''
             proxy_read_timeout 86400;

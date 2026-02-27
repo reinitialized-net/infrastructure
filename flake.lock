@@ -20,11 +20,11 @@
     },
     "nixpkgsMaster": {
       "locked": {
-        "lastModified": 1771607198,
-        "narHash": "sha256-gc/NhTWozD3fcCFlPcDBA8j9RWKnEqDLRU2wxaRNiIU=",
+        "lastModified": 1772170669,
+        "narHash": "sha256-ClBvX0YzaJOaGZInNi0e3mFknzr/rAdwKbWrjO1j1sg=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "82690516344f6d5c483a31bc68eeae57e9e490fd",
+        "rev": "ee234284495a7ff3ecffb062595102fdc4fbe617",
         "type": "github"
       },
       "original": {
@@ -34,13 +34,29 @@
         "type": "github"
       }
     },
-    "nixpkgsStable": {
+    "nixpkgsOllama": {
       "locked": {
-        "lastModified": 1771419570,
-        "narHash": "sha256-bxAlQgre3pcQcaRUm/8A0v/X8d2nhfraWSFqVmMcBcU=",
+        "lastModified": 1772170817,
+        "narHash": "sha256-dvb+8WCIhs1CCUA1c6cR/OmlZttVioLhNHdWWj86dMk=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "6d41bc27aaf7b6a3ba6b169db3bd5d6159cfaa47",
+        "rev": "49ee5b4428025343f890cd0726a6c35a2c96524c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "49ee5b4428025343f890cd0726a6c35a2c96524c",
+        "type": "github"
+      }
+    },
+    "nixpkgsStable": {
+      "locked": {
+        "lastModified": 1771903837,
+        "narHash": "sha256-sdaqdnsQCv3iifzxwB22tUwN/fSHoN7j2myFW5EIkGk=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "e764fc9a405871f1f6ca3d1394fb422e0a0c3951",
         "type": "github"
       },
       "original": {
@@ -52,11 +68,11 @@
     },
     "nixpkgsUnstable": {
       "locked": {
-        "lastModified": 1771369470,
-        "narHash": "sha256-0NBlEBKkN3lufyvFegY4TYv5mCNHbi5OmBDrzihbBMQ=",
+        "lastModified": 1771848320,
+        "narHash": "sha256-0MAd+0mun3K/Ns8JATeHT1sX28faLII5hVLq0L3BdZU=",
         "owner": "NixOS",
         "repo": "nixpkgs",
-        "rev": "0182a361324364ae3f436a63005877674cf45efb",
+        "rev": "2fc6539b481e1d2569f25f8799236694180c0993",
         "type": "github"
       },
       "original": {
@@ -69,6 +85,7 @@
     "root": {
       "inputs": {
         "nixpkgsMaster": "nixpkgsMaster",
+        "nixpkgsOllama": "nixpkgsOllama",
         "nixpkgsStable": "nixpkgsStable",
         "nixpkgsUnstable": "nixpkgsUnstable",
         "vscodeServer": "vscodeServer"

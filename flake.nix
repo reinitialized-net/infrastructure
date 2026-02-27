@@ -6,6 +6,8 @@
     nixpkgsUnstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgsStable.url = "github:NixOS/nixpkgs/nixos-25.11";
 
+    nixpkgsOllama.url = "github:NixOS/nixpkgs/49ee5b4428025343f890cd0726a6c35a2c96524c";
+
     vscodeServer = {
       url = "github:nix-community/nixos-vscode-server";
       inputs.nixpkgs.follows = "nixpkgsStable";
@@ -182,6 +184,35 @@
           ];
         };
 
+        ai1 = library.makeDualExport "ai1" {
+          system = "x86_64-linux";
+          vmId = 208;
+          enableProtection = true;
+          memory = 8192;
+          disks = [
+            { 
+              storage = "hotData";
+              size = 20; 
+            }
+            { 
+              storage = "hotData"; # Using hotData for both disks to optimize for performance of the models
+              size = 20;
+            }
+          ];
+          networking = [
+            { 
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 11;
+            }
+          ];
+          modules = [
+            inputs.vscodeServer.nixosModules.default
+            "${inputs.self}/modules/profiles/mountData.nix"
+            "${inputs.self}/modules/profiles/meshNetwork"
+          ];
+        };
+
         db1 = library.makeDualExport "db1" {
           system = "x86_64-linux";
           vmId = 206;
@@ -193,8 +224,8 @@
               size = 20; 
             }
             { 
-              storage = "hotData"; # Using hotData for both disks to optimize for performance of the database
-              size = 50;
+              storage = "hotData"; # Using hotData for both disks to optimize for performance of the databases
+              size = 20;
             }
           ];
           networking = [
@@ -233,6 +264,8 @@
         apps2 = dualSystems.apps2.nixosSystem;
         apps3 = dualSystems.apps3.nixosSystem;
 
+        ai1 = dualSystems.ai1.nixosSystem;
+
         db1 = dualSystems.db1.nixosSystem;
       };
       packages = library.forAllSystems (system:
@@ -245,6 +278,8 @@
             apps1 = dualSystems.apps1.package;
             apps2 = dualSystems.apps2.package;
             apps3 = dualSystems.apps3.package;
+
+            ai1 = dualSystems.ai1.package;
             
             db1 = dualSystems.db1.package;
         }
