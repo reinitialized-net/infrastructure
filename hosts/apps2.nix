@@ -201,8 +201,9 @@
             sed -i 's|^  docker_host: "-"|  docker_host: "automount"|' /data/config.yml
           fi
 
-          # Register the runner if not already registered
-          if [ ! -f /data/.runner ]; then
+          # Register the runner if not already registered or if previous attempt failed
+          register_runner() {
+            echo "Registering runner..."
             forgejo-runner register \
               --no-interactive \
               --instance "${config.secrets.forgejoRunner.keys.FORGEJO_INSTANCE_URL}" \
@@ -210,11 +211,33 @@
               --name "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_NAME}" \
               --labels "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_LABELS}" \
               --config /data/config.yml
-            echo "Runner registered successfully"
+            return $?
+          }
+
+          if [ ! -f /data/.runner ]; then
+            register_runner && echo "Runner registered successfully"
           fi
 
-          # Start the runner daemon
-          exec forgejo-runner daemon --config /data/config.yml
+          # Start the runner daemon.
+          # Attempt to run, and if it fails with 'unregistered runner', re-register and try once more.
+          if ! forgejo-runner daemon --config /data/config.yml; then
+            # Check for terminal authentication/registration error in logs or exit code.
+            # Runner exits with status 1 on 'unregistered runner'.
+            echo "Runner daemon exited with failure. Checking for registration issues..."
+            
+            # Since we can't easily check actual stdout inside the same script without complex redirection,
+            # we'll assume a failure at early startup likely means registration/auth is stale.
+            echo "Removing potentially stale .runner file and attempting re-registration..."
+            rm -f /data/.runner
+            
+            if register_runner; then
+              echo "Re-registration successful. Starting daemon again..."
+              exec forgejo-runner daemon --config /data/config.yml
+            else
+              echo "Re-registration failed. Exiting."
+              exit 1
+            fi
+          fi
         ''
       ];
       networks = [

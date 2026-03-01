@@ -66,6 +66,8 @@
     serviceConfig.DynamicUser = lib.mkForce false;
     environment = {
       OLLAMA_HOST = lib.mkForce "0.0.0.0:11434";
+      OLLAMA_FLASH_ATTENTION = lib.mkForce "1";
+      OLLAMA_KEEP_ALIVE = lib.mkForce "-1";
     };
   };
   # Enable required services
