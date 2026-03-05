@@ -52,6 +52,9 @@
         FORGEJO_RUNNER_CAPACITY = "2";
         FORGEJO_RUNNER_FETCH_TIMEOUT = "10s";
         FORGEJO_RUNNER_FETCH_INTERVAL = "5s";
+        # Admin API token for clean re-registration (prevents duplicate runner entries).
+        # Generate at: Forgejo > Settings > Applications > API Token (requires admin user).
+        FORGEJO_ADMIN_API_TOKEN = "PLACE FORGEJO ADMIN API TOKEN HERE";
       };
     };
   };

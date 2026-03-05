@@ -187,6 +187,11 @@
       cmd = [
         "bash" "-c"
         ''
+          # Secrets interpolated at Nix build time into bash variables
+          FORGEJO_INSTANCE_URL="${config.secrets.forgejoRunner.keys.FORGEJO_INSTANCE_URL}"
+          FORGEJO_ADMIN_TOKEN="${config.secrets.forgejoRunner.keys.FORGEJO_ADMIN_API_TOKEN}"
+          CONFIGURED_LABELS="${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_LABELS}"
+
           # Generate config.yml if it doesn't exist
           if [ ! -f /data/config.yml ]; then
             forgejo-runner generate-config > /data/config.yml
@@ -196,41 +201,82 @@
             sed -i 's|^  capacity: 1|  capacity: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_CAPACITY}|' /data/config.yml
             sed -i 's|^  fetch_timeout: 5s|  fetch_timeout: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_FETCH_TIMEOUT}|' /data/config.yml
             sed -i 's|^  fetch_interval: 2s|  fetch_interval: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_FETCH_INTERVAL}|' /data/config.yml
-            
+
             # Configure Docker socket access - automount will automatically find and mount the socket
             sed -i 's|^  docker_host: "-"|  docker_host: "automount"|' /data/config.yml
           fi
 
-          # Register the runner if not already registered or if previous attempt failed
+          # Deregister the old runner from the Forgejo server before re-registering.
+          # This prevents duplicate runner entries when re-registration is needed (e.g. label changes
+          # or stale credentials). Reads the runner ID from .runner, calls the Forgejo admin API to
+          # delete it, then removes the local state files.
+          deregister_runner() {
+            if [ ! -f /data/.runner ]; then
+              return 0
+            fi
+
+            RUNNER_ID=$(grep -o '"id":[0-9]*' /data/.runner | head -1 | sed 's/"id"://')
+
+            if [ -z "$RUNNER_ID" ]; then
+              echo "Warning: Could not extract runner ID from .runner; skipping server-side deregistration"
+            elif [ -z "$FORGEJO_ADMIN_TOKEN" ] || [ "$FORGEJO_ADMIN_TOKEN" = "REPLACE_WITH_FORGEJO_ADMIN_API_TOKEN" ]; then
+              echo "Warning: FORGEJO_ADMIN_API_TOKEN not configured; skipping server-side deregistration (old runner entry may remain)"
+            elif command -v curl > /dev/null 2>&1; then
+              echo "Deregistering runner ID $RUNNER_ID from Forgejo..."
+              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
+                -H "Authorization: token $FORGEJO_ADMIN_TOKEN" \
+                "$FORGEJO_INSTANCE_URL/api/v1/admin/runners/$RUNNER_ID")
+              echo "Forgejo deregister response: HTTP $HTTP_STATUS"
+            else
+              echo "Warning: curl not available; skipping server-side deregistration"
+            fi
+
+            rm -f /data/.runner /data/.runner-labels
+          }
+
+          # Register the runner against the Forgejo instance
           register_runner() {
             echo "Registering runner..."
             forgejo-runner register \
               --no-interactive \
-              --instance "${config.secrets.forgejoRunner.keys.FORGEJO_INSTANCE_URL}" \
+              --instance "$FORGEJO_INSTANCE_URL" \
               --token "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_REGISTRATION_TOKEN}" \
               --name "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_NAME}" \
-              --labels "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_LABELS}" \
+              --labels "$CONFIGURED_LABELS" \
               --config /data/config.yml
             return $?
           }
 
+          # Detect label changes: if configured labels differ from what was used at last registration,
+          # deregister the old runner first to avoid creating a duplicate entry in Forgejo.
+          STORED_LABELS=$(cat /data/.runner-labels 2>/dev/null || echo "")
+          if [ -f /data/.runner ] && [ "$CONFIGURED_LABELS" != "$STORED_LABELS" ]; then
+            echo "Runner labels have changed — deregistering old runner to prevent duplicates..."
+            echo "  Was: $STORED_LABELS"
+            echo "  Now: $CONFIGURED_LABELS"
+            deregister_runner
+          fi
+
+          # Register if not already registered
           if [ ! -f /data/.runner ]; then
-            register_runner && echo "Runner registered successfully"
+            if register_runner; then
+              echo "Runner registered successfully"
+              echo "$CONFIGURED_LABELS" > /data/.runner-labels
+            else
+              echo "Registration failed. Exiting."
+              exit 1
+            fi
           fi
 
           # Start the runner daemon.
-          # Attempt to run, and if it fails with 'unregistered runner', re-register and try once more.
+          # If it exits with failure (e.g. stale credentials after DB loss), deregister cleanly
+          # and attempt one re-registration before giving up.
           if ! forgejo-runner daemon --config /data/config.yml; then
-            # Check for terminal authentication/registration error in logs or exit code.
-            # Runner exits with status 1 on 'unregistered runner'.
-            echo "Runner daemon exited with failure. Checking for registration issues..."
-            
-            # Since we can't easily check actual stdout inside the same script without complex redirection,
-            # we'll assume a failure at early startup likely means registration/auth is stale.
-            echo "Removing potentially stale .runner file and attempting re-registration..."
-            rm -f /data/.runner
-            
+            echo "Runner daemon exited with failure. Attempting clean re-registration..."
+            deregister_runner
+
             if register_runner; then
+              echo "$CONFIGURED_LABELS" > /data/.runner-labels
               echo "Re-registration successful. Starting daemon again..."
               exec forgejo-runner daemon --config /data/config.yml
             else

@@ -60,3 +60,32 @@ fi
 
 1. **Automatic Re-registration:** Startup scripts for non-interactive runners should include logic to detect "unregistered" or "unauthenticated" errors and attempt a clean re-registration.
 2. **State/Database Synchronization:** Always remember that for services like Forgejo Actions, the state is split between the runner (file) and the server (database). Wiping one requires resetting the other.
+
+---
+
+## Follow-up: Duplicate Runner Entries (2026-03-05)
+
+### Symptoms
+
+After manually deleting `/data/.runner` to force a label update (adding the `nix-latest` label), the runner re-registered as a **new** runner (ID 2), while the old runner (ID 1) remained active in Forgejo, producing duplicate entries both showing "Idle".
+
+### Root Cause
+
+The re-registration path (both via manual `.runner` deletion and via the daemon-failure fallback) only removed the **local** `.runner` file. It did not call the Forgejo API to remove the old runner from the **server-side** database, so Forgejo kept both entries alive.
+
+### Fix Applied
+
+Three changes were made to `hosts/apps2.nix`:
+
+1. **`deregister_runner` function** — Before removing `.runner`, the script now extracts the runner ID from the file (`grep -o '"id":[0-9]*'`) and calls `DELETE /api/v1/admin/runners/{id}` using a Forgejo admin API token. Both the `.runner` file and the `.runner-labels` tracking file are then removed. The function degrades gracefully if the admin token is unconfigured or if `curl` is unavailable.
+
+2. **Label-change detection** — On every startup, the script compares `CONFIGURED_LABELS` (from the Nix-evaluated secret) against the labels stored in `/data/.runner-labels` at the time of last registration. If they differ and a `.runner` file exists, it proactively calls `deregister_runner` before creating a new registration. This means future label updates in the Nix config are automatically handled on the next container restart — no manual file deletion required.
+
+3. **`FORGEJO_ADMIN_API_TOKEN` secret** — A new key was added to `secrets.forgejoRunner` in `modules/secrets/apps2.nix` (and the example). This must be a token for a Forgejo admin user, generated at: *Forgejo → Settings → Applications → API Tokens*.
+
+### How Label Updates Work Going Forward
+
+1. Update `FORGEJO_RUNNER_LABELS` in `modules/secrets/apps2.nix`.
+2. Run `rebuildHost apps2` to deploy the updated Nix config.
+3. Restart the container (`sudo docker restart forgejoRunner` on apps2), or wait for the next automatic restart.
+4. The startup script detects the label change, deregisters the old runner, and registers a new one — Forgejo will show only one runner with the updated labels.
