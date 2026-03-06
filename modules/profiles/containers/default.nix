@@ -45,6 +45,15 @@ in {
 
   boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
 
+  # Automatically prune stopped containers, dangling images, and unused networks daily.
+  # This prevents stale CI job containers (e.g. from Forgejo Runner) from accumulating
+  # and filling the data disk.
+  virtualisation.docker.autoPrune = {
+    enable = true;
+    dates = "daily";
+    flags = [ "--filter" "until=24h" ];
+  };
+
   fileSystems = {
     "/var/lib/docker/volumes" = {
       depends = [ "/mnt/data" ];

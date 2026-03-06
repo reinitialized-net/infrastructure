@@ -139,7 +139,7 @@
             }
             { 
               storage = "coldData";
-              size = 50;
+              size = 150;
             }
           ];
           networking = [

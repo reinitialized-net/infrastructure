@@ -16,6 +16,7 @@ Pre-configured Docker setup optimized for container orchestration with mesh netw
 - cgroups v2 support
 - Bind-mounted Docker data directory
 - Dedicated Docker user/group
+- Automatic daily cleanup of stale containers and images
 
 ## Prerequisites
 
@@ -70,6 +71,18 @@ fileSystems."/var/lib/docker" = {
   ├── containers/           # Container data
   ├── image/               # Image layers
   └── ...                  # Other Docker data
+```
+
+### Automatic Cleanup
+
+A daily systemd timer runs `docker system prune` to remove stopped containers, dangling images, and unused networks older than 24 hours. This prevents stale CI job containers (e.g. from Forgejo Runner failures) from accumulating and filling the data disk.
+
+```nix
+virtualisation.docker.autoPrune = {
+  enable = true;
+  dates = "daily";
+  flags = [ "--filter" "until=24h" ];
+};
 ```
 
 ### System Configuration
