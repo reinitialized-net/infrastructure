@@ -6,7 +6,7 @@
     nixpkgsUnstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgsStable.url = "github:NixOS/nixpkgs/nixos-25.11";
 
-    nixpkgsOllama.url = "github:NixOS/nixpkgs/49ee5b4428025343f890cd0726a6c35a2c96524c";
+    nixpkgsOllama.url = "github:NixOS/nixpkgs/938c70f0c02f61fd58401ee4b73797511efbc9ae";
 
     vscodeServer = {
       url = "github:nix-community/nixos-vscode-server";
