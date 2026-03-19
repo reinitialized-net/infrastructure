@@ -242,11 +242,14 @@ in {
     streamConfig = ''
       ## Upstreams
       # Technitium DNS (via mesh network)
+      # Routed through mesh so Technitium sees rp1's mesh IP (10.255.0.2)
+      # as the source, allowing recursion to be denied for proxied public queries
+      # while preserving recursion for direct internal clients.
       upstream dnsOneService {
-        server 10.1.11.2:53;
+        server 10.255.0.3:1028;
       }
       upstream dnsTwoService {
-        server 10.1.11.3:53;
+        server 10.255.0.4:1026;
       }
       upstream dnsOneUI {
         server 10.255.0.3:1027;

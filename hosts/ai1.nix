@@ -2,6 +2,7 @@
   self,
   lib,
   system,
+  pkgs,
   ...
 }:{
   # Networking Configuration
@@ -76,7 +77,9 @@
 
     ollama = {
       enable = true;
-      package = self.inputs.nixpkgsOllama.legacyPackages.${system}.ollama;
+      package = pkgs.callPackage "${self}/modules/packages/ollama.nix" {
+        acceleration = false;
+      };
       user = "ollama";
       group = "ollama";
 
