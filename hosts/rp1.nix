@@ -241,15 +241,15 @@ in {
     # Stream configuration for DNS and SSL passthrough
     streamConfig = ''
       ## Upstreams
-      # Technitium DNS (via mesh network)
-      # Routed through mesh so Technitium sees rp1's mesh IP (10.255.0.2)
-      # as the source, allowing recursion to be denied for proxied public queries
+      # Technitium DNS (via physical IPs)
+      # Proxied traffic arrives with rp1's source IP (10.1.12.2 via proxy_bind).
+      # Technitium's recursion ACL denies 10.1.12.0/29 to block public recursion
       # while preserving recursion for direct internal clients.
       upstream dnsOneService {
-        server 10.255.0.3:1028;
+        server 10.1.11.2:53;
       }
       upstream dnsTwoService {
-        server 10.255.0.4:1026;
+        server 10.1.11.3:53;
       }
       upstream dnsOneUI {
         server 10.255.0.3:1027;
@@ -321,9 +321,12 @@ in {
       }
 
       ## DNS Service Listeners (Layer 4)
+      # proxy_bind ensures a consistent source IP (10.1.12.2) for all proxied
+      # DNS traffic, so Technitium's recursion ACL can reliably deny it.
       server {
         listen 10.1.12.2:53 udp;
         listen 10.1.12.2:53;
+        proxy_bind 10.1.12.2;
         proxy_pass dnsOneService;
         proxy_timeout 1s;
         proxy_responses 1;
@@ -335,6 +338,7 @@ in {
       server {
         listen 10.1.12.3:53 udp;
         listen 10.1.12.3:53;
+        proxy_bind 10.1.12.2;
         proxy_pass dnsTwoService;
         proxy_timeout 1s;
         proxy_responses 1;
@@ -807,6 +811,48 @@ in {
           extraConfig = ''
             proxy_read_timeout 86400;
             proxy_send_timeout 86400;
+          '';
+        };
+      };
+
+      # Paperless-ngx Document Management (on apps3)
+      "paperless.reinitialized.me" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.5:1026";
+          proxyWebsockets = true;
+          extraConfig = ''
+            # Allow large document uploads
+            client_max_body_size 0;
+            proxy_request_buffering off;
+            client_body_buffer_size 1024k;
+            proxy_read_timeout 300s;
+            proxy_send_timeout 300s;
+            send_timeout 300s;
+          '';
+        };
+      };
+
+      # Pelican Panel - Game Server Management (on apps3, internal admin only)
+      "game.admin.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.5:1027";
+          proxyWebsockets = true;  # Panel uses WebSockets for live console output
+          extraConfig = ''
+            ${internalOnly}
           '';
         };
       };

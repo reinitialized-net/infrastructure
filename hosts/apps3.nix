@@ -83,5 +83,43 @@
         "tuwunel_data:/var/lib/tuwunel"
       ];
     };
+
+    ### Paperless-ngx (Document Management)
+    paperless-ngx = {
+      autoStart = true;
+      hostname = "paperless-ngx";
+      image = "ghcr.io/paperless-ngx/paperless-ngx:latest";
+      environment = config.secrets.paperless.keys;
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.5:1026:8000/tcp"  # Paperless-ngx web UI and API
+      ];
+      volumes = [
+        "paperless_data:/usr/src/paperless/data"
+        "paperless_media:/usr/src/paperless/media"
+        "paperless_export:/usr/src/paperless/export"
+        "paperless_consume:/usr/src/paperless/consume"
+      ];
+    };
+
+    ### Pelican Panel (Game Server Management)
+    pelican-panel = {
+      autoStart = true;
+      hostname = "pelican-panel";
+      image = "ghcr.io/pelican-dev/panel:latest";
+      environment = config.secrets.pelican.keys;
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.5:1027:80/tcp"  # Pelican Panel web UI
+      ];
+      volumes = [
+        "pelican_panel_var:/app/var"
+        "pelican_panel_logs:/app/storage/logs"
+      ];
+    };
   };
 }

@@ -241,6 +241,36 @@
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
+
+        gs1 = library.makeDualExport "gs1" {
+          system = "x86_64-linux";
+          vmId = 209;
+          enableProtection = true;
+          memory = 16384;
+          cores = 6;
+          disks = [
+            {
+              storage = "hotData";
+              size = 20;
+            }
+            {
+              storage = "coldData";
+              size = 20;
+            }
+          ];
+          networking = [
+            {
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 11;
+            }
+          ];
+          modules = [
+            inputs.vscodeServer.nixosModules.default
+            "${inputs.self}/modules/profiles/containers"
+            "${inputs.self}/modules/profiles/mountData.nix"
+          ];
+        };
       };
     in
     {
@@ -267,6 +297,7 @@
         ai1 = dualSystems.ai1.nixosSystem;
 
         db1 = dualSystems.db1.nixosSystem;
+        gs1 = dualSystems.gs1.nixosSystem;
       };
       packages = library.forAllSystems (system:
         {
@@ -282,6 +313,7 @@
             ai1 = dualSystems.ai1.package;
             
             db1 = dualSystems.db1.package;
+            gs1 = dualSystems.gs1.package;
         }
       );
     };

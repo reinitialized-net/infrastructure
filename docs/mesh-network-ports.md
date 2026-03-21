@@ -71,8 +71,20 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 
 | Port | Service | Protocol | Description |
 |------|---------|----------|-------------|
-| 1024 | immich-server | TCP | Immich web UI and API |
+| 1001 | immich-server | TCP | Immich web UI and API |
 | 1025 | tuwunel | TCP | Tuwunel Matrix homeserver HTTP API |
+| 1026 | paperless-ngx | TCP | Paperless-ngx document management web UI |
+| 1027 | pelican-panel | TCP | Pelican Panel game server management web UI |
+
+**Next Available Port:** 1028
+
+## gs1 (10.255.0.6)
+
+| Port | Service | Protocol | Description |
+|------|---------|----------|-------------|
+| 1024 | wings | TCP | Pelican Wings API (Panel → Wings communication, mesh only) |
+| 1025 | wings | TCP | Pelican Wings SFTP (game file management, VLAN accessible on 10.1.11.6:2022) |
+| 25565–25600 | game servers | TCP+UDP | Game server ports (Minecraft and others, bound by Wings child containers) |
 
 **Next Available Port:** 1026
 

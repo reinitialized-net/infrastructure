@@ -38,6 +38,13 @@
       publicKey = "OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=";
     };
 
+    gs1 = {
+      nodeId = 6;
+      hostname = "gs1";
+      endpoint = "10.1.11.6:51820";
+      publicKey = "PL2fD0SDmoNX7L2ysYa7EbiHrpOmYSoZkSehb6q2qQU=";
+    };
+
     ai1 = {
       nodeId = 9;
       hostname = "ai1";
