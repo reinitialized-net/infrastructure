@@ -242,9 +242,10 @@ in {
     streamConfig = ''
       ## Upstreams
       # Technitium DNS (via physical IPs)
-      # Proxied traffic arrives with rp1's source IP (10.1.12.2 via proxy_bind).
-      # Technitium's recursion ACL denies 10.1.12.0/29 to block public recursion
-      # while preserving recursion for direct internal clients.
+      # Proxied traffic arrives with rp1's secondary IP (10.1.12.3 via proxy_bind).
+      # Technitium's recursion ACL denies 10.1.12.3/32 to block public recursion
+      # while preserving recursion for rp1's own resolver (source 10.1.12.2)
+      # and other direct internal clients.
       upstream dnsOneService {
         server 10.1.11.2:53;
       }
@@ -321,12 +322,14 @@ in {
       }
 
       ## DNS Service Listeners (Layer 4)
-      # proxy_bind ensures a consistent source IP (10.1.12.2) for all proxied
-      # DNS traffic, so Technitium's recursion ACL can reliably deny it.
+      # proxy_bind uses rp1's secondary IP (10.1.12.3) as the source for all
+      # proxied DNS traffic. This distinguishes proxied public queries (source
+      # 10.1.12.3) from rp1's own system resolver queries (source 10.1.12.2),
+      # allowing Technitium's ACL to deny recursion only for proxied traffic.
       server {
         listen 10.1.12.2:53 udp;
         listen 10.1.12.2:53;
-        proxy_bind 10.1.12.2;
+        proxy_bind 10.1.12.3;
         proxy_pass dnsOneService;
         proxy_timeout 1s;
         proxy_responses 1;
@@ -338,7 +341,7 @@ in {
       server {
         listen 10.1.12.3:53 udp;
         listen 10.1.12.3:53;
-        proxy_bind 10.1.12.2;
+        proxy_bind 10.1.12.3;
         proxy_pass dnsTwoService;
         proxy_timeout 1s;
         proxy_responses 1;
@@ -816,7 +819,7 @@ in {
       };
 
       # Paperless-ngx Document Management (on apps3)
-      "paperless.reinitialized.me" = {
+      "docs.reinitialized.me" = {
         forceSSL = true;
         enableACME = true;
         acmeRoot = null;
@@ -840,7 +843,7 @@ in {
       };
 
       # Pelican Panel - Game Server Management (on apps3, internal admin only)
-      "game.admin.reinitialized.net" = {
+      "gs.admin.reinitialized.net" = {
         forceSSL = true;
         enableACME = true;
         acmeRoot = null;

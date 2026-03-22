@@ -42,18 +42,18 @@ The fix uses a two-layer approach: deterministic source IP binding in nginx + Te
 
 ### Infrastructure Change (rp1.nix)
 
-1. **Added `proxy_bind 10.1.12.2`** to both DNS stream proxy server blocks. This ensures all proxied DNS traffic (including the listener on 10.1.12.3) uses a consistent, predictable source IP (10.1.12.2) when connecting to Technitium. Without this, the kernel could choose different source IPs for different listeners.
+1. **Added `proxy_bind 10.1.12.3`** to both DNS stream proxy server blocks. This ensures all proxied DNS traffic uses rp1's **secondary** IP (`10.1.12.3`) as the source when connecting to Technitium. Using the secondary IP (instead of the primary `10.1.12.2`) distinguishes proxied public traffic from rp1's own system resolver queries, which originate from the primary IP.
 
 2. **DNS upstreams remain on physical IPs** (`10.1.11.2:53`, `10.1.11.3:53`). This preserves correct DNS cluster sync behavior and ensures Technitium returns the correct (public) records for external queries.
 
 **Traffic flow (after fix):**
 ```
-Public Client → rp1 (10.1.12.2:53) → nginx stream (proxy_bind 10.1.12.2) → apps1 (10.1.11.2:53)
-                                                      Source IP: 10.1.12.2
+Public Client → rp1 (10.1.12.2:53) → nginx stream (proxy_bind 10.1.12.3) → apps1 (10.1.11.2:53)
+                                                      Source IP: 10.1.12.3
                                                       → Technitium ACL denies recursion ✓
 
-Public Client → rp1 (10.1.12.3:53) → nginx stream (proxy_bind 10.1.12.2) → apps2 (10.1.11.3:53)
-                                                      Source IP: 10.1.12.2
+Public Client → rp1 (10.1.12.3:53) → nginx stream (proxy_bind 10.1.12.3) → apps2 (10.1.11.3:53)
+                                                      Source IP: 10.1.12.3
                                                       → Technitium ACL denies recursion ✓
 
 Internal Client (10.1.11.x) → apps1 (10.1.11.2:53) direct
@@ -61,9 +61,8 @@ Internal Client (10.1.11.x) → apps1 (10.1.11.2:53) direct
                                 → Technitium ACL allows recursion ✓
 
 rp1 system resolver → apps1 (10.1.11.2:53) direct (not via nginx)
-                       Source IP: 10.1.12.2 — note: this also matches the deny rule,
-                       but rp1 uses mesh IPs (10.255.0.3:1028) for its own ACME resolution
-                       which is unaffected by the recursion ACL change.
+                       Source IP: 10.1.12.2 (primary IP, not proxy_bind IP)
+                       → Technitium ACL allows recursion (matches 10.0.0.0/8) ✓
 ```
 
 ### Required Technitium Configuration
@@ -74,18 +73,37 @@ Configure Technitium's recursion ACL on **both cluster nodes** (one.dns and two.
 2. Select **Use Specified Network Access Control List (ACL)**
 3. Set the ACL entries in this exact order (Technitium processes top to bottom, first match wins):
    ```
-   !10.1.12.0/29
+   !10.1.12.3/32
    10.0.0.0/8
    ```
 4. Save and apply on both DNS cluster nodes
 
 **ACL logic:**
-- `!10.1.12.0/29` — Deny recursion from rp1's entire VLAN 12 subnet (rp1 is the only host here). This catches all proxied public DNS traffic since `proxy_bind` ensures source is always 10.1.12.2.
-- `10.0.0.0/8` — Allow recursion for all other private 10.x clients (internal hosts, Docker containers querying directly).
+- `!10.1.12.3/32` — Deny recursion from rp1's proxy-bind IP only. All proxied public DNS traffic uses this source IP due to `proxy_bind 10.1.12.3`.
+- `10.0.0.0/8` — Allow recursion for all other private 10.x clients, including rp1's own system resolver (source `10.1.12.2`), internal hosts, and Docker containers.
 - Default policy (no match) — Deny all except loopback. This blocks recursion for any other non-private source.
 
-**Important:** The deny entries (`!`) MUST be listed BEFORE the allow entries. Technitium processes the ACL in listed order and uses the first match. If `10.0.0.0/8` appears first, it would match and allow recursion for 10.1.12.2 before the deny rule is ever checked.
+**Important:** The deny entry (`!`) MUST be listed BEFORE the allow entry. Technitium processes the ACL in listed order and uses the first match. If `10.0.0.0/8` appears first, it would match and allow recursion for 10.1.12.3 before the deny rule is ever checked.
+
+## Follow-up: rp1 System Resolver Denied Recursion
+
+### Problem
+
+After the original fix, rp1's own system DNS resolution stopped working for recursive queries. The system resolver (`dns = ["10.1.11.2" "10.1.11.3"]` in systemd-networkd) sends queries directly to Technitium with source IP `10.1.12.2` — the same IP used by `proxy_bind`. The overly broad ACL `!10.1.12.0/29` denied recursion for **all** traffic from VLAN 12, including rp1's legitimate system queries.
+
+### Root Cause
+
+The original fix used `proxy_bind 10.1.12.2` (rp1's primary IP) and denied the entire `/29` subnet. Since rp1's system resolver also originates from `10.1.12.2`, there was no way for Technitium to distinguish proxied WAN traffic from rp1's own queries.
+
+### Fix
+
+1. Changed `proxy_bind` from `10.1.12.2` to `10.1.12.3` (rp1's secondary IP) in the nginx stream DNS server blocks.
+2. Narrowed the Technitium ACL deny rule from `!10.1.12.0/29` to `!10.1.12.3/32`.
+
+This separates the two traffic sources:
+- **Proxied public queries**: source `10.1.12.3` (via `proxy_bind`) → denied by `!10.1.12.3/32`
+- **rp1's own system resolver**: source `10.1.12.2` (kernel default primary IP) → allowed by `10.0.0.0/8`
 
 ## Key Insight
 
-Rather than changing the DNS routing path (which introduced cluster sync issues), the fix keeps the proven physical IP routing and uses Technitium's network ACL to deny recursion from the specific source address that rp1's proxy produces. The `proxy_bind` directive in nginx guarantees a single, predictable source IP regardless of which listener receives the query, making the ACL rule reliable.
+Rather than changing the DNS routing path (which introduced cluster sync issues), the fix keeps the proven physical IP routing and uses Technitium's network ACL to deny recursion from the specific source address that rp1's proxy produces. The `proxy_bind` directive uses rp1's **secondary** IP (`10.1.12.3`) rather than the primary (`10.1.12.2`), which allows the ACL to distinguish proxied public traffic from rp1's own legitimate system DNS queries. The narrow `/32` deny rule targets only the proxy-bind IP, so rp1's system resolver (using the primary IP `10.1.12.2`) gets recursion while proxied WAN queries do not.
