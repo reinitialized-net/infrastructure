@@ -598,6 +598,10 @@ in {
 
         locations."/" = { 
           proxyPass = "http://10.255.0.4:1031";
+          extraConfig = ''
+            ${internalOnly}
+            proxy_ssl_verify off;
+          '';
         };
       };
       "redisadmin.in.reinitialized.net" = {
@@ -611,6 +615,10 @@ in {
         locations."/" = {
           proxyPass = "http://10.255.0.4:1032";
           proxyWebsockets = true;
+          extraConfig = ''
+            ${internalOnly}
+            proxy_ssl_verify off;
+          '';
         };
       };
       "git.ds.reinitialized.net" = {
@@ -810,6 +818,26 @@ in {
         };
         locations."/ws/" = {
           proxyPass = "http://10.255.0.1:4003";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_read_timeout 86400;
+            proxy_send_timeout 86400;
+          '';
+        };
+      };
+      "accounts.staging.bleupigs.club" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.1:4007";
+        };
+        locations."/ws/" = {
+          proxyPass = "http://10.255.0.1:4007";
           proxyWebsockets = true;
           extraConfig = ''
             proxy_read_timeout 86400;
