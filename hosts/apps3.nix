@@ -121,5 +121,49 @@
         "pelican_panel_logs:/app/storage/logs"
       ];
     };
+
+    ### RustDesk ID/Rendezvous Server (hbbs)
+    # Coordinates peer connections; tells clients where the relay server is (-r flag)
+    # NOTE: Port 21114 ("admin UI") does not exist in the OSS image - Pro only.
+    rustdesk-hbbs = {
+      autoStart = true;
+      hostname = "rustdesk-hbbs";
+      image = "rustdesk/rustdesk-server:latest";
+      cmd = [ "hbbs" "-r" "ra.reinitialized.net:21117" ];
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.5:1028:21115/tcp"  # NAT type test
+        "10.255.0.5:1029:21116/tcp"  # TCP hole-punch / ID registration
+        "10.255.0.5:1029:21116/udp"  # UDP hole-punch / heartbeat
+        "10.255.0.5:1030:21118/tcp"  # WebSocket for hbbs
+      ];
+      volumes = [
+        "rustdesk_data:/root"  # Shared key pair with hbbr
+      ];
+    };
+
+    ### RustDesk Relay Server (hbbr)
+    # Relays encrypted traffic when direct P2P connection is not possible
+    rustdesk-hbbr = {
+      autoStart = true;
+      hostname = "rustdesk-hbbr";
+      image = "rustdesk/rustdesk-server:latest";
+      cmd = [ "hbbr" ];
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.5:1031:21117/tcp"  # Relay
+        "10.255.0.5:1032:21119/tcp"  # WebSocket relay
+      ];
+      volumes = [
+        "rustdesk_data:/root"  # Shared key pair with hbbs
+      ];
+      dependsOn = [
+        "rustdesk-hbbs"
+      ];
+    };
   };
 }

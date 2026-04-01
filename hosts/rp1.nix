@@ -175,6 +175,38 @@ in {
           "192.168.0.0/16"
         ];
       }
+      # RustDesk self-hosted server (ra.reinitialized.net)
+      # Clients connect to these ports directly; must be publicly accessible
+      {
+        port = 21115;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "0.0.0.0/0" ];
+      }
+      {
+        port = 21116;
+        protocol = "tcp_udp";
+        ipType = "ipv4";
+        source = [ "0.0.0.0/0" ];
+      }
+      {
+        port = 21117;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "0.0.0.0/0" ];
+      }
+      {
+        port = 21118;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "0.0.0.0/0" ];
+      }
+      {
+        port = 21119;
+        protocol = "tcp";
+        ipType = "ipv4";
+        source = [ "0.0.0.0/0" ];
+      }
     ];
   };
   systemd.network.networks = {
@@ -300,6 +332,22 @@ in {
       upstream stalwartOneSieve {
         server 10.255.0.3:1036;
       }
+      # RustDesk self-hosted server (apps3)
+      upstream rustdeskHbbsNatTest {
+        server 10.255.0.5:1028;
+      }
+      upstream rustdeskHbbsHolePunch {
+        server 10.255.0.5:1029;
+      }
+      upstream rustdeskHbbsWebSocket {
+        server 10.255.0.5:1030;
+      }
+      upstream rustdeskHbbrRelay {
+        server 10.255.0.5:1031;
+      }
+      upstream rustdeskHbbrWebSocket {
+        server 10.255.0.5:1032;
+      }
 
       # Local intermediate for mail HTTPS: adds PROXY protocol before
       # forwarding to Stalwart's HTTPS listener. Needed because the SNI routing
@@ -408,6 +456,63 @@ in {
         proxy_pass unifiDiscovery;
       }
 
+      ## RustDesk Listeners on 10.1.12.4 (apps3)
+      # Clients connect to ra.reinitialized.net which resolves to 10.1.12.4
+
+      # hbbs - NAT type test (TCP)
+      server {
+        listen 10.1.12.4:21115;
+        proxy_pass rustdeskHbbsNatTest;
+        proxy_connect_timeout 10s;
+        proxy_timeout 60s;
+      }
+
+      # hbbs - ID registration + relay assignment (TCP)
+      # Persistent connection; client keeps this open to receive events from hbbs
+      server {
+        listen 10.1.12.4:21116;
+        proxy_pass rustdeskHbbsHolePunch;
+        proxy_connect_timeout 10s;
+        proxy_timeout 300s;
+      }
+
+      # hbbs - NAT punch / heartbeat (UDP)
+      # proxy_responses 0 = unlimited datagrams per session; session closes by timeout.
+      # hbbs may send multiple UDP packets per registration/heartbeat cycle
+      # (e.g. punch notifications to both peers), so proxy_responses 1 would drop them.
+      server {
+        listen 10.1.12.4:21116 udp;
+        proxy_pass rustdeskHbbsHolePunch;
+        proxy_timeout 60s;
+        proxy_responses 0;
+      }
+
+      # hbbs - WebSocket (TCP)
+      server {
+        listen 10.1.12.4:21118;
+        proxy_pass rustdeskHbbsWebSocket;
+        proxy_connect_timeout 10s;
+        proxy_timeout 300s;
+      }
+
+      # hbbr - Relay (TCP)
+      # Must stay open for the full duration of a remote desktop session;
+      # 86400s (24 h) prevents nginx from dropping active sessions.
+      server {
+        listen 10.1.12.4:21117;
+        proxy_pass rustdeskHbbrRelay;
+        proxy_connect_timeout 10s;
+        proxy_timeout 86400s;
+      }
+
+      # hbbr - WebSocket relay (TCP)
+      server {
+        listen 10.1.12.4:21119;
+        proxy_pass rustdeskHbbrWebSocket;
+        proxy_connect_timeout 10s;
+        proxy_timeout 86400s;
+      }
+
       ## Stalwart Mail Listeners on 10.1.12.2 (stalwartOne)
       ## All include proxy_protocol so Stalwart receives real client IPs
       server {
@@ -460,6 +565,9 @@ in {
         # Redirect all HTTP traffic to HTTPS
         locations."/" = {
           return = "301 https://$host$request_uri";
+          extraConfig = ''
+            ${internalOnly}
+          '';
         };
       };
       "two.dns.reinitialized.net" = {
@@ -475,6 +583,9 @@ in {
         # Redirect all HTTP traffic to HTTPS
         locations."/" = {
           return = "301 https://$host$request_uri";
+          extraConfig = ''
+            ${internalOnly}
+          '';
         };
       };
 
@@ -884,6 +995,75 @@ in {
           proxyWebsockets = true;  # Panel uses WebSockets for live console output
           extraConfig = ''
             ${internalOnly}
+          '';
+        };
+      };
+
+      # RustDesk server landing page
+      # NOTE: Port 21114 admin UI only exists in RustDesk Pro - not in OSS image.
+      # This virtualHost secures the domain with TLS and provides a static info page.
+      # Clients use ra.reinitialized.net as the ID/relay server address directly (not via HTTP).
+      "ra.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          extraConfig = ''
+            ${internalOnly}
+            default_type text/plain;
+            return 200 "RustDesk Self-Hosted Server\nID/Rendezvous: ra.reinitialized.net:21116\nRelay: ra.reinitialized.net:21117\n";
+          '';
+        };
+      };
+
+      # Authentik Identity Provider (SSO)
+      "access.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.3:1043";
+          proxyWebsockets = true;
+          extraConfig = ''
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header Host $host;
+            # Large buffers for OIDC tokens and cookies
+            proxy_buffer_size 128k;
+            proxy_buffers 4 256k;
+            proxy_busy_buffers_size 256k;
+          '';
+        };
+      };
+
+      # ownCloud Infinite Scale (Cloud Storage)
+      "cloud.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.3:1044";
+          proxyWebsockets = true;
+          extraConfig = ''
+            # Allow large file uploads (0 = no limit)
+            client_max_body_size 0;
+            proxy_request_buffering off;
+            client_body_buffer_size 1024k;
+            proxy_read_timeout 600s;
+            proxy_send_timeout 600s;
+            send_timeout 600s;
           '';
         };
       };

@@ -26,8 +26,10 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1040 | grafana | TCP | Grafana metrics visualization web UI |
 | 1041 | stalwartOne | TCP | Stalwart Prometheus metrics endpoint (optional) |
 | 1042 | stalwartOne | TCP | Stalwart Mail HTTPS listener (port 443, for TLS passthrough) |
+| 1043 | authentik-server | TCP | Authentik SSO web UI + API (HTTP/9000) |
+| 1044 | ocis | TCP | ownCloud Infinite Scale web UI + WebDAV (HTTP/9200) |
 
-**Next Available Port:** 1043
+**Next Available Port:** 1045
 
 ## apps2 (10.255.0.4)
 
@@ -75,8 +77,15 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1025 | tuwunel | TCP | Tuwunel Matrix homeserver HTTP API |
 | 1026 | paperless-ngx | TCP | Paperless-ngx document management web UI |
 | 1027 | pelican-panel | TCP | Pelican Panel game server management web UI |
+| 1028 | rustdesk-hbbs | TCP | RustDesk NAT type test (port 21115) |
+| 1029 | rustdesk-hbbs | TCP+UDP | RustDesk TCP/UDP hole-punch / ID registration (port 21116) |
+| 1030 | rustdesk-hbbs | TCP | RustDesk hbbs WebSocket (port 21118) |
+| 1031 | rustdesk-hbbr | TCP | RustDesk relay (port 21117) |
+| 1032 | rustdesk-hbbr | TCP | RustDesk hbbr WebSocket (port 21119) |
 
-**Next Available Port:** 1028
+**Next Available Port:** 1033
+
+> **Note:** Port 21114 (admin web UI) is a RustDesk **Pro** feature and is not available in the OSS `rustdesk/rustdesk-server` image.
 
 ## gs1 (10.255.0.6)
 
@@ -128,6 +137,12 @@ https://matrix.reinitialized.net → http://10.255.0.5:1025
 
 # Cinny Matrix client
 https://chat.reinitialized.me → http://10.255.0.4:1040
+
+# Authentik SSO
+https://access.reinitialized.net → http://10.255.0.3:1043
+
+# ownCloud Infinite Scale
+https://cloud.reinitialized.net → http://10.255.0.3:1044
 ```
 
 ### Mail Services via rp1

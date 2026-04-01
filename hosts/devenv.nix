@@ -61,6 +61,8 @@
     btop
     fastfetch
 
+    wget
+
     nmap
     dig
     coreutils
@@ -74,10 +76,13 @@
     pinentry-curses
   ];
   # Enable required programs
-  programs.gnupg.agent = {
-    enable = true;
-    # Pick a flavor (e.g., "curses" for terminal, "gnome3" or "qt" for GUI)
-    pinentryPackage = pkgs.pinentry-curses;
+  programs = {
+    nix-ld.enable = true;
+    gnupg.agent = {
+      enable = true;
+      # Pick a flavor (e.g., "curses" for terminal, "gnome3" or "qt" for GUI)
+      pinentryPackage = pkgs.pinentry-curses;
+    };
   };
   # Nix Settings
   nix.settings = {
