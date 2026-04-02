@@ -2,7 +2,8 @@
   config,
   lib,
   ...
-}: {
+}:
+{
   secrets = {
     meshNetwork = {
       description = "MeshNetwork secrets";
@@ -87,6 +88,7 @@
         OCIS_URL = "https://cloud.reinitialized.net";
         OCIS_DOMAIN = "cloud.reinitialized.net";
         OCIS_LOG_LEVEL = "info";
+        HTTP_PROTOCOL = "https";
 
         # TLS handled by rp1 reverse proxy
         PROXY_TLS = "false";

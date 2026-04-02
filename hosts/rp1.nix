@@ -1069,7 +1069,7 @@ in {
         '';
 
         locations."/" = {
-          proxyPass = "http://10.255.0.5:1028";
+          proxyPass = "http://ocis_backend";
           proxyWebsockets = true;
           extraConfig = ''
             # Performance optimizations for OCIS (ownCloud Infinite Scale)
@@ -1080,7 +1080,7 @@ in {
             proxy_request_buffering off;
             proxy_buffering off;
             client_body_buffer_size 1024k;
-            
+
             # Instruct proxy and browser to disable buffering
             add_header X-Accel-Buffering no;
 
