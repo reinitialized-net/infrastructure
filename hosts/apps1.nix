@@ -223,7 +223,7 @@
     authentik-server = {
       autoStart = true;
       hostname = "authentik-server";
-      image = "ghcr.io/goauthentik/server:latest";
+      image = "ghcr.io/goauthentik/server:2026.2";
       cmd = [ "server" ];
       environment = config.secrets.authentik.keys;
       networks = [
@@ -242,7 +242,7 @@
     authentik-worker = {
       autoStart = true;
       hostname = "authentik-worker";
-      image = "ghcr.io/goauthentik/server:latest";
+      image = "ghcr.io/goauthentik/server:2026.2";
       cmd = [ "worker" ];
       environment = config.secrets.authentik.keys;
       networks = [
@@ -254,26 +254,6 @@
       ];
       dependsOn = [
         "authentik-server"
-      ];
-    };
-
-    ### ownCloud Infinite Scale (Cloud Storage)
-    ocis = {
-      autoStart = true;
-      hostname = "ocis";
-      image = "owncloud/ocis:latest";
-      entrypoint = "/bin/sh";
-      cmd = [ "-c" "ocis init || true; ocis server" ];
-      environment = config.secrets.ocis.keys;
-      networks = [
-        "backend"
-      ];
-      ports = [
-        "10.255.0.3:1044:9200/tcp"  # OCIS HTTP web UI + WebDAV
-      ];
-      volumes = [
-        "ocis_config:/etc/ocis"
-        "ocis_data:/var/lib/ocis"
       ];
     };
   };

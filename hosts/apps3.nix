@@ -30,6 +30,33 @@
       enable = true;
   };
 
+  # ownCloud OCIS Custom Content Security Policy
+  environment.etc."ocis/csp.yaml".text = ''
+    directives:
+      default-src: ["'self'"]
+      connect-src: ["'self'", "blob:", "https://access.reinitialized.net", "https://raw.githubusercontent.com"]
+      script-src: ["'self'", "'unsafe-inline'"]
+      style-src: ["'self'", "'unsafe-inline'"]
+      img-src: ["'self'", "data:", "blob:"]
+      frame-src: ["'self'"]
+      frame-ancestors: ["'none'"]
+  '';
+
+  # ownCloud OCIS Proxy Configuration (Role Mapping)
+  environment.etc."ocis/proxy.yaml".text = ''
+    role_assignment:
+      driver: oidc
+      oidc_role_mapper:
+        role_claim: groups
+        role_mapping:
+          - role_name: admin
+            claim_value: OwnCloud - Administrators
+          - role_name: admin
+            claim_value: Super Administrators
+          - role_name: user
+            claim_value: OwnCloud - Users
+  '';
+
   # Hosted Services
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
@@ -122,47 +149,25 @@
       ];
     };
 
-    ### RustDesk ID/Rendezvous Server (hbbs)
-    # Coordinates peer connections; tells clients where the relay server is (-r flag)
-    # NOTE: Port 21114 ("admin UI") does not exist in the OSS image - Pro only.
-    rustdesk-hbbs = {
+    ### ownCloud Infinite Scale (Cloud Storage)
+    ocis = {
       autoStart = true;
-      hostname = "rustdesk-hbbs";
-      image = "rustdesk/rustdesk-server:latest";
-      cmd = [ "hbbs" "-r" "ra.reinitialized.net:21117" ];
+      hostname = "ocis";
+      image = "owncloud/ocis:latest";
+      entrypoint = "/bin/sh";
+      cmd = [ "-c" "ocis init || true; ocis server" ];
+      environment = config.secrets.ocis.keys;
       networks = [
         "backend"
       ];
       ports = [
-        "10.255.0.5:1028:21115/tcp"  # NAT type test
-        "10.255.0.5:1029:21116/tcp"  # TCP hole-punch / ID registration
-        "10.255.0.5:1029:21116/udp"  # UDP hole-punch / heartbeat
-        "10.255.0.5:1030:21118/tcp"  # WebSocket for hbbs
+        "10.255.0.5:1028:9200/tcp"  # OCIS HTTP web UI + WebDAV
       ];
       volumes = [
-        "rustdesk_data:/root"  # Shared key pair with hbbr
-      ];
-    };
-
-    ### RustDesk Relay Server (hbbr)
-    # Relays encrypted traffic when direct P2P connection is not possible
-    rustdesk-hbbr = {
-      autoStart = true;
-      hostname = "rustdesk-hbbr";
-      image = "rustdesk/rustdesk-server:latest";
-      cmd = [ "hbbr" ];
-      networks = [
-        "backend"
-      ];
-      ports = [
-        "10.255.0.5:1031:21117/tcp"  # Relay
-        "10.255.0.5:1032:21119/tcp"  # WebSocket relay
-      ];
-      volumes = [
-        "rustdesk_data:/root"  # Shared key pair with hbbs
-      ];
-      dependsOn = [
-        "rustdesk-hbbs"
+        "ocis_config:/etc/ocis"
+        "ocis_data:/var/lib/ocis"
+        "/etc/ocis/csp.yaml:/etc/ocis/csp.yaml:ro"
+        "/etc/ocis/proxy.yaml:/etc/ocis/proxy.yaml:ro"
       ];
     };
   };

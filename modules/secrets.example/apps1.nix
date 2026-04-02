@@ -115,50 +115,12 @@
         AUTHENTIK_REDIS__HOST = "10.255.0.11";
         AUTHENTIK_REDIS__PORT = "1025";
         AUTHENTIK_REDIS__DB = "3";
-      };
-    };
-
-    ocis = {
-      description = "ownCloud Infinite Scale cloud storage configuration (OIDC via Authentik)";
-      keys = {
-        # Core settings
-        OCIS_URL = "https://cloud.reinitialized.net";
-        OCIS_DOMAIN = "cloud.reinitialized.net";
-        OCIS_LOG_LEVEL = "info";
-
-        # TLS handled by rp1 reverse proxy
-        PROXY_TLS = "false";
-        OCIS_INSECURE = "true";
-        PROXY_HTTP_ADDR = "0.0.0.0:9200";
-
-        # Disable built-in IDP (using Authentik instead)
-        OCIS_EXCLUDE_RUN_SERVICES = "idp";
-
-        # External OIDC via Authentik
-        # Issuer URL format: https://<authentik-domain>/application/o/<app-slug>/
-        OCIS_OIDC_ISSUER = "https://access.reinitialized.net/application/o/ocis/";
-        PROXY_OIDC_ISSUER = "https://access.reinitialized.net/application/o/ocis/";
-        WEB_OIDC_ISSUER = "https://access.reinitialized.net/application/o/ocis/";
-        PROXY_OIDC_REWRITE_WELLKNOWN = "true";
-
-        # OIDC client credentials (from Authentik provider config)
-        WEB_OIDC_CLIENT_ID = "PLACE_OIDC_CLIENT_ID_HERE";
-        OCIS_OIDC_CLIENT_ID = "PLACE_OIDC_CLIENT_ID_HERE";
-        OCIS_OIDC_CLIENT_SECRET = "PLACE_OIDC_CLIENT_SECRET_HERE";
-
-        # Auto-provision user accounts on first OIDC login
-        PROXY_AUTOPROVISION_ACCOUNTS = "true";
-        PROXY_AUTOPROVISION_CLAIM_USERNAME = "preferred_username";
-        PROXY_AUTOPROVISION_CLAIM_EMAIL = "email";
-        PROXY_AUTOPROVISION_CLAIM_DISPLAYNAME = "name";
-        PROXY_USER_OIDC_CLAIM = "preferred_username";
-        PROXY_USER_CS3_CLAIM = "username";
-
-        # Role assignment via OIDC claims
-        PROXY_ROLE_ASSIGNMENT_DRIVER = "oidc";
-
-        # Admin password (used only during ocis init for initial admin user)
-        IDM_ADMIN_PASSWORD = "PLACE_ADMIN_PASSWORD_HERE";
+        AUTHENTIK_EMAIL__HOST = "stalwart";
+        AUTHENTIK_EMAIL__PORT = "587";
+        AUTHENTIK_EMAIL__USE_TLS = "true";
+        AUTHENTIK_EMAIL__USERNAME = "PLACE_STALWART_USER@reinitialized.net";
+        AUTHENTIK_EMAIL__PASSWORD = "PLACE_STALWART_PASSWORD_HERE";
+        AUTHENTIK_EMAIL__FROM = "authentik@reinitialized.net";
       };
     };
   };

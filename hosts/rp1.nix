@@ -270,6 +270,13 @@ in {
     recommendedProxySettings = true;
     recommendedTlsSettings = true;
 
+    upstreams.ocis_backend = {
+      servers."10.255.0.5:1028" = {};
+      extraConfig = ''
+        keepalive 32;
+      '';
+    };
+
     # Stream configuration for DNS and SSL passthrough
     streamConfig = ''
       ## Upstreams
@@ -1033,9 +1040,6 @@ in {
           proxyPass = "http://10.255.0.3:1043";
           proxyWebsockets = true;
           extraConfig = ''
-            proxy_set_header X-Forwarded-Proto $scheme;
-            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-            proxy_set_header Host $host;
             # Large buffers for OIDC tokens and cookies
             proxy_buffer_size 128k;
             proxy_buffers 4 256k;
@@ -1053,17 +1057,37 @@ in {
           "10.1.12.4"
         ];
 
+        # Enable HTTP/3 (QUIC) natively via NixOS option
+        quic = true;
+
+        extraConfig = ''
+          # Advertise HTTP/3 support via Alt-Svc header
+          add_header Alt-Svc 'h3=":443"; ma=86400';
+          # OCSP Stapling for faster TLS handshake
+          ssl_stapling on;
+          ssl_stapling_verify on;
+        '';
+
         locations."/" = {
-          proxyPass = "http://10.255.0.3:1044";
+          proxyPass = "http://10.255.0.5:1028";
           proxyWebsockets = true;
           extraConfig = ''
-            # Allow large file uploads (0 = no limit)
+            # Performance optimizations for OCIS (ownCloud Infinite Scale)
+            # Allow unlimited upload sizes
             client_max_body_size 0;
+            # Disable buffering for both requests and responses for direct streaming
+            # This is critical for DAV performance and large file transfers
             proxy_request_buffering off;
+            proxy_buffering off;
             client_body_buffer_size 1024k;
-            proxy_read_timeout 600s;
-            proxy_send_timeout 600s;
-            send_timeout 600s;
+            
+            # Instruct proxy and browser to disable buffering
+            add_header X-Accel-Buffering no;
+
+            # Extended timeouts for large/slow file synchronization
+            proxy_read_timeout 1200s;
+            proxy_send_timeout 1200s;
+            send_timeout 1200s;
           '';
         };
       };
