@@ -2,14 +2,16 @@
   config,
   pkgs,
   ...
-}:let
+}:
+let
   internalOnly = ''
     allow 10.0.0.0/8;
     allow 172.16.0.0/12;
     allow 192.168.0.0/16;
     deny all;
   '';
-in {
+in
+{
   # Networking Configuration
   networking = {
     hostName = "rp1";
@@ -252,7 +254,7 @@ in {
       dnsProvider = "technitium";
       credentialsFile = config.secrets.acmeDns.file;
       dnsResolver = "10.255.0.3:1028";
-      extraLegoFlags = [ 
+      extraLegoFlags = [
         "--pfx"
         "--pfx.pass="
         "--dns.resolvers=10.255.0.4:1026"
@@ -271,7 +273,7 @@ in {
     recommendedTlsSettings = true;
 
     upstreams.ocis_backend = {
-      servers."10.255.0.5:1028" = {};
+      servers."10.255.0.5:1028" = { };
       extraConfig = ''
         keepalive 32;
       '';
@@ -566,7 +568,11 @@ in {
         enableACME = false;
         addSSL = false;
         listen = [
-          { addr = "10.1.12.2"; port = 80; ssl = false; }
+          {
+            addr = "10.1.12.2";
+            port = 80;
+            ssl = false;
+          }
         ];
 
         # Redirect all HTTP traffic to HTTPS
@@ -584,7 +590,11 @@ in {
         enableACME = false;
         addSSL = false;
         listen = [
-          { addr = "10.1.12.3"; port = 80; ssl = false; }
+          {
+            addr = "10.1.12.3";
+            port = 80;
+            ssl = false;
+          }
         ];
 
         # Redirect all HTTP traffic to HTTPS
@@ -605,7 +615,11 @@ in {
         enableACME = false;
         addSSL = false;
         listen = [
-          { addr = "10.1.12.2"; port = 80; ssl = false; }
+          {
+            addr = "10.1.12.2";
+            port = 80;
+            ssl = false;
+          }
         ];
 
         locations = {
@@ -628,7 +642,7 @@ in {
         enableACME = true;
         acmeRoot = null;
         serverAliases = [ "www.docs.reinitialized.net" ];
-        listenAddresses = [ 
+        listenAddresses = [
           "10.1.12.4"
         ];
 
@@ -681,10 +695,10 @@ in {
         forceSSL = true;
         enableACME = true;
         acmeRoot = null;
-        listenAddresses = [ 
+        listenAddresses = [
           "10.1.12.4"
         ];
-        
+
         locations."/" = {
           proxyPass = "http://10.1.11.21:8096";
         };
@@ -714,7 +728,7 @@ in {
           "10.1.12.4"
         ];
 
-        locations."/" = { 
+        locations."/" = {
           proxyPass = "http://10.255.0.4:1031";
           extraConfig = ''
             ${internalOnly}
@@ -815,7 +829,7 @@ in {
         locations."/" = {
           proxyPass = "http://10.255.0.9:1024";
           proxyWebsockets = true;
-          
+
           extraConfig = ''
             ${internalOnly}
             proxy_connect_timeout 300s;
@@ -999,30 +1013,9 @@ in {
 
         locations."/" = {
           proxyPass = "http://10.255.0.5:1027";
-          proxyWebsockets = true;  # Panel uses WebSockets for live console output
+          proxyWebsockets = true; # Panel uses WebSockets for live console output
           extraConfig = ''
             ${internalOnly}
-          '';
-        };
-      };
-
-      # RustDesk server landing page
-      # NOTE: Port 21114 admin UI only exists in RustDesk Pro - not in OSS image.
-      # This virtualHost secures the domain with TLS and provides a static info page.
-      # Clients use ra.reinitialized.net as the ID/relay server address directly (not via HTTP).
-      "ra.reinitialized.net" = {
-        forceSSL = true;
-        enableACME = true;
-        acmeRoot = null;
-        listenAddresses = [
-          "10.1.12.4"
-        ];
-
-        locations."/" = {
-          extraConfig = ''
-            ${internalOnly}
-            default_type text/plain;
-            return 200 "RustDesk Self-Hosted Server\nID/Rendezvous: ra.reinitialized.net:21116\nRelay: ra.reinitialized.net:21117\n";
           '';
         };
       };

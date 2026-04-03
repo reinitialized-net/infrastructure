@@ -55,6 +55,10 @@
             claim_value: Super Administrators
           - role_name: user
             claim_value: OwnCloud - Users
+          - role_name: user
+            claim_value: Super User
+          - role_name: user
+            claim_value: Super Users
   '';
 
   # Hosted Services

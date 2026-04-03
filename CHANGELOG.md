@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.2] - 2026-04-03
+
+### Fixed
+- **ownCloud (OCIS)**: Added "Super User" to OIDC role mapping in `apps3.nix` to handle inherited group memberships from Authentik that fail recursive resolution during OIDC flows.
+
+## [1.3.1] - 2026-04-02
+
+### Added
+- **Immich**: OIDC authentication configuration via Authentik
+  - Added `IMMICH_OIDC_*` environment variables to `modules/secrets/apps3.nix`
+  - Enabled auto-registration and configured OIDC issuer/client settings
+
 ## [1.3.0] - 2026-04-01
 
 ### Added
