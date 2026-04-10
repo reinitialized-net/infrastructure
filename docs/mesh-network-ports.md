@@ -77,15 +77,7 @@ Quick reference for all mesh network port mappings using the incremental scheme 
 | 1025 | tuwunel | TCP | Tuwunel Matrix homeserver HTTP API |
 | 1026 | paperless-ngx | TCP | Paperless-ngx document management web UI |
 | 1027 | pelican-panel | TCP | Pelican Panel game server management web UI |
-| 1028 | rustdesk-hbbs | TCP | RustDesk NAT type test (port 21115) |
-| 1029 | rustdesk-hbbs | TCP+UDP | RustDesk TCP/UDP hole-punch / ID registration (port 21116) |
-| 1030 | rustdesk-hbbs | TCP | RustDesk hbbs WebSocket (port 21118) |
-| 1031 | rustdesk-hbbr | TCP | RustDesk relay (port 21117) |
-| 1032 | rustdesk-hbbr | TCP | RustDesk hbbr WebSocket (port 21119) |
-
-**Next Available Port:** 1033
-
-> **Note:** Port 21114 (admin web UI) is a RustDesk **Pro** feature and is not available in the OSS `rustdesk/rustdesk-server` image.
+**Next Available Port:** 1028
 
 ## gs1 (10.255.0.6)
 

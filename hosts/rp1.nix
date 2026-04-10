@@ -177,38 +177,6 @@ in
           "192.168.0.0/16"
         ];
       }
-      # RustDesk self-hosted server (ra.reinitialized.net)
-      # Clients connect to these ports directly; must be publicly accessible
-      {
-        port = 21115;
-        protocol = "tcp";
-        ipType = "ipv4";
-        source = [ "0.0.0.0/0" ];
-      }
-      {
-        port = 21116;
-        protocol = "tcp_udp";
-        ipType = "ipv4";
-        source = [ "0.0.0.0/0" ];
-      }
-      {
-        port = 21117;
-        protocol = "tcp";
-        ipType = "ipv4";
-        source = [ "0.0.0.0/0" ];
-      }
-      {
-        port = 21118;
-        protocol = "tcp";
-        ipType = "ipv4";
-        source = [ "0.0.0.0/0" ];
-      }
-      {
-        port = 21119;
-        protocol = "tcp";
-        ipType = "ipv4";
-        source = [ "0.0.0.0/0" ];
-      }
     ];
   };
   systemd.network.networks = {
@@ -341,22 +309,6 @@ in
       upstream stalwartOneSieve {
         server 10.255.0.3:1036;
       }
-      # RustDesk self-hosted server (apps3)
-      upstream rustdeskHbbsNatTest {
-        server 10.255.0.5:1028;
-      }
-      upstream rustdeskHbbsHolePunch {
-        server 10.255.0.5:1029;
-      }
-      upstream rustdeskHbbsWebSocket {
-        server 10.255.0.5:1030;
-      }
-      upstream rustdeskHbbrRelay {
-        server 10.255.0.5:1031;
-      }
-      upstream rustdeskHbbrWebSocket {
-        server 10.255.0.5:1032;
-      }
 
       # Local intermediate for mail HTTPS: adds PROXY protocol before
       # forwarding to Stalwart's HTTPS listener. Needed because the SNI routing
@@ -465,62 +417,6 @@ in
         proxy_pass unifiDiscovery;
       }
 
-      ## RustDesk Listeners on 10.1.12.4 (apps3)
-      # Clients connect to ra.reinitialized.net which resolves to 10.1.12.4
-
-      # hbbs - NAT type test (TCP)
-      server {
-        listen 10.1.12.4:21115;
-        proxy_pass rustdeskHbbsNatTest;
-        proxy_connect_timeout 10s;
-        proxy_timeout 60s;
-      }
-
-      # hbbs - ID registration + relay assignment (TCP)
-      # Persistent connection; client keeps this open to receive events from hbbs
-      server {
-        listen 10.1.12.4:21116;
-        proxy_pass rustdeskHbbsHolePunch;
-        proxy_connect_timeout 10s;
-        proxy_timeout 300s;
-      }
-
-      # hbbs - NAT punch / heartbeat (UDP)
-      # proxy_responses 0 = unlimited datagrams per session; session closes by timeout.
-      # hbbs may send multiple UDP packets per registration/heartbeat cycle
-      # (e.g. punch notifications to both peers), so proxy_responses 1 would drop them.
-      server {
-        listen 10.1.12.4:21116 udp;
-        proxy_pass rustdeskHbbsHolePunch;
-        proxy_timeout 60s;
-        proxy_responses 0;
-      }
-
-      # hbbs - WebSocket (TCP)
-      server {
-        listen 10.1.12.4:21118;
-        proxy_pass rustdeskHbbsWebSocket;
-        proxy_connect_timeout 10s;
-        proxy_timeout 300s;
-      }
-
-      # hbbr - Relay (TCP)
-      # Must stay open for the full duration of a remote desktop session;
-      # 86400s (24 h) prevents nginx from dropping active sessions.
-      server {
-        listen 10.1.12.4:21117;
-        proxy_pass rustdeskHbbrRelay;
-        proxy_connect_timeout 10s;
-        proxy_timeout 86400s;
-      }
-
-      # hbbr - WebSocket relay (TCP)
-      server {
-        listen 10.1.12.4:21119;
-        proxy_pass rustdeskHbbrWebSocket;
-        proxy_connect_timeout 10s;
-        proxy_timeout 86400s;
-      }
 
       ## Stalwart Mail Listeners on 10.1.12.2 (stalwartOne)
       ## All include proxy_protocol so Stalwart receives real client IPs
