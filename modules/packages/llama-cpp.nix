@@ -4,18 +4,15 @@
   fetchFromGitHub,
   cmake,
   gitMinimal,
-  clblast,
   libdrm,
   rocmPackages,
-  rocmGpuTargets ? rocmPackages.clr.localGpuTargets or (rocmPackages.clr.gpuTargets or [ ]),
   cudaPackages,
   cudaArches ? cudaPackages.flags.realArches or [ ],
   autoAddDriverRunpath,
   vulkan-loader,
   vulkan-headers,
-  shaderc,
+  openssl,
   buildEnv,
-  licenses,
 
   config,
   # one of `[ null false "rocm" "cuda" "vulkan" ]`
@@ -98,7 +95,7 @@ stdenv.mkDerivation {
     owner = "ggerganov";
     repo = "llama.cpp";
     rev = "b8748"; 
-    hash = "sha256-TjP1K3L0q1Zk7X2XzG9k0L3m5P6Q7R8S9T0U1V2W3X4="; # Hash will be updated by Nix during build if using a fixed-output derivation or I should let it be for now as the user knows it's a placeholder. Actually I should leave the hash as is if I don't have the real one, but it will fail. 
+    hash = "sha256-57RU5aNACYrk4EXS+6Y3bd2zT0jv9Rs1auRSmcMPoL8=";
   };
 
   nativeBuildInputs = [
@@ -112,13 +109,15 @@ stdenv.mkDerivation {
   ++ lib.optionals enableCuda [ cudaPackages.cuda_nvcc ];
 
   buildInputs =
-    lib.optionals enableRocm (rocmLibs ++ [ libdrm ])
+    [ openssl ]
+    ++ lib.optionals enableRocm (rocmLibs ++ [ libdrm ])
     ++ lib.optionals enableCuda cudaLibs
     ++ lib.optionals enableVulkan vulkanLibs;
 
   cmakeFlags = [
     "-DBUILD_SHARED_LIBS=OFF"
     "-DLLAMA_BUILD_SERVER=ON"
+    "-DLLAMA_OPENSSL=ON"
   ]
   ++ lib.optionals enableCuda [ "-DGGML_CUDA=ON" ]
   ++ lib.optionals enableRocm [ "-DGGML_HIPBLAS=ON" ]
@@ -137,7 +136,7 @@ stdenv.mkDerivation {
   meta = {
     description = "Llama.cpp - Port of llama.cpp in C/C++";
     homepage = "https://github.com/ggerganov/llama.cpp";
-    license = licenses.mit;
+    license = lib.licenses.mit;
     maintainers = [ ];
   };
 }

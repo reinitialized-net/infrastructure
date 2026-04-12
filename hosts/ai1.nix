@@ -5,10 +5,33 @@
   pkgs,
   ...
 }:{
+  imports = [
+    (import "${self}/library/makeUser.nix" {
+      username = "llamacpp";
+      group = "llamacpp";
+      homeDirectory = "/var/lib/llamacpp";
+      dataPath = "/mnt/data/llamacpp";
+      extraUserAttrs = {
+        isSystemUser = true;
+        description = "llama.cpp service user";
+      };
+    })
+    (import "${self}/library/makeUser.nix" {
+      username = "openclaw";
+      group = "openclaw";
+      homeDirectory = "/var/lib/openclaw";
+      dataPath = "/mnt/data/openclaw";
+      extraUserAttrs = {
+        isSystemUser = true;
+        description = "OpenClaw service user";
+      };
+    })
+  ];
   # Networking Configuration
   networking = {
     hostName = "ai1";
     useDHCP = false;
+    firewall.enable = true;
 
     firewall.allowlist = [
       {
@@ -41,31 +64,10 @@
       matchConfig.Path = "pci-0000:06:12.0";
     };
   };
-
-  nixpkgs.config.allowUnfreePredicate = pkg: false;
-  # Create dedicated users
-  users = {
-    groups = {
-      llamacpp = {};
-      openclaw = {};
-    };
-
-    users = {
-      llamacpp = {
-        isSystemUser = true;
-        group = "llamacpp";
-        description = "llama.cpp service user";
-      };
-      openclaw = {
-        isSystemUser = true;
-        group = "openclaw";
-        description = "OpenClaw service user";
-      };
-    };
-  };
+  
   # Create required files
   systemd.tmpfiles.rules = [
-    "d /mnt/data/models 0755 llamacpp llamacpp -"
+    "d /mnt/data/llamacpp/.cache 0755 llamacpp llamacpp -"
   ];
   # Enable required services
   services = {
@@ -83,12 +85,17 @@
     serviceConfig = {
       User = "llamacpp";
       Group = "llamacpp";
+      Environment = [
+        "LLAMA_CACHE_DIR=/mnt/data/llamacpp/.cache"
+        "HOME=/var/lib/llamacpp"
+        "XDG_CACHE_HOME=/mnt/data/llamacpp/.cache"
+      ];
       ExecStart = "${pkgs.callPackage "${self}/modules/packages/llama-cpp.nix" { acceleration = false; }}/bin/llama-server "
-        + "-m /mnt/data/models/model.gguf "
+        + "-hf unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q8_K_XL "
         + "--host 0.0.0.0 "
         + "--port 8080 "
         + "--embedding "
-        + "--ctx-size 4096";
+        + "-ngl 0";
       Restart = "always";
     };
   };

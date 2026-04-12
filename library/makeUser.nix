@@ -1,4 +1,3 @@
-{}: 
 /**
   Creates a user with their home directory bind mounted from /mnt/data 
   and ensures proper permissions are set.
@@ -53,11 +52,11 @@
 { lib, config, ... }:
 let
   userConfig = {
-    isNormalUser = lib.mkDefault true;
     inherit group;
     home = homeDirectory;
     createHome = false;  # We'll create via tmpfiles
   } // (if uid != null then { inherit uid; } else {})
+    // (if (builtins.hasAttr "isSystemUser" extraUserAttrs || builtins.hasAttr "isNormalUser" extraUserAttrs) then {} else { isNormalUser = lib.mkDefault true; })
     // extraUserAttrs;
 
   groupConfig = {
