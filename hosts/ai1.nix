@@ -1,29 +1,31 @@
 {
   self,
+  nixpkgsUnstable,
+  config,
   lib,
   system,
   pkgs,
   ...
-}:{
-  imports = [
-    (import "${self}/library/makeUser.nix" {
-      username = "llamacpp";
-      group = "llamacpp";
-      homeDirectory = "/var/lib/llamacpp";
-      dataPath = "/mnt/data/llamacpp";
-      extraUserAttrs = {
-        isSystemUser = true;
-        description = "llama.cpp service user";
+}:
+  let
+    pkgsUnstable = import nixpkgsUnstable {
+      system = system;
+      config = {
+        permittedInsecurePackages = [ "openclaw-2026.4.2" ];
       };
-    })
+    };
+  in {
+  imports = [
     (import "${self}/library/makeUser.nix" {
       username = "openclaw";
       group = "openclaw";
       homeDirectory = "/var/lib/openclaw";
       dataPath = "/mnt/data/openclaw";
+      extraGroups = lib.mkDefault [ "wheel" ];
       extraUserAttrs = {
         isSystemUser = true;
         description = "OpenClaw service user";
+        shell = "${pkgs.bash}/bin/bash";
       };
     })
   ];
@@ -35,7 +37,7 @@
 
     firewall.allowlist = [
       {
-        port = 8080;
+        port = 18789;
         protocol = "tcp_udp";
         ipType = "ipv4";
         source = [
@@ -67,7 +69,8 @@
   
   # Create required files
   systemd.tmpfiles.rules = [
-    "d /mnt/data/llamacpp/.cache 0755 llamacpp llamacpp -"
+    "d /mnt/data/openclaw/.cache 0755 openclaw openclaw -"
+    "d /mnt/data/openclaw/state 0755 openclaw openclaw -"
   ];
   # Enable required services
   services = {
@@ -76,29 +79,8 @@
 
   environment.systemPackages = [
     pkgs.nodejs_24
+    pkgsUnstable.openclaw
   ];
-
-  systemd.services.llama-cpp-server = {
-    description = "llama.cpp server";
-    after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
-    serviceConfig = {
-      User = "llamacpp";
-      Group = "llamacpp";
-      Environment = [
-        "LLAMA_CACHE_DIR=/mnt/data/llamacpp/.cache"
-        "HOME=/var/lib/llamacpp"
-        "XDG_CACHE_HOME=/mnt/data/llamacpp/.cache"
-      ];
-      ExecStart = "${pkgs.callPackage "${self}/modules/packages/llama-cpp.nix" { acceleration = false; }}/bin/llama-server "
-        + "-hf unsloth/gemma-4-26B-A4B-it-GGUF:UD-Q8_K_XL "
-        + "--host 0.0.0.0 "
-        + "--port 8080 "
-        + "--embedding "
-        + "-ngl 0";
-      Restart = "always";
-    };
-  };
 
   systemd.services.openclaw = {
     description = "OpenClaw AI Assistant Gateway";
@@ -107,7 +89,14 @@
     serviceConfig = {
       User = "openclaw";
       Group = "openclaw";
-      ExecStart = "${pkgs.nodejs_24}/bin/npx openclaw gateway start";
+      WorkingDirectory = "/mnt/data/openclaw";
+      Environment = [
+        "OPENCLAW_NIX_MODE=1"
+        "OPENCLAW_STATE_DIR=/mnt/data/openclaw"
+        "OPENCLAW_CONFIG_PATH=${config.secrets.openclaw.file}"
+        "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS=*"
+      ];
+      ExecStart = "${pkgsUnstable.openclaw}/bin/openclaw gateway run --allow-unconfigured --bind lan --allow-origins *";
       Restart = "always";
     };
   };

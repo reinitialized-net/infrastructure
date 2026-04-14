@@ -13,6 +13,7 @@
     inherit self
       system
       defaultStateVersion;
+    inherit (self.inputs) nixpkgsUnstable;
     inherit (nixpkgs) lib;
   };
   modules = modules ++ [

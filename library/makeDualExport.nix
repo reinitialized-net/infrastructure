@@ -2,7 +2,7 @@
   defaultStateVersion,
   self,
   nixpkgs ? self.inputs.nixpkgsStable,
-}: host: args@{
+}: host: {
   # Common configuration
   system ? "x86_64-linux",
   hardware ? "qemu",

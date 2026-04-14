@@ -2,7 +2,6 @@
   defaultStateVersion,
   self,
   nixpkgs ? self.inputs.nixpkgsStable,
-  lib ? nixpkgs.lib,
   modulesPath ? "${self.inputs.nixpkgsStable}/nixos/modules",
 }: host: {
   vmId,
