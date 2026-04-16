@@ -11,7 +11,7 @@
     pkgsUnstable = import nixpkgsUnstable {
       system = system;
       config = {
-        permittedInsecurePackages = [ "openclaw-2026.4.2" ];
+        permittedInsecurePackages = [ "openclaw-2026.4.11" ];
       };
     };
   in {
@@ -19,7 +19,7 @@
     (import "${self}/library/makeUser.nix" {
       username = "openclaw";
       group = "openclaw";
-      homeDirectory = "/var/lib/openclaw";
+      homeDirectory = "/mnt/data/openclaw";
       dataPath = "/mnt/data/openclaw";
       extraGroups = lib.mkDefault [ "wheel" ];
       extraUserAttrs = {
