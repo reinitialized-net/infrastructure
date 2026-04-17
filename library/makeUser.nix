@@ -112,6 +112,17 @@ let
     # Create the directory on /mnt/data with correct ownership and permissions
     "d ${dataPath} ${homePermissions} ${username} ${primaryGroup} -"
   ];
+
+  # Only create bind mount if homeDirectory and dataPath are different
+  # When they're the same, the home directory is already on /mnt/data
+  bindMount = if homeDirectory != dataPath then {
+    fileSystems.${homeDirectory} = {
+      device = dataPath;
+      depends = [ "/mnt/data" ];
+      fsType = "none";
+      options = [ "bind" ];
+    };
+  } else {};
 in
 {
   assertions = [
@@ -128,13 +139,5 @@ in
   # Create and set permissions on the data directory
   systemd.tmpfiles.rules = tmpfilesRules;
 
-  # Bind mount from /mnt/data to home directory (only if they're different)
-  fileSystems = lib.mkIf (homeDirectory != dataPath) {
-    ${homeDirectory} = {
-      device = dataPath;
-      depends = [ "/mnt/data" ];
-      fsType = "none";
-      options = [ "bind" ];
-    };
-  };
-}
+  # Bind mount from /mnt/data to home directory (only if paths differ)
+} // bindMount

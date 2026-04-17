@@ -1,6 +1,6 @@
 {
   self,
-  nixpkgsUnstable,
+  nixpkgsMaster,
   config,
   lib,
   system,
@@ -8,10 +8,12 @@
   ...
 }:
   let
-    pkgsUnstable = import nixpkgsUnstable {
-      system = system;
+    # Import nixpkgsMaster with config to allow insecure openclaw package
+    pkgsMaster = import nixpkgsMaster {
+      inherit system;
       config = {
-        permittedInsecurePackages = [ "openclaw-2026.4.11" ];
+        allowUnfree = true;
+        permittedInsecurePackages = [ "openclaw-2026.4.12" ];
       };
     };
   in {
@@ -27,6 +29,20 @@
         description = "OpenClaw service user";
         shell = "${pkgs.bash}/bin/bash";
       };
+    })
+  ];
+
+  # Set nixpkgs config to allow insecure packages
+  # This applies to the main pkgs (nixpkgsStable)
+  nixpkgs.config = {
+    allowUnfree = true;
+    permittedInsecurePackages = [ "openclaw-2026.4.12" ];
+  };
+
+  # Add overlay to bring openclaw from nixpkgsMaster into main pkgs
+  nixpkgs.overlays = [
+    (final: prev: {
+      openclaw = pkgsMaster.openclaw;
     })
   ];
   # Networking Configuration
@@ -67,20 +83,63 @@
     };
   };
   
-  # Create required files
+  # Deploy openclaw config from secrets
+  environment.etc."openclaw/openclaw.json" = {
+    source = config.secrets.openclaw.file;
+    mode = "0600";
+  };
+  
+  # Create shell profile with environment variables for openclaw user
+  environment.etc."skel/openclaw-profile" = {
+    text = ''
+      # OpenClaw environment variables - unified with systemd service
+      export OPENCLAW_CONFIG=/etc/openclaw/openclaw.json
+      export OPENCLAW_STATE_DIR=/mnt/data/openclaw/.openclaw
+      export OPENCLAW_NIX_MODE=1
+      export NPM_CONFIG_CACHE=/mnt/data/openclaw/.npm-cache
+    '';
+    mode = "0644";
+  };
+  
+  # Create required directories and files
   systemd.tmpfiles.rules = [
+    "d /mnt/data/openclaw 0755 openclaw openclaw -"
     "d /mnt/data/openclaw/.cache 0755 openclaw openclaw -"
-    "d /mnt/data/openclaw/state 0755 openclaw openclaw -"
+    "d /mnt/data/openclaw/.openclaw 0755 openclaw openclaw -"
+    "d /mnt/data/openclaw/.npm-cache 0755 openclaw openclaw -"
+    # Copy shell profile
+    "C+ /mnt/data/openclaw/.profile 0644 openclaw openclaw - /etc/skel/openclaw-profile"
   ];
+  
   # Enable required services
   services = {
     meshNetwork.enable = true;
   };
 
-  environment.systemPackages = [
-    pkgs.nodejs_24
-    pkgsUnstable.openclaw
+  environment.systemPackages = with pkgs; [
+    nodejs
+    uv
+    himalaya
+    openai-whisper
+    jq
+    tmux
+    ffmpeg
+
+    openclaw
   ];
+
+  # Enable automatic garbage collection to prevent disk space issues
+  nix.gc = {
+    automatic = true;
+    dates = "weekly";
+    options = "--delete-older-than 30d";
+  };
+
+  # Optimize Nix settings for AI workloads
+  nix.settings = {
+    auto-optimise-store = true;
+    experimental-features = [ "nix-command" "flakes" ];
+  };
 
   systemd.services.openclaw = {
     description = "OpenClaw AI Assistant Gateway";
@@ -92,11 +151,12 @@
       WorkingDirectory = "/mnt/data/openclaw";
       Environment = [
         "OPENCLAW_NIX_MODE=1"
-        "OPENCLAW_STATE_DIR=/mnt/data/openclaw"
-        "OPENCLAW_CONFIG_PATH=${config.secrets.openclaw.file}"
-        "OPENCLAW_CONTROL_UI_ALLOWED_ORIGINS=*"
+        "OPENCLAW_STATE_DIR=/mnt/data/openclaw/.openclaw"
+        "OPENCLAW_CONFIG=/etc/openclaw/openclaw.json"
+        # Set npm cache to data partition to avoid filling root filesystem
+        "NPM_CONFIG_CACHE=/mnt/data/openclaw/.npm-cache"
       ];
-      ExecStart = "${pkgsUnstable.openclaw}/bin/openclaw gateway run --allow-unconfigured --bind lan --allow-origins *";
+      ExecStart = "${pkgs.openclaw}/bin/openclaw gateway --port 18789 --bind loopback --allow-unconfigured --auth none";
       Restart = "always";
     };
   };
