@@ -3,13 +3,11 @@
   buildNpmPackage,
   fetchFromGitHub,
   nodejs,
+  stdenv,
   ...
 }:
 
-buildNpmPackage {
-  pname = "openclaw";
-  version = "2026.4.15";
-
+let
   src = fetchFromGitHub {
     owner = "openclaw";
     repo = "openclaw";
@@ -17,10 +15,28 @@ buildNpmPackage {
     hash = "sha256-QsoiV52a0rcTL4fvF6c/aC1/Krq4qKptYOwlW4N6/4c=";
   };
 
-  nativeBuildInputs = [ nodejs ];
+  # Generate the package-lock.json file
+  lockFile = stdenv.mkDerivation {
+    name = "openclaw-package-lock.json";
+    inherit src;
+    nativeBuildInputs = [ nodejs ];
+    phases = [ "unpackPhase" "buildPhase" "installPhase" ];
+    buildPhase = ''
+      npm install --package-lock-only --legacy-peer-deps
+    '';
+    installPhase = ''
+      cp package-lock.json $out
+    '';
+  };
+in
+buildNpmPackage {
+  pname = "openclaw";
+  version = "2026.4.15";
 
-  postPatch = ''
-    npm install --package-lock-only --legacy-peer-deps
+  inherit src;
+
+  postUnpack = ''
+    cp ${lockFile} source/package-lock.json
   '';
 
   npmDepsHash = "sha256-EVFah6DVKgdokKgv9UMQ1iBFwMuDUTONSsdZ7kqjyDw=";
