@@ -118,6 +118,8 @@
       User = "openclaw";
       Group = "openclaw";
       WorkingDirectory = "/mnt/data/openclaw";
+      # Ensure PATH includes all required binaries for npm and node scripts
+      Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
       # Use npm start or node with appropriate entry point
       ExecStart = "${pkgs.nodejs}/bin/npm start -- gateway";
       Restart = "always";
