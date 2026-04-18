@@ -23,8 +23,7 @@
     (if host == "standard" then {} else {
       imports = [ 
         "${self}/hosts/${host}.nix"
-        "${self}/modules/secrets/${host}.nix"
-      ];
+      ] ++ (if builtins.pathExists "${self}/modules/secrets/${host}.nix" then [ "${self}/modules/secrets/${host}.nix" ] else []);
     })
     {
       system.stateVersion = nixpkgs.lib.mkDefault defaultStateVersion;
