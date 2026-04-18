@@ -90,11 +90,13 @@
     ffmpeg
   ];
 
+  # OpenClaw service - disabled by default as it requires pnpm build
+  # To use: manually run setup script and start service
+  # systemctl start openclaw-gateway
   systemd.services.openclaw-gateway = {
     description = "OpenClaw AI Assistant Gateway";
     after = [ "network.target" ];
-    # Don't auto-start - requires manual setup with pnpm build
-    wantedBy = [ ];
+    enable = false;  # Don't enable by default
     
     # Pre-start script to copy source and install dependencies with network access
     preStart = ''
@@ -112,14 +114,6 @@
         export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
         ${pkgs.nodejs}/bin/npm install --legacy-peer-deps
         chown -R openclaw:openclaw /mnt/data/openclaw/node_modules
-      fi
-      
-      # Build TypeScript if dist/entry.js doesn't exist
-      if [ ! -f /mnt/data/openclaw/dist/entry.js ]; then
-        cd /mnt/data/openclaw
-        export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
-        # Try to build with npm (pnpm will be installed as a dependency)
-        ${pkgs.nodejs}/bin/npm run build 2>&1 || true
       fi
     '';
     
