@@ -110,6 +110,8 @@
         # Ensure git, curl, node, and sh are available for npm's dependency resolution and postinstall scripts
         export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
         ${pkgs.nodejs}/bin/npm install --legacy-peer-deps
+        # Also install pnpm locally since the build scripts require it
+        ${pkgs.nodejs}/bin/npm install pnpm@10.32.1 --no-save
         chown -R openclaw:openclaw /mnt/data/openclaw/node_modules
       fi
       
@@ -118,7 +120,8 @@
         cd /mnt/data/openclaw
         export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
         echo "Running TypeScript build..."
-        ${pkgs.nodejs}/bin/npm run build
+        # Use locally installed pnpm via npx
+        ${pkgs.nodejs}/bin/npx pnpm run build
         chown -R openclaw:openclaw /mnt/data/openclaw/dist
       fi
     '';
