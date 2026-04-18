@@ -21,6 +21,11 @@ stdenv.mkDerivation {
   nativeBuildInputs = [ nodejs pnpm ];
 
   buildPhase = ''
+    # Set pnpm home to a writable location in the build directory
+    export PNPM_HOME="$PWD/.pnpm"
+    mkdir -p "$PNPM_HOME"
+    export PATH="$PNPM_HOME:$PATH"
+    
     # Install dependencies with pnpm
     pnpm install --frozen-lockfile
     
