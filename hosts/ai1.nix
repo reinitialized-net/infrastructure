@@ -88,6 +88,7 @@
     jq
     tmux
     ffmpeg
+    nodePackages.pnpm
   ];
 
   systemd.services.openclaw-gateway = {
@@ -107,10 +108,19 @@
       # Install dependencies if needed (with network access enabled here)
       if [ ! -d /mnt/data/openclaw/node_modules ]; then
         cd /mnt/data/openclaw
-        # Ensure git, curl, node, and sh are available for npm's dependency resolution and postinstall scripts
-        export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
+        # Ensure git, curl, node, pnpm, and sh are available for npm's dependency resolution and postinstall scripts
+        export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.nodePackages.pnpm}/bin:$PATH"
         ${pkgs.nodejs}/bin/npm install --legacy-peer-deps
         chown -R openclaw:openclaw /mnt/data/openclaw/node_modules
+      fi
+      
+      # Run the TypeScript build if dist directory is missing or empty
+      if [ ! -f /mnt/data/openclaw/dist/index.js ]; then
+        cd /mnt/data/openclaw
+        export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.nodePackages.pnpm}/bin:$PATH"
+        echo "Running TypeScript build..."
+        ${pkgs.nodePackages.pnpm}/bin/pnpm build
+        chown -R openclaw:openclaw /mnt/data/openclaw/dist
       fi
     '';
     
@@ -118,8 +128,8 @@
       User = "openclaw";
       Group = "openclaw";
       WorkingDirectory = "/mnt/data/openclaw";
-      # Ensure PATH includes all required binaries for npm and node scripts
-      Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
+      # Ensure PATH includes all required binaries for npm, pnpm, and node scripts
+      Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.nodePackages.pnpm}/bin:/usr/local/bin:/usr/bin:/bin";
       # TypeScript build can take a while, increase timeout significantly
       TimeoutStartSec = 600;
       # Use npm start which properly resolves modules and runs the start script
