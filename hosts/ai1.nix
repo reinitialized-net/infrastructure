@@ -107,8 +107,8 @@
       # Install dependencies if needed (with network access enabled here)
       if [ ! -d /mnt/data/openclaw/node_modules ]; then
         cd /mnt/data/openclaw
-        # Ensure git, curl, and sh are available for npm's dependency resolution
-        export PATH="${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
+        # Ensure git, curl, node, and sh are available for npm's dependency resolution and postinstall scripts
+        export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
         ${pkgs.nodejs}/bin/npm install --legacy-peer-deps
         chown -R openclaw:openclaw /mnt/data/openclaw/node_modules
       fi
