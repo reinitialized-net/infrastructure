@@ -119,7 +119,7 @@
         cd /mnt/data/openclaw
         export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:${pkgs.nodePackages.pnpm}/bin:$PATH"
         echo "Running TypeScript build..."
-        ${pkgs.nodePackages.pnpm}/bin/pnpm build
+        ${pkgs.nodejs}/bin/npm run build
         chown -R openclaw:openclaw /mnt/data/openclaw/dist
       fi
     '';
