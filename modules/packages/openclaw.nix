@@ -1,4 +1,4 @@
-{
+{ 
   lib,
   buildNpmPackage,
   fetchFromGitHub,
@@ -24,4 +24,3 @@ buildNpmPackage {
     ln -s $out/bin/openclaw $out/bin/openclaw 
   '';
 }
-/t
