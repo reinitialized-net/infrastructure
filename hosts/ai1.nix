@@ -90,15 +90,12 @@
     ffmpeg
   ];
 
-  # OpenClaw service - disabled by default as it requires pnpm build
-  # To use: manually run setup script and start service
-  # systemctl start openclaw-gateway
   systemd.services.openclaw-gateway = {
     description = "OpenClaw AI Assistant Gateway";
     after = [ "network.target" ];
-    enable = false;  # Don't enable by default
+    wantedBy = [ "multi-user.target" ];
     
-    # Pre-start script to copy source and install dependencies with network access
+    # Pre-start script to copy source if needed
     preStart = ''
       # Copy openclaw source if not already present
       if [ ! -f /mnt/data/openclaw/package.json ]; then
@@ -106,29 +103,20 @@
         cp -r ${openclaw}/lib/openclaw/* /mnt/data/openclaw/
         chown -R openclaw:openclaw /mnt/data/openclaw
       fi
-      
-      # Install dependencies if needed (with network access enabled here)
-      if [ ! -d /mnt/data/openclaw/node_modules ]; then
-        cd /mnt/data/openclaw
-        # Ensure git, curl, node, and sh are available for npm's dependency resolution and postinstall scripts
-        export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
-        ${pkgs.nodejs}/bin/npm install --legacy-peer-deps
-        chown -R openclaw:openclaw /mnt/data/openclaw/node_modules
-      fi
     '';
     
     serviceConfig = {
       User = "openclaw";
       Group = "openclaw";
       WorkingDirectory = "/mnt/data/openclaw";
-      # Ensure PATH includes all required binaries for npm and node scripts
+      # Ensure PATH includes all required binaries
       Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
-      # TypeScript build can take a while, increase timeout significantly
-      TimeoutStartSec = 600;
+      # Startup timeout for initial operations
+      TimeoutStartSec = 120;
       # Run openclaw CLI directly - entry point is openclaw.mjs
       ExecStart = "${pkgs.nodejs}/bin/node openclaw.mjs gateway";
-      Restart = "always";
-      RestartSec = 30;
+      Restart = "on-failure";
+      RestartSec = 10;
     };
   };
 }
