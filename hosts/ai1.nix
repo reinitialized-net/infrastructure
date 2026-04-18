@@ -120,9 +120,12 @@
       WorkingDirectory = "/mnt/data/openclaw";
       # Ensure PATH includes all required binaries for npm and node scripts
       Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
+      # TypeScript build can take a while, increase timeout significantly
+      TimeoutStartSec = 600;
       # Use npm start or node with appropriate entry point
       ExecStart = "${pkgs.nodejs}/bin/npm start -- gateway";
       Restart = "always";
+      RestartSec = 30;
     };
   };
 }
