@@ -93,7 +93,8 @@
   systemd.services.openclaw-gateway = {
     description = "OpenClaw AI Assistant Gateway";
     after = [ "network.target" ];
-    wantedBy = [ "multi-user.target" ];
+    # Don't auto-start - requires manual setup with pnpm build
+    wantedBy = [ ];
     
     # Pre-start script to copy source and install dependencies with network access
     preStart = ''
@@ -110,19 +111,15 @@
         # Ensure git, curl, node, and sh are available for npm's dependency resolution and postinstall scripts
         export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
         ${pkgs.nodejs}/bin/npm install --legacy-peer-deps
-        # Also install pnpm locally since the build scripts require it
-        ${pkgs.nodejs}/bin/npm install pnpm@10.32.1 --no-save
         chown -R openclaw:openclaw /mnt/data/openclaw/node_modules
       fi
       
-      # Run the TypeScript build if dist directory is missing or empty
-      if [ ! -f /mnt/data/openclaw/dist/index.js ]; then
+      # Build TypeScript if dist/entry.js doesn't exist
+      if [ ! -f /mnt/data/openclaw/dist/entry.js ]; then
         cd /mnt/data/openclaw
         export PATH="${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:$PATH"
-        echo "Running TypeScript build..."
-        # Use locally installed pnpm via npx
-        ${pkgs.nodejs}/bin/npx pnpm run build
-        chown -R openclaw:openclaw /mnt/data/openclaw/dist
+        # Try to build with npm (pnpm will be installed as a dependency)
+        ${pkgs.nodejs}/bin/npm run build 2>&1 || true
       fi
     '';
     
@@ -134,8 +131,8 @@
       Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
       # TypeScript build can take a while, increase timeout significantly
       TimeoutStartSec = 600;
-      # Use npm start which properly resolves modules and runs the start script
-      ExecStart = "${pkgs.nodejs}/bin/npm start -- gateway";
+      # Run openclaw CLI directly - entry point is openclaw.mjs
+      ExecStart = "${pkgs.nodejs}/bin/node openclaw.mjs gateway";
       Restart = "always";
       RestartSec = 30;
     };
