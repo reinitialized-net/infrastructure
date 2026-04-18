@@ -122,8 +122,8 @@
       Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
       # TypeScript build can take a while, increase timeout significantly
       TimeoutStartSec = 600;
-      # Run openclaw CLI directly - entry point is openclaw.mjs
-      ExecStart = "${pkgs.nodejs}/bin/node openclaw.mjs gateway";
+      # Use npm start which properly resolves modules and runs the start script
+      ExecStart = "${pkgs.nodejs}/bin/npm start -- gateway";
       Restart = "always";
       RestartSec = 30;
     };
