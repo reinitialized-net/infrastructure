@@ -16,7 +16,7 @@ buildNpmPackage {
     hash = "sha256-QsoiV52a0rcTL4fvF6c/aC1/Krq4qKptYOwlW4N6/4c=";
   };
 
-  npmDepsHash = "sha256-1r2mj1qy2j5lagcg5x7rc733pilf8wppzq7wmwngfd352q0zp48l";
+  npmDepsHash = "sha256-EVFah6DVKgdokKgv9UMQ1iBFwMuDUTONSsdZ7kqjyDw=";
 
   installPhase = ''
     mkdir -p $out/bin
