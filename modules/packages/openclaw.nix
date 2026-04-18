@@ -17,6 +17,8 @@ buildNpmPackage {
     hash = "sha256-QsoiV52a0rcTL4fvF6c/aC1/Krq4qKptYOwlW4N6/4c=";
   };
 
+  nativeBuildInputs = [ nodejs ];
+
   postPatch = ''
     npm install --package-lock-only --legacy-peer-deps
   '';
