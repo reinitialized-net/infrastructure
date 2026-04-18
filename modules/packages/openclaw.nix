@@ -27,7 +27,7 @@ stdenv.mkDerivation {
     export PATH="$PNPM_HOME:$PATH"
     
     # Install dependencies with pnpm
-    pnpm install --frozen-lockfile
+    pnpm install --frozen-lockfile --child-concurrency 1
     
     # Build TypeScript
     pnpm run build
