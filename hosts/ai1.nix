@@ -25,6 +25,11 @@
     })
   ];
 
+  # Allow insecure packages
+  nixpkgs.config.permittedInsecurePackages = [
+    "openclaw-2026.4.15"
+  ];
+
   # Networking Configuration
   networking = {
     hostName = "ai1";
@@ -79,7 +84,9 @@
 
   environment.systemPackages = with pkgs; [
     bash
+    coreutils
     nodejs
+    pnpm
     git
     curl
     uv
@@ -90,20 +97,63 @@
     ffmpeg
   ];
 
-  systemd.services.openclaw-gateway = {
-    description = "OpenClaw AI Assistant Gateway";
-    after = [ "network.target" ];
+  systemd.services.swap-setup = {
+    description = "Setup 16GB swap file for memory-intensive builds";
+    after = [ "local-fs.target" ];
     wantedBy = [ "multi-user.target" ];
-    
-    # Pre-start script to copy source if needed
-    preStart = ''
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      Environment = "PATH=/run/current-system/sw/bin:/usr/bin:/bin";
+    };
+    script = ''
+      if [ ! -f /mnt/data/swapfile ] || [ $(stat -c%s /mnt/data/swapfile) -lt 68719476736 ]; then
+        echo "Creating 64GB swap file on /mnt/data..."
+        swapoff /mnt/data/swapfile || true
+        dd if=/dev/zero of=/mnt/data/swapfile bs=1M count=65536
+        chmod 600 /mnt/data/swapfile
+        mkswap /mnt/data/swapfile
+        swapon /mnt/data/swapfile
+        echo "Swap file created and activated."
+      fi
+    '';
+  };
+
+  systemd.services.openclaw-build = {
+    description = "Build OpenClaw from source on host";
+    after = [ "network.target" "swap-setup.service" ];
+    wantedBy = [ "multi-user.target" ];
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      User = "openclaw";
+      Group = "openclaw";
+      WorkingDirectory = "/mnt/data/openclaw";
+      Environment = "PATH=/run/current-system/sw/bin:${pkgs.nodejs}/bin:${pkgs.pnpm}/bin:${pkgs.git}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
+    };
+    script = ''
       # Copy openclaw source if not already present
       if [ ! -f /mnt/data/openclaw/package.json ]; then
         mkdir -p /mnt/data/openclaw
         cp -r ${openclaw}/lib/openclaw/* /mnt/data/openclaw/
         chown -R openclaw:openclaw /mnt/data/openclaw
       fi
+
+      # Build on host to avoid OOM on devenv
+      if [ ! -f /mnt/data/openclaw/dist/entry.mjs ] && [ ! -f /mnt/data/openclaw/dist/entry.js ]; then
+        ${openclaw}/bin/openclaw-build /mnt/data/openclaw
+      else
+        echo "Openclaw already built, skipping."
+      fi
     '';
+  };
+
+  systemd.services.openclaw-gateway = {
+    enable = true;
+    description = "OpenClaw AI Assistant Gateway";
+    after = [ "network.target" "openclaw-build.service" ];
+    requires = [ "openclaw-build.service" ];
+    wantedBy = [ "multi-user.target" ];
     
     serviceConfig = {
       User = "openclaw";
@@ -113,7 +163,7 @@
       Environment = "PATH=${pkgs.nodejs}/bin:${pkgs.git}/bin:${pkgs.curl}/bin:${pkgs.bash}/bin:/usr/local/bin:/usr/bin:/bin";
       # Startup timeout for initial operations
       TimeoutStartSec = 120;
-      # Run openclaw CLI directly - entry point is openclaw.mjs
+      # Run openclaw CLI directly - entry point is openclaw.mjs (created during build)
       ExecStart = "${pkgs.nodejs}/bin/node openclaw.mjs gateway";
       Restart = "on-failure";
       RestartSec = 10;
