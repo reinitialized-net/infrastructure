@@ -230,7 +230,6 @@ in
         "--dns-timeout=300"
       ];
     };
-    # mail.reinitialized.net cert removed: Stalwart handles its own TLS via native ACME (HTTP-01)
   };
 
   # Nginx Reverse Proxy
@@ -977,6 +976,27 @@ in
             proxy_read_timeout 1200s;
             proxy_send_timeout 1200s;
             send_timeout 1200s;
+          '';
+        };
+      };
+
+      # SearXNG (Privacy-respecting Metasearch Engine)
+      "search.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.5:1029";
+          extraConfig = ''
+            # SearXNG specific proxy settings
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
           '';
         };
       };

@@ -239,6 +239,34 @@
             "${inputs.self}/modules/profiles/mountData.nix"
           ];
         };
+        # gs1 = library.makeDualExport "gs1" {
+        #   system = "x86_64-linux";
+        #   vmId = 209;
+        #   enableProtection = true;
+        #   memory = 8192;
+        #   disks = [
+        #     { 
+        #       storage = "hotData";
+        #       size = 20; 
+        #     }
+        #     { 
+        #       storage = "coldData";
+        #       size = 100;
+        #     }
+        #   ];
+        #   networking = [
+        #     { 
+        #       bridge = "vmbr0";
+        #       firewall = false;
+        #       vlan = 11;
+        #     }
+        #   ];
+        #   modules = [
+        #     inputs.vscodeServer.nixosModules.default
+        #     "${inputs.self}/modules/profiles/containers"
+        #     "${inputs.self}/modules/profiles/mountData.nix"
+        #   ];
+        # };
       };
     in
     {

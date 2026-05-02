@@ -174,5 +174,21 @@
         "/etc/ocis/proxy.yaml:/etc/ocis/proxy.yaml:ro"
       ];
     };
+
+    ### SearXNG (Privacy-respecting Metasearch Engine)
+    searxng = {
+      autoStart = true;
+      hostname = "searxng";
+      image = "searxng/searxng:latest";
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.5:1029:8080/tcp"  # SearXNG web UI
+      ];
+      volumes = [
+        "searxng_config:/etc/searxng"
+      ];
+    };
   };
 }

@@ -1,8 +1,17 @@
 {
   self,
+  nixpkgsUnstable,
   pkgs,
+  system,
   ...
-}: {
+}:
+let
+  pkgsUnstable = import nixpkgsUnstable {
+    inherit system;
+    config = pkgs.config;
+  };
+in
+{
   imports = [
     # DevEnv-exclusive fleet management & infrastructure tools
     ./devenv/devenvTools.nix
@@ -71,9 +80,12 @@
 
     nixd
     nixfmt-rfc-style
-    
+
     # GPG tools - pinentry must be in PATH for GPG agent
     pinentry-curses
+
+    pkgsUnstable.opencode
+    pkgsUnstable.codex
   ];
   # Enable required programs
   programs = {
