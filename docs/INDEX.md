@@ -50,6 +50,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 
 ## Architecture Documentation
 
+- **[Authentik OIDC Auto-Registration](architecture/authentik-oidc-auto-registration.md)** - SSO with automatic account provisioning across all Authentik-managed services
 - **[Technitium DNS Cluster](architecture/technitium-dns-cluster.md)** - Authoritative DNS cluster with centralized certificate management
 
 ## Documentation by Topic
@@ -70,7 +71,8 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 **Security Configuration:**
 1. [Firewall Allowlist/Denylist](modules/firewall.md)
 2. [Secrets Management](modules/secrets.md)
-3. [Examples → Secure Application](examples.md#secure-application-with-firewall)
+3. [Authentik OIDC Auto-Registration](architecture/authentik-oidc-auto-registration.md)
+4. [Examples → Secure Application](examples.md#secure-application-with-firewall)
 
 **Mesh Networking:**
 1. [Mesh Network Module](modules/meshNetwork.md)
@@ -106,6 +108,7 @@ Complete documentation for the Reinitialized Infrastructure NixOS Flake.
 | Set up Docker cluster | [Multi-Host Example](examples.md#multi-host-docker-cluster) |
 | Configure firewall rules | [Firewall Module](modules/firewall.md) |
 | Manage secrets | [Secrets Module](modules/secrets.md) |
+| Manage SSO/OIDC | [Authentik OIDC](architecture/authentik-oidc-auto-registration.md) |
 | Create mesh network | [Mesh Network Module](modules/meshNetwork.md) |
 | Mount data disk | [Mount Data Profile](modules/mountData.md) |
 | Create users with data homes | [makeUser](library-functions.md#makeuser) |
@@ -202,6 +205,7 @@ docs/
 ├── bash-script-tools.md         # Bash tool organization patterns
 ├── mesh-network-ports.md        # Port allocation reference
 ├── architecture/
+│   ├── authentik-oidc-auto-registration.md # SSO with OIDC auto-registration
 │   └── technitium-dns-cluster.md # DNS cluster architecture
 ├── examples/
 │   └── makeUser.md              # User management examples

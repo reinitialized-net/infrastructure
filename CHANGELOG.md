@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-05-05
+
+### Added
+- **Forgejo**: OIDC auto-registration via Authentik
+  - Added `FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION` and `FORGEJO__oauth2_client__ACCOUNT_LINKING` environment variables to `modules/secrets/apps1.nix`
+  - Updated `hosts/apps1.nix` to pass Forgejo secrets to the container
+  - Updated `modules/secrets.example/apps1.nix` with Forgejo OIDC configuration
+- **Immich**: Updated `modules/secrets.example/apps3.nix` with OIDC environment variables to match real secrets
+
+### Documentation
+- Verified OIDC auto-registration status across all Authentik-managed services (Forgejo, Immich, ownCloud)
+- OwnCloud (`PROXY_AUTOPROVISION_ACCOUNTS`) and Immich (`IMMICH_OIDC_AUTO_REGISTER`) were already configured
+
 ## [1.3.2] - 2026-04-03
 
 ### Fixed

@@ -103,6 +103,17 @@
       };
     };
 
+    forgejo = {
+      description = "Forgejo git forge configuration";
+      keys = {
+        # Auto-registration for OAuth2/OIDC logins via Authentik
+        # ENABLE_AUTO_REGISTRATION: Creates a new user account on first OIDC login
+        # ACCOUNT_LINKING: Links OIDC identity to existing local account by email match
+        FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION = "true";
+        FORGEJO__oauth2_client__ACCOUNT_LINKING = "auto";
+      };
+    };
+
     authentik = {
       description = "Authentik identity provider configuration";
       keys = {

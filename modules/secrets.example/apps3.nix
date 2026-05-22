@@ -24,6 +24,16 @@
         REDIS_HOSTNAME = "10.255.0.11";
         REDIS_PORT = "1025";
         IMMICH_MACHINE_LEARNING_URL = "http://immich-machine-learning:3003";
+
+        # OIDC Authentication via Authentik
+        IMMICH_OIDC_ENABLED = "true";
+        IMMICH_OIDC_ISSUER_URL = "https://access.reinitialized.net/application/o/immich/";
+        IMMICH_OIDC_CLIENT_ID = "PLACE_OIDC_CLIENT_ID_HERE";
+        IMMICH_OIDC_CLIENT_SECRET = "PLACE_OIDC_CLIENT_SECRET_HERE";
+        IMMICH_OIDC_SCOPE = "openid profile email";
+        IMMICH_OIDC_STORAGE_LABEL_CLAIM = "preferred_username";
+        IMMICH_OIDC_BUTTON_TEXT = "Login with Authentik";
+        IMMICH_OIDC_AUTO_REGISTER = "true";
       };
     };
     tuwunel = {
