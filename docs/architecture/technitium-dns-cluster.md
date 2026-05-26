@@ -1,474 +1,158 @@
 # Technitium DNS Cluster Architecture
 
-**Last Updated:** 2026-01-26
-
-**Status:** Implementation Plan (Partially Implemented)
+**Status:** Current deployment notes
+**Verified against source:** May 26, 2026
 
 ## Overview
 
-This document describes the architecture for a Technitium DNS authoritative cluster with centralized certificate management, mesh network cluster communication, and split-horizon DNS resolution.
+Technitium DNS runs as two Docker containers:
 
-> **Current State:** The DNS cluster is operational with **local ACME certificate generation** on each host (apps1 and apps2 each generate their own certificates via DNS-01 challenge through Technitium). The centralized certificate distribution architecture described below is the **planned target state** but has not yet been implemented. Items marked with `[x]` in the implementation checklist reflect the target plan, not current deployment.
+- `dnsOne` on `apps1`
+- `dnsTwo` on `apps2`
 
-## Goals
+Both nodes expose DNS on their physical VLAN addresses and expose admin/cluster ports on the WireGuard mesh. Each host generates its own ACME certificate locally through the NixOS ACME module using Technitium DNS-01 credentials.
 
-1. **Centralized Certificate Management** - All ACME certificates generated on rp1
-2. **Fullchain Certificates** - PKCS#12 format with complete chain for Technitium
-3. **Mesh Network Clustering** - All cluster sync traffic (53443) routed through WireGuard
-4. **Authoritative DNS** - Support both internal and external clients
-5. **High Availability** - Two-node cluster with automatic failover
+There is no implemented centralized certificate distribution service in the current source.
 
-## Network Topology
+## Hosts And Addresses
 
-### IP Addressing
+| Host | Physical IP | Mesh IP | Container |
+|------|-------------|---------|-----------|
+| `apps1` | `10.1.11.2` | `10.255.0.3` | `dnsOne` |
+| `apps2` | `10.1.11.3` | `10.255.0.4` | `dnsTwo` |
+| `rp1` | `10.1.12.2`, `10.1.12.3`, `10.1.12.4` | `10.255.0.2` | nginx/Angie reverse and stream proxy |
 
-| Host | Physical IP | Mesh IP | Role |
-|------|-------------|---------|------|
-| rp1 | 10.1.12.2/3/4 | 10.255.0.2 | Reverse Proxy, Cert Authority |
-| apps1 | 10.1.11.2 | 10.255.0.3 | Primary DNS (dnsOne) |
-| apps2 | 10.1.11.3 | 10.255.0.4 | Secondary DNS (dnsTwo) |
+## Container Port Mappings
 
-### Port Allocation
+| Purpose | `dnsOne` on apps1 | `dnsTwo` on apps2 |
+|---------|-------------------|-------------------|
+| HTTP admin UI | `10.255.0.3:1026 -> 5380/tcp` | `10.255.0.4:1024 -> 5380/tcp` |
+| HTTPS admin UI / cluster | `10.255.0.3:1027 -> 53443/tcp` | `10.255.0.4:1025 -> 53443/tcp` |
+| DNS over mesh | `10.255.0.3:1028 -> 53/tcp+udp` | `10.255.0.4:1026 -> 53/tcp+udp` |
+| DNS on VLAN | `10.1.11.2:53/tcp+udp` | `10.1.11.3:53/tcp+udp` |
+| DoT on VLAN | `10.1.11.2:853/tcp+udp` | `10.1.11.3:853/tcp+udp` |
+| DHCP on VLAN | `10.1.11.2:67/udp` | `10.1.11.3:67/udp` |
 
-| Service | Port | Protocol | Binding | Purpose |
-|---------|------|----------|---------|---------|
-| DNS | 53 | TCP/UDP | Physical IP | Public DNS resolution |
-| DoT | 853 | TCP | Physical IP | DNS over TLS |
-| DHCP | 67 | UDP | Physical IP | DHCP service |
-| Admin Web UI | 5380 | TCP | Mesh IP | Web management interface |
-| Cluster Sync | 53443 | TCP/TLS | Mesh IP | Zone replication, cluster sync |
+See [Mesh Network Port Reference](../mesh-network-ports.md) for the full allocation table.
 
-## Certificate Distribution Architecture
+## ACME Certificates
 
-### Certificate Flow
+`apps1.nix` and `apps2.nix` both configure `security.acme`:
 
-```
-rp1 (ACME Generation)
-    │
-    ├── Let's Encrypt HTTP-01 Challenge
-    │   └── Validates *.dns.reinitialized.net
-    │
-    ├── Certificate Processing
-    │   ├── Generate fullchain.pem
-    │   ├── Convert to PKCS#12 (cert.pfx)
-    │   └── Store in /mnt/containers/dns-certs/
-    │
-    └── Distribution via Mesh
-        ├── rsync over SSH to apps1 (10.255.0.3)
-        │   └── /var/lib/acme/one.dns.reinitialized.net/
-        │
-        └── rsync over SSH to apps2 (10.255.0.4)
-            └── /var/lib/acme/two.dns.reinitialized.net/
-```
+- ACME email: `admin@reinitialized.net`
+- DNS provider: `technitium`
+- credentials file: `config.secrets.acmeDns.file`
+- DNS resolver: `10.255.0.3:1028`
+- extra resolver flag: `--dns.resolvers=10.255.0.4:1026`
+- output includes a PKCS#12 certificate with an empty PFX password
 
-### Certificate Distribution Service
+Each host defines one certificate:
 
-The distribution uses SSH over the mesh network for secure transfer:
+| Host | Certificate name | Reload service |
+|------|------------------|----------------|
+| `apps1` | `one.dns.reinitialized.net` | `dnsOne` |
+| `apps2` | `two.dns.reinitialized.net` | `dnsTwo` |
 
-1. **rp1** generates certificates via ACME
-2. **postRun hook** triggers distribution script
-3. **rsync over mesh** copies cert.pfx to each DNS node
-4. **Remote reload** restarts Technitium containers
+The ACME `postRun` hook finds the generated `.pfx` file under `/var/lib/acme/.lego/<name>/`, copies it to `/var/lib/acme/<name>/cert.pfx`, sets mode `640`, and owns it as `acme:acme`.
+
+The DNS containers mount those directories read-only:
 
 ```nix
-# rp1: Certificate distribution service
-systemd.services.dns-cert-distribute = {
-  description = "Distribute DNS certificates to cluster nodes";
-  after = [ "network.target" ];
-  serviceConfig = {
-    Type = "oneshot";
+"/var/lib/acme/one.dns.reinitialized.net:/etc/dns/certs:ro"
+"/var/lib/acme/two.dns.reinitialized.net:/etc/dns/certs:ro"
+```
+
+## rp1 Ingress
+
+`rp1` uses Angie/nginx with stream support.
+
+### DNS Service
+
+`rp1` listens on `10.1.12.2:53` and `10.1.12.3:53` for TCP and UDP DNS and stream-proxies to the physical Technitium backends:
+
+- `10.1.11.2:53` for `dnsOne`
+- `10.1.11.3:53` for `dnsTwo`
+
+The stream blocks use `proxy_bind 10.1.12.3` so proxied public queries are distinguishable from rp1's own resolver traffic.
+
+### DNS Admin UI
+
+`rp1` provides:
+
+- `10.1.12.2:53443 -> 10.255.0.3:1027`
+- `10.1.12.3:53443 -> 10.255.0.4:1025`
+
+HTTPS on shared port 443 uses SNI routing:
+
+- `one.dns.reinitialized.net -> dnsOneUI`
+- `two.dns.reinitialized.net -> dnsTwoUI`
+
+The HTTP virtual hosts for `one.dns.reinitialized.net` and `two.dns.reinitialized.net` only redirect to HTTPS and restrict access with the `internalOnly` nginx allow/deny block.
+
+## Secrets
+
+Both DNS hosts require `secrets.acmeDns.file`.
+
+Template shape:
+
+```nix
+secrets.acmeDns = {
+  description = "Technitium DNS API token for ACME DNS-01 challenges";
+  file = lib.mkDefault (builtins.toFile "acme-dns-token" ''
+    TECHNITIUM_API_TOKEN=PLACE API TOKEN HERE
+    TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
+  '');
+  keys = {
+    apiToken = "PLACE API TOKEN HERE";
   };
-  script = ''
-    # Convert and distribute one.dns certificate
-    openssl pkcs12 -export -legacy \
-      -out /mnt/containers/dns-certs/one.dns.pfx \
-      -inkey /var/lib/acme/one.dns.reinitialized.net/key.pem \
-      -in /var/lib/acme/one.dns.reinitialized.net/fullchain.pem \
-      -passout pass:
-    
-    rsync -avz --delete \
-      /mnt/containers/dns-certs/one.dns.pfx \
-      rnetadmin@10.255.0.3:/var/lib/acme/one.dns.reinitialized.net/cert.pfx
-    
-    ssh rnetadmin@10.255.0.3 "docker restart dnsOne"
-    
-    # Convert and distribute two.dns certificate
-    openssl pkcs12 -export -legacy \
-      -out /mnt/containers/dns-certs/two.dns.pfx \
-      -inkey /var/lib/acme/two.dns.reinitialized.net/key.pem \
-      -in /var/lib/acme/two.dns.reinitialized.net/fullchain.pem \
-      -passout pass:
-    
-    rsync -avz --delete \
-      /mnt/containers/dns-certs/two.dns.pfx \
-      rnetadmin@10.255.0.4:/var/lib/acme/two.dns.reinitialized.net/cert.pfx
-    
-    ssh rnetadmin@10.255.0.4 "docker restart dnsTwo"
-  '';
 };
 ```
 
-## Technitium DNS Cluster Configuration
+## Operational Checks
 
-### Cluster Setup Requirements
-
-1. Both nodes must be reachable via their 53443 HTTPS endpoints
-2. Certificates must be fullchain (no PartialChain errors)
-3. Cluster communication uses mesh IPs for security
-
-### Technitium Settings
-
-In the Technitium web admin (`Settings > Web Service`):
-
-| Setting | dnsOne (apps1) | dnsTwo (apps2) |
-|---------|----------------|----------------|
-| Web Service Local Addresses | 10.255.0.3 | 10.255.0.4 |
-| Web Service HTTP Port | 5380 | 5380 |
-| Web Service HTTPS Port | 53443 | 53443 |
-| TLS Certificate Path | /etc/dns/certs/cert.pfx | /etc/dns/certs/cert.pfx |
-| Enable DNS over HTTPS | Yes (mesh only) | Yes (mesh only) |
-
-**Note on Mesh Port Mappings:** The container-internal ports (5380, 53443) are consistent, but the *mesh-side* ports differ between hosts:
-
-| Container Port | dnsOne (apps1) Mesh Port | dnsTwo (apps2) Mesh Port |
-|------|------|------|
-| 5380 (Admin UI) | 10.255.0.3:1026 | 10.255.0.4:1024 |
-| 53443 (Cluster Sync) | 10.255.0.3:1027 | 10.255.0.4:1025 |
-| 53 (DNS) | 10.255.0.3:1028 | 10.255.0.4:1026 |
-
-### Cluster Formation
-
-In Technitium (`Settings > General > Cluster`):
-
-**Primary (dnsOne on apps1):**
-```
-Cluster Mode: Primary
-Cluster Members: https://10.255.0.4:53443/
-```
-
-**Secondary (dnsTwo on apps2):**
-```
-Cluster Mode: Secondary  
-Primary Server: https://10.255.0.3:53443/
-```
-
-## Host Configuration Changes
-
-### rp1.nix Changes
-
-```nix
-# Remove: HTTP-01 proxy to apps1/apps2 for ACME challenges
-# Add: Certificate distribution service with SSH key from secrets
-# Add: Path watcher for trigger file from container
-# Keep: Existing nginx proxying for web admin UI
-# Keep: Existing stream proxying for DNS
-
-# Container ACME postRun triggers host service via bind mount
-security.acme.certs."one.dns.reinitialized.net" = {
-  postRun = ''
-    touch /run/host-trigger/distribute-certs
-  '';
-};
-
-# Path watcher triggers distribution service
-systemd.paths.dns-cert-distribute = {
-  pathConfig.PathModified = "/run/dns-cert-trigger/distribute-certs";
-  pathConfig.Unit = "dns-cert-distribute.service";
-};
-
-# Distribution service uses SSH key from secrets
-systemd.services.dns-cert-distribute = {
-  script = let
-    sshKeyFile = config.secrets.certDistribution.file;
-  in ''
-    # Uses ${sshKeyFile} for SSH authentication
-    # Converts certs to PKCS#12 and distributes via rsync
-  '';
-};
-```
-
-### apps1.nix / apps2.nix Changes
-
-```nix
-# Remove: Local ACME configuration
-# Remove: Local nginx for ACME challenges  
-# Remove: technitium-cert-reload service
-# Add: Dedicated certdist service account for certificate distribution
-# Add: Firewall allowlist for mesh-only ports
-# Keep: Docker container configuration
-
-# Dedicated service account for certificate distribution
-# Uses minimal privileges - only write to cert dir and restart container
-users.users.certdist = {
-  isSystemUser = true;
-  group = "certdist";
-  home = "/var/lib/certdist";
-  createHome = true;
-  shell = pkgs.bashInteractive;
-  openssh.authorizedKeys.keys = [
-    config.secrets.certDistribution.keys.sshPublicKey
-  ];
-};
-users.groups.certdist = {};
-
-# Allow certdist to restart docker containers
-security.sudo-rs.extraRules = [{
-  users = [ "certdist" ];
-  commands = [{
-    command = "${pkgs.docker}/bin/docker restart dnsOne";
-    options = [ "NOPASSWD" ];
-  }];
-}];
-
-# Restrict cluster ports to mesh network
-networking.firewall.allowlist = [
-  { port = 5380; protocol = "tcp"; source = [ "10.255.0.0/24" ]; }
-  { port = 53443; protocol = "tcp"; source = [ "10.255.0.0/24" ]; }
-];
-
-# Ensure certificate directory exists (owned by certdist)
-systemd.tmpfiles.rules = [
-  "d /var/lib/acme/one.dns.reinitialized.net 0755 certdist certdist -"
-];
-
-# Container mounts certificates from distribution location
-virtualisation.oci-containers.containers.dnsOne = {
-  # ... existing config ...
-  volumes = [
-    "technitium_data:/etc/dns"
-    "/var/lib/acme/one.dns.reinitialized.net:/etc/dns/certs:ro"
-  ];
-};
-```
-
-## Security Considerations
-
-### Mesh Network Security
-
-- All cluster communication (53443) restricted to mesh network
-- Certificate distribution via SSH over mesh (encrypted)
-- Dedicated `certdist` service account with minimal privileges
-- Admin UI access only through rp1 reverse proxy
-
-### Firewall Rules
-
-**rp1:**
-- Allow 53/853 inbound from internet (DNS)
-- Allow 443 inbound from internet (web admin via proxy)
-- Allow 80 inbound from internet (ACME HTTP-01)
-
-**apps1/apps2:**
-- Allow 53/853 inbound from local network (direct DNS)
-- Allow 5380 inbound from mesh only (admin UI)
-- Allow 53443 inbound from mesh only (cluster sync)
-- Deny all other inbound traffic
-
-```nix
-# apps1/apps2 firewall configuration
-networking.firewall = {
-  allowlist = [
-    {
-      port = 53;
-      protocol = "tcp_udp";
-      source = [ "0.0.0.0/0" ];
-    }
-    {
-      port = 853;
-      protocol = "tcp_udp";
-      source = [ "0.0.0.0/0" ];
-    }
-    {
-      port = 5380;
-      protocol = "tcp";
-      source = [ "10.255.0.0/24" ];  # Mesh only
-    }
-    {
-      port = 53443;
-      protocol = "tcp";
-      source = [ "10.255.0.0/24" ];  # Mesh only
-    }
-  ];
-};
-```
-
-## DNS Resolution Architecture
-
-### External Clients
-
-```
-External Client
-    │
-    ▼
-rp1 (10.1.12.2 or 10.1.12.3)
-    │ nginx stream proxy
-    ▼
-apps1 (10.1.11.2) or apps2 (10.1.11.3)
-    │ Technitium DNS
-    ▼
-Response
-```
-
-### Internal Clients
-
-```
-Internal Client (10.1.x.x)
-    │
-    ▼
-Direct to apps1 (10.1.11.2) or apps2 (10.1.11.3)
-    │ Technitium DNS
-    ▼
-Response
-```
-
-### Split-Horizon DNS
-
-Technitium supports split-horizon via:
-1. **Access Control Lists** - Different responses based on source IP
-2. **Views** - Separate zones for internal/external
-3. **Conditional Forwarding** - Route internal queries differently
-
-## Monitoring and Maintenance
-
-### Health Checks
+Check DNS directly:
 
 ```bash
-# Check DNS resolution
 dig @10.1.11.2 reinitialized.net +short
 dig @10.1.11.3 reinitialized.net +short
-
-# Check cluster status
-curl -k https://10.255.0.3:53443/api/settings/get?token=<API_TOKEN>
-
-# Check certificate expiry
-openssl s_client -connect 10.255.0.3:53443 < /dev/null 2>/dev/null | \
-  openssl x509 -noout -dates
 ```
 
-### Certificate Renewal
+Check mesh admin endpoints:
 
-Certificates auto-renew via Let's Encrypt. The postRun hook triggers distribution:
+```bash
+curl -k https://10.255.0.3:1027/
+curl -k https://10.255.0.4:1025/
+```
 
-1. ACME renews cert on rp1
-2. postRun triggers `dns-cert-distribute.service`
-3. New certs pushed to apps1/apps2 via rsync
-4. Technitium containers restarted
+Check generated PFX files on each DNS host:
 
-## Implementation Checklist
+```bash
+ls -l /var/lib/acme/one.dns.reinitialized.net/cert.pfx
+ls -l /var/lib/acme/two.dns.reinitialized.net/cert.pfx
+```
 
-- [ ] Configure ACME certs on rp1 with postRun hooks (currently using local ACME on each host)
-- [ ] Create certificate distribution service on rp1
-- [ ] Create path watcher for trigger file
-- [ ] Update apps1.nix to remove local ACME
-- [ ] Update apps2.nix to remove local ACME  
-- [ ] Add sudo-rs rules for docker restart on apps1/apps2
-- [ ] Add firewall allowlist for mesh-only cluster ports
-- [ ] Configure SSH key for rp1 → apps1/apps2 mesh access (via secrets)
-- [ ] Generate SSH keypair and add to secrets files
-- [ ] Deploy configuration changes
-- [ ] Configure Technitium cluster in web UI
-- [ ] Test certificate distribution
-- [ ] Test cluster replication
-- [ ] Verify DNS resolution from external clients
+Check container mappings:
 
-## Deployment Steps
+```bash
+docker ps --filter name=dnsOne
+docker ps --filter name=dnsTwo
+```
 
-### Pre-Deployment
+## Change Guidelines
 
-1. **Generate SSH keypair for certificate distribution**:
-   ```bash
-   ssh-keygen -t ed25519 -f /tmp/cert-distribution-key -N "" -C "rp1-cert-distribution"
-   ```
+- Keep ACME settings in `apps1.nix` and `apps2.nix` aligned unless intentionally diverging.
+- Update `modules/secrets.example/apps1.nix` and `apps2.nix` if ACME credential keys change.
+- Update [Mesh Network Port Reference](../mesh-network-ports.md) when any published port changes.
+- Validate both affected host configs after DNS changes:
 
-2. **Add private key to rp1 secrets** (`modules/secrets/rp1.nix`):
-   ```nix
-   certDistribution = {
-     description = "SSH private key for certificate distribution";
-     file = /path/to/cert-distribution-key;  # Private key file
-   };
-   ```
+  ```bash
+  nix build path:.#nixosConfigurations.apps1.config.system.build.toplevel
+  nix build path:.#nixosConfigurations.apps2.config.system.build.toplevel
+  nix build path:.#nixosConfigurations.rp1.config.system.build.toplevel
+  ```
 
-3. **Add public key to apps1/apps2 secrets** (`modules/secrets/apps1.nix` and `modules/secrets/apps2.nix`):
-   ```nix
-   certDistribution = {
-     description = "SSH public key for certificate distribution from rp1";
-     keys = {
-       sshPublicKey = "ssh-ed25519 AAAA... rp1-cert-distribution";  # From cert-distribution-key.pub
-     };
-   };
-   ```
+## Related Documentation
 
-4. **Test mesh connectivity**:
-   ```bash
-   # From rp1
-   ping 10.255.0.3  # apps1
-   ping 10.255.0.4  # apps2
-   ```
-
-### Deployment Order
-
-1. Deploy to **apps1** first:
-   ```bash
-   nixos-rebuild switch --flake path:.#apps1 --target-host rnetadmin@10.1.11.2
-   ```
-
-2. Deploy to **apps2**:
-   ```bash
-   nixos-rebuild switch --flake path:.#apps2 --target-host rnetadmin@10.1.11.3
-   ```
-
-3. Deploy to **rp1** last:
-   ```bash
-   nixos-rebuild switch --flake path:.#rp1 --target-host rnetadmin@10.1.12.2
-   ```
-
-### Post-Deployment
-
-1. **Trigger initial certificate generation** (on rp1):
-   ```bash
-   # Force ACME renewal in the nginx container
-   machinectl shell nginx /bin/bash -c "systemctl start acme-one.dns.reinitialized.net.service"
-   machinectl shell nginx /bin/bash -c "systemctl start acme-two.dns.reinitialized.net.service"
-   ```
-
-2. **Verify certificate distribution**:
-   ```bash
-   # Check trigger watcher is running
-   systemctl status dns-cert-distribute.path
-   
-   # Manual trigger for testing
-   systemctl start dns-cert-distribute.service
-   
-   # Check logs
-   journalctl -u dns-cert-distribute.service -f
-   ```
-
-3. **Verify certificates on DNS nodes**:
-   ```bash
-   # On apps1/apps2
-   ls -la /var/lib/acme/*/cert.pfx
-   ```
-
-4. **Configure Technitium Cluster** via web UI:
-   
-   On dnsOne (https://one.dns.reinitialized.net):
-   - Settings → Web Service → TLS Certificate → Select `/etc/dns/certs/cert.pfx`
-   - Settings → General → Enable Clustering
-   - Set as Primary, add `https://10.255.0.4:53443/` as cluster member
-   
-   On dnsTwo (https://two.dns.reinitialized.net):
-   - Settings → Web Service → TLS Certificate → Select `/etc/dns/certs/cert.pfx`
-   - Settings → General → Enable Clustering
-   - Set as Secondary, set `https://10.255.0.3:53443/` as primary
-
-5. **Verify cluster health**:
-   ```bash
-   # Check cluster sync via API
-   curl -k "https://10.255.0.3:53443/api/settings/getStats?token=<API_TOKEN>"
-   ```
-
-## References
-
-- [Technitium DNS Documentation](https://technitium.com/dns/)
-- [Technitium Cluster Setup](https://blog.technitium.com/2022/06/technitium-dns-server-v90-released.html)
 - [Mesh Network Module](../modules/meshNetwork.md)
-- [ACME/Let's Encrypt](https://nixos.wiki/wiki/ACME)
+- [Mesh Network Port Reference](../mesh-network-ports.md)
+- [DNS Recursion Public Interface Investigation](../investigations/dns-recursion-public-interface-via-rp1.md)

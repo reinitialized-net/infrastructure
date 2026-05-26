@@ -1,435 +1,166 @@
 # Secrets Management Module
 
-**Module Path:** `modules/profiles/secrets.nix`
+**Module path:** `modules/profiles/secrets.nix`
 
-**Import:** Automatically included with `nixosModules.default`
+**Primary option:** `secrets`
 
 ## Overview
 
-The secrets module provides a centralized, declarative system for managing application secrets, API keys, credentials, and other sensitive configuration data in NixOS.
+The secrets module defines a simple option namespace for passing secret values and secret file paths to other NixOS modules. It does not encrypt, decrypt, create, or permission files by itself.
 
-## Features
+Live files under `modules/secrets/` are ignored by git. Templates under `modules/secrets.example/` document the keys expected by each host.
 
-- Centralized secret definitions
-- Key-value pairs for structured data
-- File references for certificates, keys, etc.
-- Type-safe configuration
-- Integration with external secret managers (sops-nix, agenix, etc.)
-- Auto-documentation through descriptions
-
-## Option: `secrets`
-
-### Type
+## Option Schema
 
 ```nix
-attrsOf (submodule)
+secrets.<name> = {
+  description = "Human-readable purpose";
+  keys = {
+    # arbitrary Nix values
+  };
+  file = /path/to/secret-file;
+};
 ```
 
-An attribute set where each attribute is a named secret containing:
+| Field | Type | Default | Purpose |
+|-------|------|---------|---------|
+| `description` | string | `""` | Maintainer-facing description |
+| `keys` | attrset of anything | `{}` | Structured values, usually container environment variables |
+| `file` | null or path | `null` | Path to a file consumed by another module or service |
 
-### Submodule Options
+## Import Behavior
 
-#### `keys`
+`makeConfiguration` automatically imports `modules/secrets/<host>.nix` when the file exists. The `secrets` option must still be defined by importing `modules/profiles/secrets.nix`; current exported hosts get that through `meshNetwork` or `containers`.
 
-**Type:** `attrsOf anything`
+`nixosModules.default` also imports the secrets module for external module consumers.
 
-**Default:** `{}`
+## Security Notes
 
-**Description:** Key-value pairs for this secret. Keys can be any string, values can be any Nix type (strings, integers, booleans, lists, attribute sets).
+Inline values in Nix files can end up readable in the Nix store. This repository uses inline examples because `modules/secrets.example/` is not secret material. For live sensitive values, prefer `file` references that point to files with appropriate runtime permissions, or integrate an external secret manager.
 
-**Example:**
+Do not commit:
+
+- `modules/secrets/`
+- generated VMA `result/`
+- `result/CREDENTIALS.txt`
+
+## Common Patterns
+
+### WireGuard Mesh Private Key
+
+The mesh module reads only `secrets.meshNetwork.file`:
+
 ```nix
-secrets.my-service.keys = {
-  apiKey = "sk_live_123456789";
-  endpoint = "https://api.example.com";
-  timeout = 30;
-  retryCount = 3;
-  enableDebug = false;
-  headers = {
-    "User-Agent" = "MyApp/1.0";
-    "Accept" = "application/json";
+{
+  lib,
+  ...
+}: {
+  secrets.meshNetwork = {
+    description = "MeshNetwork WireGuard private key";
+    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
+  };
+}
+```
+
+Public keys belong in `modules/profiles/meshNetwork/meshTopology.nix`.
+
+### ACME DNS-01 Credentials
+
+Hosts using Technitium DNS-01 set:
+
+```nix
+secrets.acmeDns = {
+  description = "Technitium DNS API credentials for ACME DNS-01 challenge";
+  file = lib.mkDefault (builtins.toFile "acme-dns-credentials" ''
+    TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
+    TECHNITIUM_API_TOKEN=PLACE_API_TOKEN_HERE
+  '');
+  keys = {
+    apiToken = "PLACE_API_TOKEN_HERE";
   };
 };
 ```
 
-#### `file`
+The NixOS ACME module consumes `config.secrets.acmeDns.file`.
 
-**Type:** `nullOr path`
+### Docker Volume Migration
 
-**Default:** `null`
+Container hosts expect:
 
-**Description:** Path to a file containing this secret. Useful for private keys, certificates, large files, or secrets managed by external tools.
-
-**Example:**
 ```nix
-secrets.wireguard.file = /run/secrets/wg-private-key;
-secrets.tls.file = /run/secrets/server.key;
+secrets.volumeMigration = {
+  description = "SSH private key for docker volume migration between hosts";
+  file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+};
 ```
 
-#### `description`
+The containers profile writes this key to `/home/docker/.ssh/volume-migration-key`.
 
-**Type:** `string`
+### OPNsense Firewall Tool
 
-**Default:** `""`
+`updateNetworkFirewallRules` on `devenv` reads `secrets.opnsenseFirewall`:
 
-**Description:** Human-readable description of what this secret is for. Helps with documentation and understanding the configuration.
-
-**Example:**
 ```nix
-secrets.database.description = "PostgreSQL database credentials";
+secrets.opnsenseFirewall = {
+  description = "OPNsense firewall API credentials";
+  file = lib.mkDefault /run/secrets/opnsense-api-secret;
+  keys = {
+    host = "OPNSENSE_HOST_OR_IP";
+    port = "443";
+    apiKey = "PLACE_API_KEY_HERE";
+    apiSecret = "PLACE_API_SECRET_HERE";
+  };
+};
 ```
 
-## Usage Examples
+Environment variables override secrets, and CLI flags override both:
 
-### Basic API Key
+| Environment variable | Meaning |
+|----------------------|---------|
+| `OPNSENSE_HOST` | Firewall host or IP |
+| `OPNSENSE_API_KEY` | API key |
+| `OPNSENSE_API_SECRET` | API secret |
+| `OPNSENSE_PORT` | Management port |
+| `OPNSENSE_VERIFY_TLS` | `true` to verify TLS certificates |
+| `LOG_DAYS` | Log range label used by the tool; OPNsense API retention still controls available logs |
+| `TOP_FLOWS` | Number of top flows to analyze |
+
+## Host Secret Templates
+
+| Template | Important secrets consumed by source |
+|----------|--------------------------------------|
+| `modules/secrets.example/devenv.nix` | `meshNetwork`, `opnsenseFirewall`, `volumeMigration` |
+| `modules/secrets.example/rp1.nix` | `meshNetwork`, `acmeDns`, `volumeMigration` |
+| `modules/secrets.example/apps1.nix` | `meshNetwork`, `acmeDns`, `hudu`, `jaeger`, `grafana`, `stalwart`, `forgejo`, `authentik`, `volumeMigration` |
+| `modules/secrets.example/apps2.nix` | `meshNetwork`, `acmeDns`, `unifi`, `pgAdmin4`, `redisInsight`, `forgejoRunner`, `volumeMigration` |
+| `modules/secrets.example/apps3.nix` | `meshNetwork`, `immich`, `tuwunel`, `paperless`, `pelican`, `ocis`, `volumeMigration` |
+| `modules/secrets.example/ai1.nix` | `meshNetwork`, `openclaw` |
+| `modules/secrets.example/db1.nix` | `meshNetwork`, `postgres1`, `volumeMigration` |
+| `modules/secrets.example/gs1.nix` | `meshNetwork`, `volumeMigration`, `wings` |
+
+When adding or renaming a secret consumed by `hosts/<host>.nix` or a profile, update the matching example file.
+
+## External Secret Managers
+
+The module can reference paths produced by tools such as sops-nix or agenix:
 
 ```nix
 {
-  secrets.github = {
-    description = "GitHub API access";
-    keys = {
-      token = "ghp_xxxxxxxxxxxxxxxxxxxx";
-      organization = "my-org";
-    };
-  };
-
-  # Reference in other modules
-  services.myapp.githubToken = config.secrets.github.keys.token;
-}
-```
-
-### Database Credentials
-
-```nix
-{
-  secrets.database = {
-    description = "Production database";
-    keys = {
-      host = "db.example.com";
-      port = 5432;
-      database = "production";
-      username = "app_user";
-      password = "super_secret_password";
-      sslMode = "require";
-      poolSize = 20;
-    };
-  };
-
-  # Use in services
-  services.postgresql = {
-    settings = {
-      host = config.secrets.database.keys.host;
-      port = config.secrets.database.keys.port;
-    };
-  };
-}
-```
-
-### WireGuard Private Key
-
-```nix
-{
-  secrets.wireguard = {
-    description = "WireGuard VPN private key";
-    file = /run/secrets/wg-privatekey;
-    keys = {
-      publicKey = "abc123...";
-      endpoint = "vpn.example.com:51820";
-    };
-  };
-
-  # Use in networking
-  networking.wireguard.interfaces.wg0 = {
-    privateKeyFile = config.secrets.wireguard.file;
-  };
-}
-```
-
-### Complex Application Configuration
-
-```nix
-{
-  secrets.web-app = {
-    description = "Web application configuration";
-    keys = {
-      session = {
-        secretKey = "long-random-secret";
-        cookieName = "app_session";
-        lifetime = 3600;
-      };
-      
-      smtp = {
-        host = "smtp.gmail.com";
-        port = 587;
-        username = "noreply@example.com";
-        password = "email_password";
-        from = "noreply@example.com";
-      };
-      
-      oauth = {
-        google = {
-          clientId = "123456.apps.googleusercontent.com";
-          clientSecret = "secret";
-        };
-        github = {
-          clientId = "Iv1.1234567890";
-          clientSecret = "secret";
-        };
-      };
-      
-      features = {
-        enableRegistration = true;
-        enableOAuth = true;
-        maxUploadSize = 10485760;  # 10MB
-      };
-    };
-  };
-}
-```
-
-### Mesh Network Configuration
-
-```nix
-{
-  secrets.meshNetwork = {
-    description = "WireGuard mesh network credentials";
-    file = /run/secrets/mesh-privatekey;
-    keys = {
-      nodeId = 1;
-      listenPort = 51820;
-      peers = [
-        {
-          nodeId = 2;
-          publicKey = "peer2_public_key";
-          endpoint = "192.168.1.100:51820";
-          persistentKeepalive = 25;
-        }
-        {
-          nodeId = 3;
-          publicKey = "peer3_public_key";
-          endpoint = "192.168.1.101:51820";
-          persistentKeepalive = 25;
-        }
-      ];
-    };
-  };
-
-  # Automatically used by meshNetwork module
-  services.meshNetwork.enable = true;
-  # nodeId, privateKeyFile, and peers are auto-configured from secrets
-}
-```
-
-## Integration with External Secret Managers
-
-### With sops-nix
-
-```nix
-{
-  # Import sops-nix
   imports = [ inputs.sops-nix.nixosModules.sops ];
 
-  # Define sops secrets
-  sops.secrets = {
-    database-password = {
-      sopsFile = ./secrets/db.yaml;
-    };
-    api-key = {
-      sopsFile = ./secrets/api.yaml;
-    };
-  };
+  sops.secrets.mesh-private-key.sopsFile = ./secrets/mesh.yaml;
 
-  # Reference in secrets module
-  secrets.database = {
-    description = "Database credentials (managed by sops)";
-    keys = {
-      host = "db.example.com";
-      username = "app";
-      # Password is in a file
-    };
-    file = config.sops.secrets.database-password.path;
-  };
-
-  secrets.api = {
-    description = "API keys (managed by sops)";
-    file = config.sops.secrets.api-key.path;
+  secrets.meshNetwork = {
+    description = "Mesh private key from sops-nix";
+    file = config.sops.secrets.mesh-private-key.path;
   };
 }
 ```
 
-### With agenix
-
-```nix
-{
-  imports = [ inputs.agenix.nixosModules.age ];
-
-  age.secrets = {
-    wireguard-key.file = ./secrets/wg-key.age;
-  };
-
-  secrets.wireguard = {
-    description = "WireGuard key (managed by agenix)";
-    file = config.age.secrets.wireguard-key.path;
-  };
-}
-```
-
-### With Environment Variables
-
-```nix
-{
-  secrets.runtime = {
-    description = "Runtime environment secrets";
-    keys = {
-      apiKey = builtins.getEnv "API_KEY";
-      debug = (builtins.getEnv "DEBUG") == "true";
-    };
-  };
-}
-```
-
-## Best Practices
-
-### 1. Never Commit Actual Secrets
-
-Create a template file:
-
-```nix
-# modules/secrets.example/my-app.nix
-{
-  secrets.my-app = {
-    description = "My application secrets";
-    keys = {
-      apiKey = "REPLACE_WITH_YOUR_KEY";
-      endpoint = "https://api.example.com";
-    };
-  };
-}
-```
-
-Copy and fill in actual values:
-
-```bash
-cp modules/secrets.example/my-app.nix modules/secrets/my-app.nix
-# Edit with real values
-# Add to .gitignore
-```
-
-### 2. Use Descriptions
-
-Always add descriptions to make the code self-documenting:
-
-```nix
-secrets.service = {
-  description = "External service API credentials - obtain from https://service.com/api";
-  keys = { ... };
-};
-```
-
-### 3. Structure Complex Secrets
-
-Use nested attribute sets for related secrets:
-
-```nix
-secrets.infrastructure = {
-  keys = {
-    aws = {
-      region = "us-west-2";
-      accessKeyId = "...";
-      secretAccessKey = "...";
-    };
-    cloudflare = {
-      apiToken = "...";
-      zoneId = "...";
-    };
-  };
-};
-```
-
-### 4. Separate Development and Production
-
-```nix
-# flake.nix
-let
-  dualSystems = {
-    dev = library.makeDualExport "dev" {
-      system = "x86_64-linux";
-      vmId = 100;
-      modules = [ ./secrets/dev.nix ];
-    };
-    prod = library.makeDualExport "prod" {
-      system = "x86_64-linux";
-      vmId = 101;
-      modules = [ ./secrets/prod.nix ];
-    };
-  };
-in
-{
-  nixosConfigurations = {
-    dev = dualSystems.dev.nixosSystem;
-    prod = dualSystems.prod.nixosSystem;
-  };
-}
-```
-
-### 5. Use File References for Large Secrets
-
-For certificates, keys, or large files:
-
-```nix
-secrets.tls = {
-  description = "TLS certificates";
-  file = /run/secrets/server.crt;
-  keys = {
-    # Store only metadata
-    issuer = "Let's Encrypt";
-    expiresAt = "2026-01-01";
-  };
-};
-```
-
-## Access Secrets in Configuration
-
-```nix
-{ config, ... }:
-{
-  # Direct access
-  environment.variables.API_KEY = config.secrets.api.keys.token;
-
-  # Conditional configuration
-  services.myapp.enable = config.secrets ? myapp;
-  services.myapp.apiKey = config.secrets.myapp.keys.apiKey or "";
-
-  # File references
-  services.wireguard.privateKeyFile = config.secrets.wireguard.file;
-
-  # Nested values
-  services.database = {
-    host = config.secrets.db.keys.host;
-    username = config.secrets.db.keys.username;
-    password = config.secrets.db.keys.password;
-  };
-}
-```
-
-## Security Considerations
-
-1. **File Permissions**: Secrets defined inline in Nix files will be world-readable in the Nix store
-2. **Use File References**: For truly sensitive data, use `file` with proper permissions
-3. **External Managers**: Consider sops-nix or agenix for encrypted secrets in version control
-4. **Runtime Secrets**: Use systemd credentials or similar for runtime secret injection
-
-## Examples in This Repository
-
-See example secret configurations in `modules/secrets.example/`:
-
-- [`modules/secrets.example/devenv.nix`](../../modules/secrets.example/devenv.nix) - Development environment secrets
-- [`modules/secrets.example/rp1.nix`](../../modules/secrets.example/rp1.nix) - Reverse proxy secrets
-- [`modules/secrets.example/apps1.nix`](../../modules/secrets.example/apps1.nix) - Application server 1 secrets
-- [`modules/secrets.example/apps2.nix`](../../modules/secrets.example/apps2.nix) - Application server 2 secrets
-- [`modules/secrets.example/db1.nix`](../../modules/secrets.example/db1.nix) - Database server secrets
+The important contract is that the consuming module receives a path in `secrets.<name>.file` or values in `secrets.<name>.keys`.
 
 ## See Also
 
-- [Mesh Network Module](meshNetwork.md) - Uses secrets for WireGuard configuration
-- [Examples](../examples.md) - Complete usage examples
+- [Mesh Network Module](meshNetwork.md)
+- [Containers Profile](containers.md)
+- [Examples](../examples.md)

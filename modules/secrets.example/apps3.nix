@@ -61,7 +61,7 @@
         PAPERLESS_DBUSER = "paperless";
         PAPERLESS_DBPASS = "PLACE DB PASSWORD HERE";
         PAPERLESS_REDIS = "redis://10.255.0.11:1025/1";
-        PAPERLESS_URL = "https://paperless.reinitialized.me";
+        PAPERLESS_URL = "https://docs.reinitialized.me";
         PAPERLESS_SECRET_KEY = "PLACE SECRET KEY HERE";
         PAPERLESS_ADMIN_USER = "admin";
         PAPERLESS_ADMIN_PASSWORD = "PLACE ADMIN PASSWORD HERE";
@@ -74,7 +74,7 @@
       description = "Pelican Panel game server management configuration";
       keys = {
         APP_ENV = "production";
-        APP_URL = "https://game.admin.reinitialized.net";
+        APP_URL = "https://gs.admin.reinitialized.net";
         APP_KEY = "base64:PLACE GENERATED APP KEY HERE";
         DB_CONNECTION = "pgsql";
         DB_HOST = "10.255.0.11";

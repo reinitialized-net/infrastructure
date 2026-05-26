@@ -1,816 +1,195 @@
 # Mesh Network Module
 
-**Module Path:** `modules/profiles/meshNetwork/`
+**Module path:** `modules/profiles/meshNetwork/`
 
-**Import:** Automatically included with `nixosModules.default`
+**Primary option:** `services.meshNetwork`
 
 ## Overview
 
-Provides WireGuard-based mesh networking for NixOS systems, specifically designed for Docker container networks. Creates a secure, encrypted overlay network between multiple hosts, allowing containers to communicate across physical machines.
+The mesh network module configures a WireGuard interface named `wg-mesh` and can create a Docker bridge network named `backend` for containers that need to reach services on other hosts.
 
-## Features
+The centralized topology lives in `modules/profiles/meshNetwork/meshTopology.nix`. Public keys belong there. Private keys belong in each host's live secret file as `secrets.meshNetwork.file`.
 
-- **WireGuard VPN**: Secure, fast, modern VPN technology
-- **Mesh Topology**: All nodes can communicate directly
-- **Docker Integration**: Automatic Docker network configuration
-- **nftables NAT**: Routing and NAT for container traffic
-- **Auto-configuration**: Integrates with secrets module
-- **Helper Tools**: Status monitoring and key generation utilities
-- **Persistent Connections**: Automatic keepalive configuration
+## Options
 
-## Option: `services.meshNetwork`
+| Option | Type | Default | Notes |
+|--------|------|---------|-------|
+| `enable` | bool | `false` | Enables WireGuard mesh configuration |
+| `nodeId` | int | Looks up `networking.hostName` in `meshTopology.nix` | Used for `10.255.0.<nodeId>` |
+| `listenPort` | port | `51820` | UDP listen port |
+| `peers` | list | `[]` | Manual peers; used when non-empty or `autoPeers = false` |
+| `autoPeers` | bool | `true` | When true and `peers` is empty, peers come from topology |
+| `dockerIntegration` | bool | `true` | Creates Docker `backend` network only when Docker is enabled |
 
-### Configuration Options
+Peer entries contain:
 
-#### `enable`
+| Peer option | Required | Notes |
+|-------------|----------|-------|
+| `nodeId` | Yes | Peer node ID |
+| `publicKey` | Yes | WireGuard public key |
+| `endpoint` | No | `IP:PORT`, or `null` |
+| `persistentKeepalive` | No | Defaults to `25`; set to `null` to omit |
 
-**Type:** `bool`
-
-**Default:** `false`
-
-**Description:** Enable the WireGuard mesh network.
-
-```nix
-services.meshNetwork.enable = true;
-```
-
-#### `nodeId`
-
-**Type:** `int` (1-254)
-
-**Required:** No (auto-resolves from `meshTopology.nix` based on `networking.hostName`)
-
-**Description:** Unique node identifier for this mesh member. Used to calculate the mesh IP address (`10.255.0.<nodeId>`).
-
-**Auto-configuration:** Automatically resolved by looking up `networking.hostName` in `meshTopology.nix`. If the hostname is not found in the topology, the module will throw an error and require an explicit `nodeId`. Can also be set manually to override the auto-resolved value.
+The module reads the private key from:
 
 ```nix
-services.meshNetwork.nodeId = 1;
-# Results in mesh IP: 10.255.0.1
-# If not set, defaults to nodeId from meshTopology.nix matching networking.hostName
+config.secrets.meshNetwork.file
 ```
 
-#### `listenPort`
+It does not read `nodeId`, `listenPort`, or `peers` from `secrets.meshNetwork.keys`.
 
-**Type:** `port`
+## Current Topology
 
-**Default:** `51820`
+| Host | Node ID | Mesh IP | Endpoint |
+|------|---------|---------|----------|
+| `devenv` | 1 | `10.255.0.1` | `10.1.200.2:51820` |
+| `rp1` | 2 | `10.255.0.2` | `10.1.12.2:51820` |
+| `apps1` | 3 | `10.255.0.3` | `10.1.11.2:51820` |
+| `apps2` | 4 | `10.255.0.4` | `10.1.11.3:51820` |
+| `apps3` | 5 | `10.255.0.5` | `10.1.11.4:51820` |
+| `gs1` | 6 | `10.255.0.6` | `10.1.11.6:51820` |
+| `ai1` | 9 | `10.255.0.9` | `10.1.11.9:51820` |
+| `db1` | 11 | `10.255.0.11` | `10.1.11.11:51820` |
 
-**Description:** UDP port for WireGuard to listen on.
+`gs1` is in topology but not currently exported from `flake.nix`.
 
-**Auto-configuration:** Can be sourced from `secrets.meshNetwork.keys.listenPort`
+## Minimal Host Configuration
+
+For a host already present in `meshTopology.nix`, set the hostname and enable the service:
 
 ```nix
-services.meshNetwork.listenPort = 51820;
-```
+{
+  networking.hostName = "apps1";
 
-#### Private Key Configuration
-
-**Note:** The mesh network module automatically sources the WireGuard private key from `secrets.meshNetwork.file`. There is no separate `privateKeyFile` option - configure your private key via the secrets module:
-
-```nix
-# In modules/secrets/<hostname>.nix
-secrets.meshNetwork = {
-  description = "MeshNetwork secrets";
-  file = lib.mkDefault (builtins.toFile "mesh-privatekey" "YOUR_PRIVATE_KEY_HERE");
-};
-```
-
-#### `peers`
-
-**Type:** `listOf (submodule)`
-
-**Default:** `[]`
-
-**Description:** List of other mesh network nodes to connect to. If empty and `autoPeers` is enabled, peers will be automatically populated from the centralized topology in `meshTopology.nix`.
-
-**Auto-configuration:** 
-- Can be sourced from `secrets.meshNetwork.keys.peers`
-- Can be automatically populated from `meshTopology.nix` when `autoPeers = true`
-
-**Peer Options:**
-
-- **`nodeId`** (int, required): Node ID of the peer (1-254)
-- **`publicKey`** (string, required): WireGuard public key of the peer
-- **`endpoint`** (string, optional): Connection endpoint as `IP:PORT`. At least one node must have an endpoint for NAT traversal. Set to `null` for nodes behind NAT.
-- **`persistentKeepalive`** (int, optional, default: 25): Keepalive interval in seconds. Set to `null` to disable.
-
-```nix
-# Manual peer configuration (autoPeers = false)
-services.meshNetwork.peers = [
-  {
-    nodeId = 2;
-    publicKey = "peer2_public_key_here";
-    endpoint = "192.168.1.100:51820";
-    persistentKeepalive = 25;
-  }
-  {
-    nodeId = 3;
-    publicKey = "peer3_public_key_here";
-    endpoint = null;  # Behind NAT, will connect to others
-    persistentKeepalive = 25;
-  }
-];
-```
-
-#### `autoPeers`
-
-**Type:** `bool`
-
-**Default:** `true`
-
-**Description:** Automatically populate peers from the centralized topology defined in `meshTopology.nix`. When enabled and `peers` is empty, the module will automatically fetch all other nodes from the topology based on this node's `nodeId`.
-
-This eliminates the need to manually configure peers on each node - you only need to maintain the topology in one place.
-
-```nix
-# Enable automatic peer population (default)
-services.meshNetwork.autoPeers = true;
-
-# Disable to use manual peer configuration
-services.meshNetwork.autoPeers = false;
-```
-
-**Note:** When `autoPeers = true` and `peers` is not empty, the manual peer list will be used instead.
-
-#### `dockerIntegration`
-
-**Type:** `bool`
-
-**Default:** `true`
-
-**Description:** Enable automatic Docker network configuration and routing through the mesh.
-
-```nix
-services.meshNetwork.dockerIntegration = true;
-```
-
-## Quick Start
-
-### Using Centralized Topology (Recommended)
-
-The easiest way to configure the mesh network is to use the centralized topology in `meshTopology.nix`. This approach eliminates duplication and automatically configures all peers.
-
-**Key Feature:** With `autoPeers = true` (default), you only need to set your `nodeId` - the module automatically discovers all other peers from the centralized topology.
-
-#### 1. Generate Keys
-
-On each node:
-
-```bash
-# Generate key pair
-wg genkey | tee privatekey | wg pubkey > publickey
-
-# View keys
-cat privatekey  # Keep this secret!
-cat publickey   # Share with other nodes
-```
-
-#### 2. Add Node to Topology
-
-Edit `modules/profiles/meshNetwork/meshTopology.nix`:
-
-```nix
-nodes = {
-  devenv = {
-    nodeId = 1;
-    hostname = "devenv";
-    endpoint = "10.1.200.2:51820";
-    publicKey = "zKEWyw9tClll136BGRSv2ImwiP6wNpeJ8ZqG6+ETnmY=";
+  services.meshNetwork = {
+    enable = true;
+    # nodeId defaults from meshTopology.nix
+    # peers default from meshTopology.nix
   };
-  
-  rp1 = {
-    nodeId = 2;
-    hostname = "rp1";
-    endpoint = "10.1.12.2:51820";
-    publicKey = "RCmhMTQbaHCwfYeJYOF0J09aGdZvAWDuIakUY3tomGk=";
-  };
-  
-  # Add your new node here
-  mynewnode = {
-    nodeId = 3;
-    hostname = "mynewnode";
-    endpoint = "10.1.11.5:51820";  # or null if behind NAT
-    publicKey = "YOUR_PUBLIC_KEY_HERE";
-  };
-};
+}
 ```
 
-#### 3. Configure Secrets
-
-Create `modules/secrets/<hostname>.nix` with your private key:
+Create the private key secret in `modules/secrets/<host>.nix`:
 
 ```nix
 {
   lib,
   ...
 }: {
-  secrets = {
-    meshNetwork = {
-      description = "MeshNetwork secrets";
-      file = lib.mkDefault (builtins.toFile "mesh-privatekey" "YOUR_PRIVATE_KEY_HERE");
-    };
-  };
-}
-```
-
-#### 4. Enable in Host Configuration
-
-In `hosts/<hostname>.nix`:
-
-```nix
-services.meshNetwork = {
-  enable = true;
-  nodeId = 3;  # Must match the nodeId in meshTopology.nix
-  # Peers are automatically populated from topology!
-};
-```
-
-That's it! The module will automatically configure all peers from the topology.
-
-### Manual Configuration (Legacy)
-
-If you prefer to manually configure peers or need custom configuration:
-
-#### 1. Generate Keys
-
-On each node:
-
-```bash
-# Generate key pair
-wg genkey | tee privatekey | wg pubkey > publickey
-
-# View keys
-cat privatekey  # Keep this secret!
-cat publickey   # Share with other nodes
-```
-
-#### 2. Configure Secrets
-
-Create `modules/secrets/mesh.nix`:
-
-```nix
-{
   secrets.meshNetwork = {
-    description = "Mesh network configuration";
-    
-    # Private key as file
-    file = builtins.toFile "mesh-privatekey" "your_private_key_here";
-    
-    keys = {
-      nodeId = 1;
-      listenPort = 51820;
-      
-      peers = [
-        {
-          nodeId = 2;
-          publicKey = "peer2_public_key";
-          endpoint = "192.168.1.100:51820";
-          persistentKeepalive = 25;
-        }
-        {
-          nodeId = 3;
-          publicKey = "peer3_public_key";
-          endpoint = "192.168.1.101:51820";
-          persistentKeepalive = 25;
-        }
-      ];
-    };
+    description = "MeshNetwork WireGuard private key";
+    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
   };
 }
 ```
 
-#### 3. Enable the Module
+## Adding A Node
 
-In your configuration:
+1. Generate a key pair on a trusted machine:
 
-```nix
-{
-  imports = [ ./modules/secrets/mesh.nix ];
-  
-  # Enable mesh network with manual peer configuration
-  services.meshNetwork = {
-    enable = true;
-    autoPeers = false;  # Disable automatic peer population
-  };
-  
-  # Configuration is auto-loaded from secrets
-  # nodeId must be set in host config or secrets
-}
-```
+   ```bash
+   mesh-keygen
+   ```
 
-## Centralized Topology
+   or:
 
-### Overview
+   ```bash
+   wg genkey | tee privatekey | wg pubkey > publickey
+   ```
 
-The `meshTopology.nix` file provides a centralized place to define all mesh network nodes. This eliminates the need to configure peers on every node individually.
+2. Add the public key and endpoint to `modules/profiles/meshNetwork/meshTopology.nix`.
 
-**File Location:** `modules/profiles/meshNetwork/meshTopology.nix`
+3. Add the host configuration in `hosts/<host>.nix`.
 
-### Structure
+4. Add a matching secret template in `modules/secrets.example/<host>.nix`.
 
-```nix
-{ lib }: let
-  meshSubnet = "10.255.0.0/24";
-  
-  nodes = {
-    <hostname> = {
-      nodeId = <unique-id>;
-      hostname = "<hostname>";
-      endpoint = "<ip>:<port>";  # or null
-      publicKey = "<wireguard-public-key>";
-    };
-    # ... more nodes
-  };
-in {
-  inherit meshSubnet nodes;
-  
-  # Utility functions
-  getPeersForNode = nodeId: /* ... */;
-  getNodeByNodeId = nodeId: /* ... */;
-  getNodeByHostname = hostname: /* ... */;
-}
-```
+5. Export the host in `flake.nix` with `makeDualExport` if it should build as `.#<host>`.
 
-### Available Functions
+6. Build at least the new host:
 
-#### `getPeersForNode`
+   ```bash
+   nix build path:.#nixosConfigurations.<host>.config.system.build.toplevel
+   ```
 
-Returns a list of all peers for a given nodeId, automatically excluding the node itself.
+When an existing host is rebuilt, `autoPeers = true` causes it to include the new topology peer automatically.
 
-```nix
-# Returns: [ { nodeId = 2; publicKey = "..."; endpoint = "..."; persistentKeepalive = 25; } ... ]
-meshTopology.getPeersForNode 1
-```
+## Firewall Behavior
 
-This is the function used by the `autoPeers` feature to automatically populate peer configurations.
+When enabled, the module:
 
-#### `getNodeByNodeId`
+- trusts the `wg-mesh` interface through `networking.firewall.trustedInterfaces`
+- adds a UDP allowlist rule for the WireGuard listen port from peer endpoint IPs when endpoints are known
 
-Look up a node's configuration by its nodeId.
-
-```nix
-# Returns: { nodeId = 1; hostname = "devenv"; endpoint = "..."; publicKey = "..."; }
-meshTopology.getNodeByNodeId 1
-```
-
-#### `getNodeByHostname`
-
-Look up a node's configuration by its hostname.
-
-```nix
-# Returns: { nodeId = 1; hostname = "devenv"; endpoint = "..."; publicKey = "..."; }
-meshTopology.getNodeByHostname "devenv"
-```
-
-### Adding a New Node
-
-1. Generate WireGuard keys on the new node
-2. Add entry to `meshTopology.nix`:
-
-```nix
-nodes = {
-  # ... existing nodes ...
-  
-  newnode = {
-    nodeId = 4;  # Must be unique
-    hostname = "newnode";
-    endpoint = "10.1.11.10:51820";
-    publicKey = "NEW_NODE_PUBLIC_KEY";
-  };
-};
-```
-
-3. Create secrets file for the new node: `modules/secrets/newnode.nix`
-4. Enable mesh network in the host config with just `nodeId` - peers auto-populate!
-
-All existing nodes will automatically include the new node in their peer list on next rebuild.
-
-### 4. Build and Deploy
-
-```bash
-# Build the configuration
-nixos-rebuild build --flake path:.#hostname
-
-# Deploy
-nixos-rebuild switch --flake path:.#hostname
-```
-
-## Complete Examples
-
-### Two-Node Mesh
-
-**Node 1 (Public IP: 203.0.113.10)**
-
-```nix
-# modules/secrets/node1.nix
-{
-  secrets.meshNetwork = {
-    description = "Node 1 mesh credentials";
-    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "node1_private_key_here");
-  };
-}
-
-# hosts/node1.nix
-{
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 1;
-    autoPeers = false;  # Manual peer configuration
-    
-    peers = [
-      {
-        nodeId = 2;
-        publicKey = "node2_public_key";
-        endpoint = "203.0.113.20:51820";
-      }
-    ];
-  };
-}
-```
-
-**Node 2 (Public IP: 203.0.113.20)**
-
-```nix
-# modules/secrets/node2.nix
-{
-  secrets.meshNetwork = {
-    description = "Node 2 mesh credentials";
-    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "node2_private_key_here");
-  };
-}
-
-# hosts/node2.nix
-{
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 2;
-    autoPeers = false;  # Manual peer configuration
-    
-    peers = [
-      {
-        nodeId = 1;
-        publicKey = "node1_public_key";
-        endpoint = "203.0.113.10:51820";
-      }
-    ];
-  };
-}
-```
-
-### Three-Node Mesh (Hub-and-Spoke)
-
-**Hub (Node 1 - Public IP)**
-
-```nix
-# modules/secrets/hub.nix
-{
-  secrets.meshNetwork.file = lib.mkDefault (builtins.toFile "mesh-privatekey" "hub_private_key");
-}
-
-# hosts/hub.nix
-{
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 1;
-    autoPeers = false;
-    
-    peers = [
-      {
-        nodeId = 2;
-        publicKey = "node2_public_key";
-        endpoint = null;  # Spoke will connect to us
-      }
-      {
-        nodeId = 3;
-        publicKey = "node3_public_key";
-        endpoint = null;  # Spoke will connect to us
-      }
-    ];
-  };
-}
-```
-
-**Spoke Nodes (Behind NAT)**
-
-```nix
-# modules/secrets/spoke.nix
-{
-  secrets.meshNetwork.file = lib.mkDefault (builtins.toFile "mesh-privatekey" "spoke_private_key");
-}
-
-# hosts/spoke.nix
-{
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 2;  # or 3 for the other spoke
-    autoPeers = false;
-    
-    peers = [
-      {
-        nodeId = 1;
-        publicKey = "hub_public_key";
-        endpoint = "203.0.113.10:51820";  # Hub's public IP
-        persistentKeepalive = 25;  # Keep NAT hole open
-      }
-    ];
-  };
-}
-```
-
-### Mesh with Docker
-
-```nix
-{
-  # Private key configured via secrets.meshNetwork.file
-  
-  # Enable Docker
-  virtualisation.docker.enable = true;
-  
-  # Enable mesh network (uses autoPeers from meshTopology.nix)
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 1;
-    dockerIntegration = true;
-  };
-  
-  # Containers can now use the 'backend' network
-  virtualisation.oci-containers.containers.myapp = {
-    image = "nginx:latest";
-    extraOptions = [ "--network=backend" ];
-  };
-}
-```
+The allowlist rule is generated from the final peer list. Peers with `endpoint = null` do not contribute source IPs to that rule.
 
 ## Docker Integration
 
-When `dockerIntegration = true`, the module automatically:
+When `dockerIntegration = true` and Docker is enabled, the module creates:
 
-1. **Creates Docker Network**: `backend` bridge network (172.20.0.0/16)
-2. **Configures Routing**: Routes container traffic through mesh
-3. **Sets Up NAT**: nftables rules for masquerading
-4. **Provides Environment File**: `/etc/meshNetwork/docker-compose.env`
+- Docker bridge network `backend`
+- bridge name `br-mesh`
+- Docker subnet `172.20.0.0/16`
+- nftables NAT and forward rules for traffic between `br-mesh` and `wg-mesh`
+- `/etc/meshNetwork/docker-compose.env`
 
-### Using in Docker Compose
-
-Create `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  app:
-    image: myapp:latest
-    networks:
-      - backend
-    environment:
-      # Other containers on the mesh
-      - DATABASE_HOST=10.255.0.2
-      - REDIS_HOST=10.255.0.3
-
-networks:
-  backend:
-    external: true  # Uses the mesh network
-```
-
-Deploy:
-
-```bash
-docker-compose up -d
-```
-
-### Environment Variables
-
-The module creates `/etc/meshNetwork/docker-compose.env`:
+The environment file contains:
 
 ```bash
 MESH_NETWORK=backend
-MESH_NODE_IP=10.255.0.1
+MESH_NODE_IP=10.255.0.<nodeId>
 MESH_SUBNET=10.255.0.0/24
 ```
 
-Source in compose files:
+Declarative OCI containers in this repository use:
 
-```yaml
-services:
-  app:
-    env_file:
-      - /etc/meshNetwork/docker-compose.env
+```nix
+networks = [ "backend" ];
 ```
 
 ## Helper Tools
 
-The module provides command-line utilities (when mesh is enabled):
+These tools are installed only when `services.meshNetwork.enable = true`:
 
-### `mesh-keygen`
+| Tool | Purpose |
+|------|---------|
+| `mesh-keygen` | Generate a WireGuard private/public key pair |
+| `mesh-status` | Run `/etc/meshNetwork/status.sh` if the host generated one |
+| `mesh-test` | Ping every peer IP from `wg show wg-mesh` allowed IPs |
 
-Generate a new WireGuard key pair:
-
-```bash
-mesh-keygen
-
-# Output:
-# === Wireguard Mesh Key Generator ===
-# 
-# Private Key: aBcDeFgHiJkLmNoPqRsTuVwXyZ1234567890ABCD=
-# Public Key:  XyZ1234567890ABCDeFgHiJkLmNoPqRsTuVwXyZabc=
-# 
-# ⚠️  IMPORTANT: Store the private key securely!
-#    Add the private key to: modules/secrets/mesh.nix
-#    Share the public key with other mesh nodes
-```
-
-### `mesh-status`
-
-Show current mesh network status:
-
-```bash
-mesh-status
-
-# Output:
-# === Mesh Network Status ===
-# 
-# Node ID: 1
-# Mesh IP: 10.255.0.1
-# 
-# === Wireguard Interface ===
-# interface: wg-mesh
-#   public key: abc123...
-#   private key: (hidden)
-#   listening port: 51820
-# 
-# peer: xyz789...
-#   endpoint: 192.168.1.100:51820
-#   allowed ips: 10.255.0.2/32
-#   latest handshake: 30 seconds ago
-#   transfer: 1.2 GiB received, 856 MiB sent
-# 
-# === Mesh Routes ===
-# 10.255.0.0/24 dev wg-mesh scope link
-# 
-# === Peer Connectivity ===
-# Node 2 (10.255.0.2): ✓ UP
-# Node 3 (10.255.0.3): ✗ DOWN
-# 
-# === Docker Mesh Network ===
-# backend (bridge)
-```
-
-### `mesh-test`
-
-Test connectivity to all mesh peers:
-
-```bash
-mesh-test
-
-# Output:
-# === Mesh Network Connectivity Test ===
-# 
-# Testing 10.255.0.2 ... ✓ OK (12.3ms)
-# Testing 10.255.0.3 ... ✗ FAILED
-# 
-# === Bandwidth Test (iperf3) ===
-# To test bandwidth between nodes:
-#   On receiver: iperf3 -s
-#   On sender:   iperf3 -c <mesh-ip>
-```
-
-## Network Architecture
-
-### IP Addressing
-
-- **Mesh Network**: `10.255.0.0/24`
-- **Node IPs**: `10.255.0.<nodeId>`
-- **Docker Network**: `172.20.0.0/16`
-
-### Network Flow
-
-```
-Container (172.20.0.x)
-    ↓
-Docker Bridge (br-mesh)
-    ↓
-NAT / Routing
-    ↓
-WireGuard (wg-mesh) - 10.255.0.x
-    ↓
-Internet / LAN
-    ↓
-Remote WireGuard (wg-mesh) - 10.255.0.y
-    ↓
-NAT / Routing
-    ↓
-Docker Bridge (br-mesh)
-    ↓
-Remote Container (172.20.0.y)
-```
-
-### Firewall Rules
-
-Automatically configured:
-
-- **Peer IP Allowlist**: WireGuard port (51820) is automatically restricted to declared peer endpoints only using `networking.firewall.allowlist`
-- **Trusted Interface**: `wg-mesh` marked as trusted
-- **nftables NAT**: Masquerading for Docker traffic
-
-**Security Note:** The module automatically extracts peer endpoint IP addresses from the mesh topology and configures firewall rules to only allow WireGuard traffic from those specific IPs. This ensures that only declared mesh peers can establish connections, providing an additional layer of security beyond WireGuard's cryptographic authentication.
+`mesh-status` depends on the generated `/etc/meshNetwork/status.sh`. That generated script prints WireGuard status, routes, peer pings, and Docker network status when Docker integration is enabled.
 
 ## Troubleshooting
 
-### Check WireGuard Status
+Check the interface:
 
 ```bash
-wg show wg-mesh
+ip addr show wg-mesh
+sudo wg show wg-mesh
 ```
 
-### Check Routes
+Test peer connectivity:
 
 ```bash
-ip route show dev wg-mesh
+mesh-test
 ```
 
-### Verify Docker Network
+Inspect Docker mesh networking:
 
 ```bash
 docker network inspect backend
-```
-
-### Check nftables Rules
-
-```bash
 nft list table inet mesh-docker
 ```
 
-### Test Connectivity
+Common causes of failure:
 
-```bash
-# Ping peer
-ping 10.255.0.2
-
-# Check from container
-docker run --rm --network backend alpine ping 10.255.0.2
-```
-
-### Common Issues
-
-**1. Handshake not completing**
-- Check endpoints are correct
-- Verify UDP port 51820 is open
-- Check firewall rules on both sides
-
-**2. Can't reach peers**
-- Verify public keys are correct
-- Check `persistentKeepalive` is set for NAT traversal
-- Ensure routes are present: `ip route show`
-
-**3. Docker containers can't reach mesh**
-- Verify `dockerIntegration = true`
-- Check Docker network exists: `docker network ls`
-- Verify nftables rules: `nft list ruleset`
-
-**4. Private key errors**
-- Ensure private key file has correct permissions
-- Verify file path is correct
-- Check key is valid: `wg pubkey < /path/to/privatekey`
-
-## Security Considerations
-
-1. **Private Keys**: Store securely, never commit to git
-2. **Endpoints**: Use DNS names for dynamic IPs
-3. **Firewall**: Mesh interface is trusted - secure physical hosts. WireGuard port is automatically allowlisted to only accept connections from declared peer endpoints.
-4. **NAT**: Docker traffic is masqueraded, plan IP ranges carefully
-5. **Peer Authentication**: Two-layer security - IP allowlisting at firewall level plus WireGuard's cryptographic authentication
-
-## Integration with Secrets Module
-
-Recommended setup using secrets:
-
-```nix
-{
-  # Define secrets
-  secrets.meshNetwork = {
-    description = "Mesh network credentials";
-    file = /run/secrets/mesh-privatekey;
-    keys = {
-      nodeId = 1;
-      listenPort = 51820;
-      peers = [ /* ... */ ];
-    };
-  };
-  
-  # Enable mesh (auto-configures from secrets)
-  services.meshNetwork.enable = true;
-}
-```
-
-Benefits:
-- Centralized secret management
-- Easy to override for testing
-- Self-documenting configuration
+- `networking.hostName` is not present in `meshTopology.nix` and `services.meshNetwork.nodeId` was not set explicitly.
+- `secrets.meshNetwork.file` is missing or points at a file unavailable on the target.
+- The public key in topology does not match the private key in the host secret.
+- A topology node was added but not exported in `flake.nix`, so `rebuildHost <host>` cannot build it.
 
 ## See Also
 
-- [Secrets Module](secrets.md) - Managing mesh credentials
-- [Containers Profile](containers.md) - Docker configuration
-- [Firewall Module](firewall.md) - Firewall rules
-- [Examples](../examples.md) - Complete configurations
+- [Secrets Management](secrets.md)
+- [Firewall Allowlist/Denylist](firewall.md)
+- [Containers Profile](containers.md)
+- [Mesh Network Port Reference](../mesh-network-ports.md)

@@ -1,307 +1,137 @@
 # Profiles
 
-This flake provides several pre-configured profiles that combine multiple features for common use cases.
+Profiles are reusable NixOS modules under `modules/profiles/`. They are composed by `makeConfiguration`, `makeDualExport`, and explicit host module lists in `flake.nix`.
 
-## Available Profiles
+## Summary
 
-### Standard Profile
+| Profile | Path | Auto-imported by repo host builders | Exported through `nixosModules.default` | Explicit import needed |
+|---------|------|-------------------------------------|-----------------------------------------|------------------------|
+| Standard | `modules/profiles/standard.nix` | Yes | No | No for repo hosts |
+| Firewall | `modules/profiles/firewall.nix` | Yes | Yes | No for repo hosts |
+| Secrets | `modules/profiles/secrets.nix` | No, except through mesh/containers | Yes | Usually imported by mesh/containers |
+| Mesh Network | `modules/profiles/meshNetwork/` | No | Yes | Yes unless imported by another profile |
+| Containers | `modules/profiles/containers/` | No | No | Yes |
+| Mount Data | `modules/profiles/mountData.nix` | No | No | Yes |
 
-**Auto-imported:** Yes (in all configurations)
+## Standard
 
-**Path:** `modules/profiles/standard.nix`
+[Full reference](modules/standard.md)
 
-Base configuration for all systems. Provides:
-- SSH server with secure defaults
-- sudo-rs (Rust sudo)
-- Auto-updates from GitHub
-- Basic utilities (bash, vim, shadow)
-- nftables firewall
-- systemd-networkd
-- Standard user (rnetadmin)
+Base system configuration:
 
-[Read full documentation →](modules/standard.md)
+- systemd-networkd and nftables
+- SSH with password auth disabled
+- `rnetadmin` administrative user
+- sudo-rs
+- basic tools
+- Nix flakes enabled
+- automatic system upgrades
+- DBus reconnect timer
 
-**Usage:**
+Included automatically by `makeConfiguration`.
+
+## Firewall
+
+[Full reference](modules/firewall.md)
+
+Adds source-scoped allowlist and denylist options under `networking.firewall`.
+
 ```nix
-# Automatically included via library functions
-dualSystems.vm = library.makeDualExport "vm" {
-  vmId = 100;
-  # standard profile is auto-included
+networking.firewall.allowlist = [
+  {
+    port = 443;
+    protocol = "tcp";
+    source = [ "10.0.0.0/8" ];
+  }
+];
+```
+
+Included by `makeConfiguration` and `nixosModules.default`.
+
+## Secrets
+
+[Full reference](modules/secrets.md)
+
+Defines `secrets.<name>.keys`, `secrets.<name>.file`, and `secrets.<name>.description`.
+
+```nix
+secrets.meshNetwork = {
+  description = "MeshNetwork WireGuard private key";
+  file = /run/secrets/mesh-privatekey;
 };
 ```
 
----
+The module defines options only; it does not decrypt files or manage permissions.
 
-### Containers Profile
+## Mesh Network
 
-**Auto-imported:** No (import explicitly)
+[Full reference](modules/meshNetwork.md)
 
-**Path:** `modules/profiles/containers/`
-
-Docker host configuration with mesh networking. Provides:
-- Docker with optimized settings
-- Bind-mounted data directory
-- Mesh network integration
-- cgroups v2 support
-- OCI container backend
-
-**Requires:**
-- `modules/profiles/mountData.nix`
-
-**Optional:**
-- `modules/profiles/meshNetwork` (for container mesh)
-
-[Read full documentation →](modules/containers.md)
-
-**Usage:**
-```nix
-{
-  imports = [
-    "${reinitialized-infra}/modules/profiles/mountData.nix"
-    "${reinitialized-infra}/modules/profiles/containers"
-  ];
-  
-  services.meshNetwork.enable = true;
-}
-```
-
----
-
-### Mesh Network Profile
-
-**Auto-imported:** Via `nixosModules.default`
-
-**Path:** `modules/profiles/meshNetwork/`
-
-WireGuard-based mesh networking. Provides:
-- WireGuard VPN configuration
-- Docker network integration
-- nftables NAT rules
-- Helper tools (mesh-keygen, mesh-status, mesh-test)
-- Auto-configuration from secrets
-
-[Read full documentation →](modules/meshNetwork.md)
-
-**Usage:**
-```nix
-{
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 1;
-    # privateKeyFile auto-sourced from secrets.meshNetwork.file
-    # peers auto-discovered from meshTopology.nix when autoPeers = true (default)
-  };
-}
-```
-
----
-
-### Firewall Profile
-
-**Auto-imported:** Via `nixosModules.default`
-
-**Path:** `modules/profiles/firewall.nix`
-
-Advanced firewall with source IP allowlist/denylist. Provides:
-- Per-port source IP restrictions
-- TCP/UDP/both protocol support
-- IPv4/IPv6 support
-- CIDR notation
-- Works with nftables or iptables
-
-[Read full documentation →](modules/firewall.md)
-
-**Usage:**
-```nix
-{
-  networking.firewall.allowlist = [
-    {
-      port = 443;
-      protocol = "tcp";
-      source = [ "10.0.0.0/8" ];
-    }
-  ];
-}
-```
-
----
-
-### Secrets Profile
-
-**Auto-imported:** Via `nixosModules.default`
-
-**Path:** `modules/profiles/secrets.nix`
-
-Centralized secrets management. Provides:
-- Key-value pairs for secrets
-- File references
-- Integration with external managers
-- Type-safe configuration
-
-[Read full documentation →](modules/secrets.md)
-
-**Usage:**
-```nix
-{
-  secrets.my-app = {
-    description = "My app secrets";
-    keys = {
-      apiKey = "secret";
-      endpoint = "https://api.example.com";
-    };
-    file = /run/secrets/private-key;
-  };
-}
-```
-
----
-
-### Mount Data Profile
-
-**Auto-imported:** No (import explicitly)
-
-**Path:** `modules/profiles/mountData.nix`
-
-Secondary disk management. Provides:
-- Auto-formatting
-- Auto-resizing
-- ext4 filesystem
-- Mounts at `/mnt/data`
-
-[Read full documentation →](modules/mountData.md)
-
-**Usage:**
-```nix
-{
-  imports = [
-    "${reinitialized-infra}/modules/profiles/mountData.nix"
-  ];
-  
-  # Data disk available at /mnt/data
-}
-```
-
----
-
-## Profile Combinations
-
-### Web Server
+Configures WireGuard `wg-mesh` and, when Docker is enabled, a Docker `backend` bridge network.
 
 ```nix
-{
-  # standard profile auto-included
-  
-  services.nginx.enable = true;
-  
-  networking.firewall.allowlist = [
-    { port = 80; protocol = "tcp"; source = [ "0.0.0.0/0" ]; }
-    { port = 443; protocol = "tcp"; source = [ "0.0.0.0/0" ]; }
-  ];
-}
+services.meshNetwork = {
+  enable = true;
+  # nodeId and peers default from meshTopology.nix when hostname is present
+};
 ```
 
-### Database Server
+Private keys come from `secrets.meshNetwork.file`. Public keys and endpoints live in `modules/profiles/meshNetwork/meshTopology.nix`.
+
+## Containers
+
+[Full reference](modules/containers.md)
+
+Configures Docker as the OCI backend, Docker storage under `/mnt/data/docker`, daily prune, declarative image update checks, the `migrate-volumes` tool, and restricted Docker SSH migration access.
+
+Use with `mountData`:
 
 ```nix
-{
-  imports = [
-    ./modules/profiles/mountData.nix
-  ];
-  
-  services.postgresql = {
-    enable = true;
-    dataDir = "/mnt/data/postgres";
-  };
-  
-  networking.firewall.allowlist = [
-    {
-      port = 5432;
-      protocol = "tcp";
-      source = [ "10.0.0.0/8" ];  # Internal only
-    }
-  ];
-}
+modules = [
+  "${self}/modules/profiles/containers"
+  "${self}/modules/profiles/mountData.nix"
+];
 ```
 
-### Docker Host
+Enable mesh networking on container hosts with:
 
 ```nix
-{
-  imports = [
-    ./modules/profiles/mountData.nix
-    ./modules/profiles/containers
-  ];
-  
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 1;
-    # autoPeers = true is default - peers auto-discovered from meshTopology.nix
-    # privateKeyFile is auto-sourced from secrets.meshNetwork.file
-  };
-}
+services.meshNetwork.enable = true;
 ```
 
-### Secure Application Server
+## Mount Data
+
+[Full reference](modules/mountData.md)
+
+Mounts the QEMU second SCSI disk at `/mnt/data`:
 
 ```nix
-{
-  secrets.my-app = {
-    keys = {
-      apiKey = "secret";
-    };
-  };
-  
-  networking.firewall.allowlist = [
-    {
-      port = 443;
-      protocol = "tcp";
-      source = [ "10.0.0.0/8" ];  # Private network only
-    }
-  ];
-}
+fileSystems."/mnt/data" = {
+  fsType = "ext4";
+  device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
+  autoFormat = true;
+  autoResize = true;
+};
 ```
 
-## Profile Import Methods
+Only use it on hosts where `scsi1` is intended to be the data disk.
 
-### Auto-Imported Profiles
+## Current Host Composition
 
-These are available automatically when using:
+| Host | Profiles/modules explicitly passed in `flake.nix` |
+|------|---------------------------------------------------|
+| `devenv` | `vscodeServer`, `containers`, `mountData` |
+| `rp1` | `vscodeServer`, `containers`, `mountData` |
+| `apps1` | `vscodeServer`, `containers`, `mountData` |
+| `apps2` | `vscodeServer`, `containers`, `mountData` |
+| `apps3` | `vscodeServer`, `containers`, `mountData` |
+| `ai1` | `vscodeServer`, `mountData`, `meshNetwork` |
+| `db1` | `vscodeServer`, `containers`, `mountData` |
 
-```nix
-{
-  imports = [
-    reinitialized-infra.nixosModules.default
-  ];
-}
-```
-
-Or when using library functions (`makeDualExport`, `makeConfiguration`).
-
-**Auto-imported:**
-- standard
-- secrets
-- firewall
-- meshNetwork (module available, needs `enable = true`)
-
-### Explicit Import
-
-Some profiles must be imported explicitly:
-
-```nix
-{
-  imports = [
-    "${reinitialized-infra}/modules/profiles/mountData.nix"
-    "${reinitialized-infra}/modules/profiles/containers"
-  ];
-}
-```
-
-**Require explicit import:**
-- containers
-- mountData
+All of these also receive the standard, firewall, hardware, host, and host-secret imports from `makeConfiguration`.
 
 ## See Also
 
-- [Library Functions](library-functions.md) - Using profiles with library functions
-- [Modules Documentation](modules/README.md) - Detailed module documentation
-- [Examples](examples.md) - Complete configuration examples
+- [Modules Overview](modules/README.md)
+- [Library Functions](library-functions.md)
+- [Examples](examples.md)

@@ -8,9 +8,9 @@ All Authentik-managed services are configured to automatically create user accou
 
 | Service | Host | Auth Method | Auto-Registration | Key Setting |
 |---------|------|-------------|-------------------|-------------|
-| ownCloud Infinite Scale | apps3 | OIDC (Authentik) | ✅ Enabled | `PROXY_AUTOPROVISION_ACCOUNTS=true` |
-| Immich | apps3 | OIDC (Authentik) | ✅ Enabled | `IMMICH_OIDC_AUTO_REGISTER=true` |
-| Forgejo | apps1 | OAuth2/OIDC (Authentik) | ✅ Enabled | `FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION=true` |
+| ownCloud Infinite Scale | apps3 | OIDC (Authentik) | Enabled | `PROXY_AUTOPROVISION_ACCOUNTS=true` |
+| Immich | apps3 | OIDC (Authentik) | Enabled | `IMMICH_OIDC_AUTO_REGISTER=true` |
+| Forgejo | apps1 | OAuth2/OIDC (Authentik) | Enabled | `FORGEJO__oauth2_client__ENABLE_AUTO_REGISTRATION=true` |
 
 ## How It Works
 
@@ -103,8 +103,8 @@ Each service requires a corresponding Application and OAuth2/OIDC Provider in Au
 | Application Slug | Redirect URI | Client Type |
 |-----------------|--------------|-------------|
 | `ocis` | `https://cloud.reinitialized.net/` | Confidential |
-| `immich` | `https://photos.reinitialized.net/auth/login` | Confidential |
-| `forgejo` | `https://git.reinitialized.net/user/oauth2/authentik/callback` | Confidential |
+| `immich` | `https://photos.reinitialized.me/auth/login` | Confidential |
+| `forgejo` | `https://git.ds.reinitialized.net/user/oauth2/authentik/callback` | Confidential |
 
 **Issuer URLs** (used by services to discover Authentik's OIDC endpoints):
 ```
@@ -182,6 +182,6 @@ docker exec forgejo forgejo admin auth add-oauth \
 
 ## See Also
 
-- [Mesh Network Ports](../mesh-network-ports.md) - Port allocations for Authentik (1043) and OCIS (1044)
+- [Mesh Network Ports](../mesh-network-ports.md) - Port allocations for Authentik (apps1:1043) and OCIS (apps3:1028)
 - [Secrets Module](../modules/secrets.md) - Secrets management for OIDC credentials
 - [Containers Profile](../modules/containers.md) - Docker container configuration

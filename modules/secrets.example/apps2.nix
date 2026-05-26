@@ -12,7 +12,7 @@
       description = "Technitium DNS API token for ACME DNS-01 challenges";
       file = lib.mkDefault (builtins.toFile "acme-dns-token" ''
         TECHNITIUM_API_TOKEN=${config.secrets.acmeDns.keys.apiToken}
-        TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:5380/
+        TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
       '');
       keys = {
         apiToken = "PLACE API TOKEN HERE";
@@ -29,6 +29,15 @@
         MONGO_AUTHSOURCE = "admin";
       };
     };
+
+    pgAdmin4 = {
+      description = "pgAdmin4 web interface configuration";
+      keys = {
+        PGADMIN_DEFAULT_EMAIL = "admin@example.com";
+        PGADMIN_DEFAULT_PASSWORD = "YOUR_SECURE_PASSWORD_HERE";
+      };
+    };
+
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
       file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
@@ -37,8 +46,8 @@
     redisInsight = {
       description = "Redis Insight configuration";
       keys = {
-        RI_REDIS_HOST1 = "VALKEY_MESH_IP";
-        RI_REDIS_PORT1 = "VALKEY_MESH_PORT";
+        RI_REDIS_HOST1 = "10.255.0.11";
+        RI_REDIS_PORT1 = "1025";
         RI_REDIS_ALIAS1 = "valkey1";
       };
     };

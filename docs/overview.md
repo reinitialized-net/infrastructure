@@ -2,285 +2,138 @@
 
 ## Purpose
 
-This NixOS infrastructure flake is designed to simplify the deployment of NixOS-based virtual machines in Proxmox environments while providing reusable modules for common infrastructure patterns.
+This repository is a NixOS infrastructure flake for the Reinitialized fleet. It builds Proxmox-compatible VMA images, exports live NixOS configurations for rebuilds, and defines reusable profiles for common host roles: standard VM defaults, Docker hosts, WireGuard mesh networking, secrets wiring, source-scoped firewall rules, and secondary data disks.
+
+The implementation is the source of truth. The most important entry point is `flake.nix`.
+
+## Flake Shape
+
+`flake.nix` imports `library/default.nix`, defines each host with `library.makeDualExport`, and exposes two output families:
+
+```nix
+nixosConfigurations.<host>
+packages.x86_64-linux.<host>
+```
+
+Current exported hosts:
+
+- `devenv`
+- `rp1`
+- `apps1`
+- `apps2`
+- `apps3`
+- `ai1`
+- `db1`
+
+`gs1` has a host file, secret example, and mesh topology entry, but its export is commented out in `flake.nix`.
 
 ## Core Components
 
-### 1. Library Functions
+### Library
 
-The flake exposes several primary library functions:
+| File | Role |
+|------|------|
+| `library/makeDualExport.nix` | Calls `generateVMAImage` and `makeConfiguration` from one host definition |
+| `library/makeConfiguration.nix` | Creates `nixpkgs.lib.nixosSystem`, imports hardware, standard profile, firewall profile, host file, and host secrets file when present |
+| `library/generateVMAImage/default.nix` | Builds Proxmox VMA output and generated credentials |
+| `library/generateVMAImage/qemuConfig.nix` | Produces the Proxmox VM configuration included in the VMA |
+| `library/makeUser.nix` | Directly imported module factory for `/mnt/data`-backed users |
 
-- **`makeDualExport`** - Creates both VMA package and nixosSystem from single definition (recommended)
-- **`makeUser`** - Creates users with bind-mounted home directories from /mnt/data
-- **`forAllSystems`** - Helper for multi-architecture support
-- **`generateVMAImage`** - Generates Proxmox VMA (Vzdump) format images
-- **`makeConfiguration`** - Creates standard NixOS configurations
+Use `makeDualExport` for normal host additions so `nixosConfigurations` and VMA packages stay aligned.
 
-### 2. NixOS Modules
+### Profiles And Modules
 
-Three main custom modules are provided:
+| Module/profile | Path | How it is used |
+|----------------|------|----------------|
+| Standard | `modules/profiles/standard.nix` | Auto-imported by `makeConfiguration` |
+| Firewall | `modules/profiles/firewall.nix` | Auto-imported by `makeConfiguration`; also exported through `nixosModules.default` |
+| Secrets | `modules/profiles/secrets.nix` | Imported by mesh/containers and exported through `nixosModules.default` |
+| Mesh Network | `modules/profiles/meshNetwork/` | Explicitly imported by hosts or profiles, and exported through `nixosModules.default` |
+| Containers | `modules/profiles/containers/` | Explicitly imported on Docker hosts |
+| Mount Data | `modules/profiles/mountData.nix` | Explicitly imported on hosts with a second data disk |
+| QEMU Hardware | `modules/hardware/qemu.nix` | Auto-imported by `makeConfiguration` when `hardware = "qemu"` |
 
-- **`secrets`** - Declarative secrets management system
-- **`networking.firewall.allowlist`** - Source IP-based firewall rules
-- **`services.meshNetwork`** - WireGuard mesh networking for Docker hosts
+### Host Files
 
-### 3. Profiles
+Host modules under `hosts/` set static networking, enable mesh networking, define services, and wire secrets into container environments. `makeConfiguration` automatically imports `hosts/<host>.nix` for every host except the special `"standard"` host name.
 
-Pre-configured system profiles for common use cases:
+Live secrets are imported automatically from `modules/secrets/<host>.nix` when that file exists. Secret templates live in `modules/secrets.example/`.
 
-- **standard** - Base configuration with SSH, sudo-rs, and basic tools (auto-included)
-- **containers** - Docker with mesh networking support
-- **meshNetwork** - WireGuard mesh network with auto-peer discovery from centralized topology
-- **mountData** - Data partition mounting configuration
-- **firewall** - Advanced firewall with allowlist support
-- **secrets** - Declarative secrets management
+## Network Model
 
-### 4. Hardware Modules
-
-- **qemu** - QEMU/KVM VM configuration for Proxmox
-
-## Design Philosophy
-
-### Declarative Everything
-
-All configuration, including secrets references and firewall rules, is declared in Nix expressions. This enables:
-
-- Version control of infrastructure
-- Reproducible builds
-- Type-safe configuration
-- Documentation through code
-
-### Modular Composition
-
-Modules are designed to be composable and independent:
+Physical networking is configured with systemd-networkd. Current hosts match the primary NIC by:
 
 ```nix
-{
-  imports = [
-    reinitialized-infra.nixosModules.default
-  ];
-  
-  # Enable features as needed
-  services.meshNetwork.enable = true;
-  networking.firewall.allowlist = [ ... ];
-}
+matchConfig.Path = "pci-0000:06:12.0";
 ```
 
-### Proxmox Integration
+The WireGuard mesh uses:
 
-The VMA image generation process creates ready-to-import Proxmox backups:
+- Interface: `wg-mesh`
+- Subnet: `10.255.0.0/24`
+- Node IP: `10.255.0.<nodeId>`
+- Default listen port: `51820`
+- Topology file: `modules/profiles/meshNetwork/meshTopology.nix`
 
-1. Builds a complete NixOS system with systemd-boot EFI
-2. Creates properly partitioned disk images (ESP + root)
-3. Packages as VMA format with QEMU configuration
-4. Generates random credentials for initial access
+Most Docker service-to-service traffic uses mesh IPs and explicitly mapped host ports. See [Mesh Network Port Reference](mesh-network-ports.md).
 
-## Workflow
+## Proxmox VMA Generation
 
-### Using the Dual-Export Pattern (Recommended)
+`generateVMAImage` builds a VMA archive with:
 
-The dual-export pattern is the PRIMARY way to define systems. It allows you to define a system once and export both a VMA image and nixosSystem configuration, eliminating duplication and ensuring consistency.
+- systemd-boot and UEFI boot support
+- an ESP partition and ext4 root partition on the first disk
+- placeholder raw images for additional SCSI disks
+- OVMF VARS and TPM state images
+- generated Proxmox QEMU config
+- a random generated `rnetadmin` password in `CREDENTIALS.txt`
 
-```nix
-{
-  outputs = { self, ... }:
-    let
-      library = import ./library { inherit self; };
-      
-      # Define systems once using makeDualExport
-      dualSystems = {
-        myapp = library.makeDualExport "myapp" {
-          system = "x86_64-linux";
-          vmId = 100;
-          cores = 4;
-          memory = 8192;
-          
-          disks = [
-            { storage = "local-lvm"; size = 50; }
-          ];
-          
-          networking = [
-            { bridge = "vmbr0"; vlan = 100; firewall = true; }
-          ];
-          
-          modules = [ ./hosts/myapp.nix ];
-        };
-      };
-    in
-    {
-      # Export both outputs from the dual system
-      nixosConfigurations.myapp = dualSystems.myapp.nixosSystem;
-      packages.x86_64-linux.myapp = dualSystems.myapp.package;
-    };
-}
-```
+The first configured disk becomes `scsi0` and stores the OS. The `mountData` profile expects the data disk to be `scsi1`.
 
-This pattern ensures that VMA images and nixosSystem configurations stay in sync.
+## Deployment Workflow
 
-### Building a VM Image
+The `devenv` host installs generated fleet tools:
 
-**Note:** Use `makeDualExport` instead of calling `generateVMAImage` directly for new systems.
+- `rebuildHost` - rebuild one target from the repository checkout on `devenv`
+- `updateInfra` - rebuild every host listed in mesh topology
+- `updateNetworkFirewallRules` - generate and optionally apply OPNsense firewall recommendations from traffic logs
 
-```nix
-packages.x86_64-linux.my-app = generateVMAImage "my-app" {
-  system = "x86_64-linux";
-  vmId = 100;
-  
-  # Hardware resources
-  cores = 4;
-  memory = 8192;
-  
-  # Storage configuration
-  disks = [
-    {
-      storage = "local-lvm";
-      size = 50;
-    }
-  ];
-  
-  # Network configuration
-  networking = [
-    {
-      bridge = "vmbr0";
-      vlan = 100;
-      firewall = true;
-    }
-  ];
-  
-  # Custom modules
-  modules = [
-    ./my-app-config.nix
-  ];
-};
-```
-
-### Using Secrets
-
-```nix
-# Define secrets
-secrets.my-app = {
-  description = "My application secrets";
-  keys = {
-    apiKey = "secret-value";
-    endpoint = "https://api.example.com";
-  };
-};
-
-# Reference secrets
-services.myapp.apiKey = config.secrets.my-app.keys.apiKey;
-```
-
-### Mesh Networking
-
-The mesh network module supports auto-peer discovery from a centralized topology:
-
-```nix
-# In modules/profiles/meshNetwork/meshTopology.nix, define all nodes once
-nodes = {
-  node1 = { nodeId = 1; hostname = "node1"; endpoint = "10.1.1.1:51820"; publicKey = "..."; };
-  node2 = { nodeId = 2; hostname = "node2"; endpoint = "10.1.1.2:51820"; publicKey = "..."; };
-  node3 = { nodeId = 3; hostname = "node3"; endpoint = "10.1.1.3:51820"; publicKey = "..."; };
-};
-
-# In your host config, just set nodeId - peers are auto-discovered
-services.meshNetwork = {
-  enable = true;
-  nodeId = 1;  # Automatically discovers node2 and node3 as peers
-};
-```
+Remote deploys use SSH as `rnetadmin` with `--sudo` on the target. Do not run remote deploy tools with `sudo`.
 
 ## File Structure
 
-```
+```text
 infrastructure/
-├── flake.nix                # Main flake definition
-├── library/                 # Library functions
-│   ├── default.nix          # Library exports
-│   ├── makeDualExport.nix   # Dual-export pattern (PRIMARY)
+├── flake.nix
+├── library/
+│   ├── default.nix
+│   ├── makeDualExport.nix
 │   ├── makeConfiguration.nix
-│   ├── makeUser.nix         # User with bind-mounted home
+│   ├── makeUser.nix
 │   └── generateVMAImage/
-│       ├── default.nix      # VMA image builder
-│       └── qemuConfig.nix   # Proxmox VM configuration
-├── modules/                 # Custom NixOS modules
-│   ├── hardware/
-│   │   └── qemu.nix         # QEMU/KVM hardware config
-│   ├── profiles/            # System profiles
-│   │   ├── standard.nix     # Base config (auto-included)
-│   │   ├── mountData.nix    # Secondary disk mounting
-│   │   ├── firewall.nix     # Allowlist/denylist firewall
-│   │   ├── secrets.nix      # Secrets management
-│   │   ├── containers/      # Docker profile (directory)
-│   │   │   ├── default.nix
-│   │   │   ├── containerTools.nix
-│   │   │   └── tools/
-│   │   │       └── migrate-volumes.sh
-│   │   └── meshNetwork/     # Mesh network (directory)
-│   │       ├── default.nix
-│   │       ├── meshTools.nix
-│   │       ├── meshTopology.nix  # Centralized node definitions
-│   │       └── tools/
-│   │           ├── mesh-keygen.sh
-│   │           ├── mesh-status.sh
-│   │           └── mesh-test.sh
-│   ├── secrets/             # Actual secret definitions (gitignored)
-│   │   ├── apps1.nix
-│   │   ├── apps2.nix
-│   │   ├── db1.nix
-│   │   ├── devenv.nix
-│   │   └── rp1.nix
-│   └── secrets.example/     # Example secret definitions
-├── hosts/                   # Host-specific configurations
-│   ├── apps1.nix           # App server 1 (Hudu, DNS primary)
-│   ├── apps2.nix           # App server 2 (DNS secondary, UniFi)
-│   ├── db1.nix             # Database server (PostgreSQL, Valkey)
-│   ├── devenv.nix          # Dev environment entry point
-│   ├── rp1.nix             # Reverse proxy
-│   └── devenv/             # Dev environment modules
-│       ├── devenvTools.nix  # Fleet management tool loader
-│       └── tools/
-│           ├── rebuild-host.sh
-│           ├── update-infra.sh
-│           └── update-network-firewall-rules.sh
-├── overrides/               # Package overrides
-│   └── vma.nix              # Custom QEMU with VMA support
-└── docs/                    # Documentation
-```
-
-## Integration Points
-
-### With Proxmox
-
-Built images can be imported directly:
-
-```bash
-qmrestore /path/to/vzdump-qemu-100.vma.zst 100 --storage local-lvm
-```
-
-### With External Secrets
-
-The secrets system can integrate with external secret managers:
-
-```nix
-secrets.my-service = {
-  file = "/run/secrets/my-service-key";  # From sops-nix, agenix, etc.
-  keys = {
-    # Reference external secrets
-  };
-};
-```
-
-### With Docker
-
-The mesh network module automatically configures Docker to use the mesh:
-
-```bash
-docker network ls  # Shows 'backend' mesh network
-docker run --network backend my-container
+├── hosts/
+│   ├── devenv.nix
+│   ├── rp1.nix
+│   ├── apps1.nix
+│   ├── apps2.nix
+│   ├── apps3.nix
+│   ├── ai1.nix
+│   ├── db1.nix
+│   ├── gs1.nix
+│   └── devenv/tools/
+├── modules/
+│   ├── hardware/qemu.nix
+│   ├── packages/
+│   ├── profiles/
+│   ├── secrets.example/
+│   └── secrets/        # gitignored live secrets
+├── overrides/vma.nix
+└── docs/
 ```
 
 ## Next Steps
 
-- [Library Functions Documentation](library-functions.md)
-- [Modules Documentation](modules/README.md)
-- [Complete Examples](examples.md)
+- [Library Functions](library-functions.md)
+- [Modules Overview](modules/README.md)
+- [Profiles](profiles.md)
+- [Examples](examples.md)

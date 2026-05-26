@@ -2,7 +2,7 @@
 
 **Module Path:** `modules/profiles/firewall.nix`
 
-**Import:** Automatically included with `nixosModules.default`
+**Import:** Included by `makeConfiguration` for repository hosts and by `nixosModules.default`
 
 ## Overview
 
@@ -220,7 +220,7 @@ DNS server allowing both protocols:
 
 ### IPv6 Support
 
-Web server with IPv6:
+Use IPv4 and IPv6 source values in separate entries. The module supports `ipType = "ipv46"`, but the implementation reuses each `source` value for both generated rules, so mixed-family catch-all values such as `0.0.0.0/0` should not be used for an IPv6 rule.
 
 ```nix
 {
@@ -228,8 +228,14 @@ Web server with IPv6:
     {
       port = 443;
       protocol = "tcp";
-      ipType = "ipv46";  # Both IPv4 and IPv6
-      source = [ "0.0.0.0/0" ];  # Apply to all (IPv4 will use this)
+      ipType = "ipv4";
+      source = [ "0.0.0.0/0" ];
+    }
+    {
+      port = 443;
+      protocol = "tcp";
+      ipType = "ipv6";
+      source = [ "::/0" ];
     }
   ];
 }
@@ -246,7 +252,7 @@ Web server with IPv6:
       {
         port = 443;
         protocol = "tcp";
-        ipType = "ipv46";
+        ipType = "ipv4";
         source = [ "0.0.0.0/0" ];
       }
       
@@ -635,7 +641,7 @@ curl https://your-server  # Should timeout/refuse
 
 1. **Rule not applied**: Ensure `networking.firewall.enable = true`
 2. **Port still blocked**: Check for conflicting `allowedTCPPorts` settings
-3. **IPv6 not working**: Set `ipType = "ipv46"` and verify IPv6 connectivity
+3. **IPv6 not working**: Use `ipType = "ipv6"` with IPv6 source ranges such as `::/0`, and verify IPv6 connectivity
 
 ## See Also
 

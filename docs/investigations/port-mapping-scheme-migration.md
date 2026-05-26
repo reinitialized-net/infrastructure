@@ -63,16 +63,16 @@ The new incremental scheme simplifies port management by:
 
 ### Host Configurations
 
-1. **[apps1.nix](hosts/apps1.nix)**
+1. **[apps1.nix](../../hosts/apps1.nix)**
    - Fixed stalwartOne port mappings (lines 183-193)
    - Removed conflicting port assignments
 
-2. **[apps2.nix](hosts/apps2.nix)**
+2. **[apps2.nix](../../hosts/apps2.nix)**
    - Updated UniFi ports to use sequential incremental scheme
    - Fixed pgAdmin4 host IP from 10.255.0.11 to 10.255.0.4
    - Updated pgAdmin4 port from 1027 to 1032
 
-3. **[rp1.nix](hosts/rp1.nix)**
+3. **[rp1.nix](../../hosts/rp1.nix)**
    - Updated all nginx stream upstreams to use new ports
    - Updated virtualHost proxy locations to reference new ports
 
@@ -139,13 +139,13 @@ openssl s_client -connect 10.1.12.2:993
 - DNS resolver references in ACME configs correctly use port 53 (not management ports)
 - Physical IP port mappings on apps1/apps2 (e.g., 10.1.11.2:53) remain unchanged
 - Only mesh network (10.255.0.x) port mappings were affected by this migration
-- Future stalwartTwo service on apps2 has been pre-allocated ports 1033-1040
+- Historical note: this investigation pre-allocated ports for a future `stalwartTwo`, but the current source does not define that service. Use [../mesh-network-ports.md](../mesh-network-ports.md) for current allocations.
 
 ## Documentation Updates Needed
 
 The following documentation files reference old port schemes and may need updates:
 
-- [docs/architecture/technitium-dns-cluster.md](architecture/technitium-dns-cluster.md)
+- [docs/architecture/technitium-dns-cluster.md](../architecture/technitium-dns-cluster.md)
   - References direct mesh access to ports 5380 and 53443
   - Should be updated to reference new ports 1024-1027
 

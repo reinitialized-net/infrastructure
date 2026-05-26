@@ -12,7 +12,7 @@
       description = "Technitium DNS API token for ACME DNS-01 challenges";
       file = lib.mkDefault (builtins.toFile "acme-dns-token" ''
         TECHNITIUM_API_TOKEN=${config.secrets.acmeDns.keys.apiToken}
-        TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:5380/
+        TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
       '');
       keys = {
         apiToken = "PLACE API TOKEN HERE";
@@ -36,11 +36,9 @@
         STAGING = "false";
         DISABLE_SSL = "true";
 
-        # Database connection - use container hostname for local DB
-        # For remote database, use IP address and separate port:
-        #   DB_HOST = "10.255.0.11";
-        #   DB_PORT = "1024";
-        DB_HOST = "postgres1";
+        # Database connection to PostgreSQL on db1.
+        DB_HOST = "10.255.0.11";
+        DB_PORT = "1024";
         DB_USERNAME = "postgres";
         DB_PASSWORD = "";
         DB_NAME = "hudu_production";
@@ -63,13 +61,13 @@
         RACK_ENV = "production";
         RAILS_MAX_THREADS = "50";
 
-        REDIS_URL = "redis://redis1";
+        REDIS_URL = "redis://10.255.0.11:1025";
       };
+    };
+
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
       file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
-    };
-
     };
 
     jaeger = {

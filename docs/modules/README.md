@@ -1,121 +1,78 @@
 # Custom Modules
 
-This directory contains documentation for all custom NixOS modules provided by this flake.
+This directory documents the repository-specific NixOS modules and profiles.
 
-## Available Modules
+## Modules
 
-### Core Modules
+| Document | Option or path | Purpose |
+|----------|----------------|---------|
+| [Secrets Management](secrets.md) | `secrets.*` | Key/value and file-path secret references |
+| [Firewall Allowlist/Denylist](firewall.md) | `networking.firewall.allowlist`, `networking.firewall.denylist` | Source-scoped firewall rules generated for nftables or iptables |
+| [Mesh Network](meshNetwork.md) | `services.meshNetwork.*` | WireGuard mesh and optional Docker bridge integration |
+| [Containers Profile](containers.md) | `modules/profiles/containers/` | Docker host profile, bind-mounted Docker storage, volume migration, image update timer |
+| [Standard Profile](standard.md) | `modules/profiles/standard.nix` | Base SSH, sudo-rs, networkd, nftables, user, Nix, and auto-upgrade settings |
+| [Mount Data Profile](mountData.md) | `modules/profiles/mountData.nix` | Mounts QEMU `scsi1` at `/mnt/data` |
 
-1. **[Secrets Management](secrets.md)** - `secrets`
-   - Centralized secrets configuration system
-   - Key-value pairs and file references
-   - Integration with external secret managers
+## Import Paths
 
-2. **[Firewall Allowlist/Denylist](firewall.md)** - `networking.firewall.allowlist`
-   - Source IP-based port allowlisting
-   - Support for both nftables and iptables
-   - IPv4/IPv6 support
-
-3. **[Mesh Network](meshNetwork.md)** - `services.meshNetwork`
-   - WireGuard-based mesh networking
-   - Docker integration
-   - Auto-peer discovery from centralized topology
-
-### Profile Modules
-
-4. **[Containers Profile](containers.md)** - Docker with mesh networking
-   - Pre-configured Docker setup
-   - Mesh network integration
-   - Data volume management
-
-5. **[Standard Profile](standard.md)** - Base system configuration
-   - SSH server
-   - sudo-rs
-   - Basic utilities
-   - Firewall with nftables
-
-6. **[Mount Data Profile](mountData.md)** - Data partition mounting
-   - Automatic partition detection
-   - Auto-formatting
-   - Auto-resizing
-
-## Module Usage
-
-All custom modules are automatically available when using `nixosModules.default`:
+`nixosModules.default` exports only these module definitions:
 
 ```nix
 {
-  inputs = {
-    reinitialized-infra.url = "github:reinitialized-net/infrastructure";
-  };
-
-  outputs = { self, nixpkgs, reinitialized-infra }: {
-    nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
-      modules = [
-        # Import custom modules
-        reinitialized-infra.nixosModules.default
-        
-        # Use them in your configuration
-        {
-          secrets.my-app.keys.apiKey = "secret";
-          networking.firewall.allowlist = [ ... ];
-          services.meshNetwork.enable = true;
-        }
-      ];
-    };
-  };
+  imports = [
+    reinitialized-infra.nixosModules.default
+  ];
 }
 ```
 
-## Module Categories
+It includes:
 
-### Infrastructure Modules
+- `modules/profiles/firewall.nix`
+- `modules/profiles/meshNetwork`
+- `modules/profiles/secrets.nix`
 
-Modules that provide core infrastructure capabilities:
+The repository's host exports are built with `makeConfiguration`, which also imports:
 
-- **secrets** - Secret management
-- **networking.firewall.allowlist** - Advanced firewall rules
-- **services.meshNetwork** - Mesh networking
+- `modules/hardware/qemu.nix`
+- `modules/profiles/standard.nix`
+- `modules/profiles/firewall.nix`
+- `hosts/<host>.nix`
+- `modules/secrets/<host>.nix`, when present
 
-### Profile Modules
+`containers` and `mountData` are not automatic. Add them explicitly for Docker hosts with persistent data:
 
-Pre-configured system profiles that combine multiple features:
-
-- **standard** - Base configuration for all systems
-- **containers** - Docker host setup
-- **mountData** - Data partition management
-
-## Module Dependencies
-
-```
-standard (base for all systems)
-    ├── SSH server
-    ├── sudo-rs
-    └── auto-updates
-
-containers
-    ├── requires: mountData
-    ├── requires: meshNetwork (optional)
-    └── provides: Docker
-
-meshNetwork
-    ├── requires: secrets (optional)
-    └── provides: WireGuard mesh
-
-firewall
-    └── extends: networking.firewall
-
-secrets
-    └── standalone
+```nix
+modules = [
+  "${self}/modules/profiles/containers"
+  "${self}/modules/profiles/mountData.nix"
+];
 ```
 
-## Next Steps
+## Dependencies
 
-Read detailed documentation for each module:
+| Profile/module | Depends on | Notes |
+|----------------|------------|-------|
+| `standard` | none | Imported by `makeConfiguration` |
+| `firewall` | NixOS firewall | Extends `networking.firewall`; config applies only when the firewall is enabled |
+| `secrets` | none | Defines options only; does not create files or decrypt data |
+| `meshNetwork` | `secrets` | Imports secrets module; requires `secrets.meshNetwork.file` when enabled |
+| `containers` | `meshNetwork`, `secrets`, `containerTools` | Imports these modules and assumes `/mnt/data` is available for Docker storage |
+| `mountData` | QEMU second SCSI disk | Uses `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1` |
 
-- [Secrets Management](secrets.md)
-- [Firewall Allowlist/Denylist](firewall.md)
-- [Mesh Network](meshNetwork.md)
-- [Containers Profile](containers.md)
-- [Standard Profile](standard.md)
-- [Mount Data Profile](mountData.md)
+## Current Host Usage
+
+| Host | Explicit profiles from `flake.nix` |
+|------|------------------------------------|
+| `devenv` | `containers`, `mountData`, `vscodeServer` |
+| `rp1` | `containers`, `mountData`, `vscodeServer` |
+| `apps1` | `containers`, `mountData`, `vscodeServer` |
+| `apps2` | `containers`, `mountData`, `vscodeServer` |
+| `apps3` | `containers`, `mountData`, `vscodeServer` |
+| `ai1` | `mountData`, `meshNetwork`, `vscodeServer` |
+| `db1` | `containers`, `mountData`, `vscodeServer` |
+
+## Related Docs
+
+- [Profiles Summary](../profiles.md)
+- [Library Functions](../library-functions.md)
+- [Examples](../examples.md)

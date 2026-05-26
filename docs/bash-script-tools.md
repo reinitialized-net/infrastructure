@@ -90,7 +90,7 @@ Container tools also use package substitution, with explicitly listed scripts an
 
 ### Script File (tools/migrate-volumes.sh)
 ```bash
-#!/bin/bash
+#!/usr/bin/env bash
 # Uses @package@ placeholders for Nix packages
 @docker@/bin/docker volume ls
 # ... rest of script
@@ -117,12 +117,8 @@ Container tools also use package substitution, with explicitly listed scripts an
   toolScripts = with pkgs; [
     (makeToolScript "migrate-volumes" ./tools/migrate-volumes.sh {
       docker = "${docker}";
-      sudo = "${sudo}";
       coreutils = "${coreutils}";
       gawk = "${gawk}";
-      gzip = "${gzip}";
-      bzip2 = "${bzip2}";
-      xz = "${xz}";
       openssh = "${openssh}";
       gnugrep = "${gnugrep}";
     })

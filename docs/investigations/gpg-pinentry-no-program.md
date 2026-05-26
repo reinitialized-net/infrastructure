@@ -98,6 +98,6 @@ Adding pinentry to `environment.systemPackages`:
 
 ## Related Configuration
 
-- Host: [`hosts/devenv.nix`](../hosts/devenv.nix)
+- Host: [`hosts/devenv.nix`](../../hosts/devenv.nix)
 - Module: NixOS built-in `programs.gnupg.agent`
 - Documentation: See `man gpg-agent` for pinentry configuration details

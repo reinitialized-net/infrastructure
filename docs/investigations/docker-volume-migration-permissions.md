@@ -56,7 +56,7 @@ This ensures that:
 
 ## Implementation
 
-**File Modified:** [modules/profiles/containers/tools/migrate-volumes.sh](../modules/profiles/containers/tools/migrate-volumes.sh)
+**File Modified:** [modules/profiles/containers/tools/migrate-volumes.sh](../../modules/profiles/containers/tools/migrate-volumes.sh)
 
 **Change:**
 ```diff

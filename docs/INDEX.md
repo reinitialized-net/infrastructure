@@ -1,249 +1,97 @@
 # Documentation Index
 
-Complete documentation for the Reinitialized Infrastructure NixOS Flake.
+Documentation for the Reinitialized Infrastructure NixOS flake.
 
-## Getting Started
+## Start Here
 
-- **[README](../README.md)** - Main documentation entry point with quick start guide
-- **[Overview](overview.md)** - Architecture, design philosophy, and file structure
+- [README](../README.md) - Common commands, current flake outputs, and repository layout
+- [Architecture Overview](overview.md) - How the flake, hosts, profiles, and generated tools fit together
+- [Examples](examples.md) - Minimal examples that match the current repository patterns
 
-## Core Documentation
+## Core References
 
-### Library Functions
+### Library And Host Construction
 
-- **[Library Functions](library-functions.md)** - Complete reference for all library functions
-  - `makeDualExport` - Export both VMA package and nixosSystem (recommended)
-  - `makeUser` - Create users with bind-mounted homes from /mnt/data
-  - `forAllSystems` - Helper function for multi-arch support
-  - `generateVMAImage` - Build Proxmox VMA images
-  - `makeConfiguration` - Create NixOS configurations
+- [Library Functions](library-functions.md)
+  - `makeDualExport` - Internal helper used by `flake.nix` to produce both a VMA package and a NixOS configuration
+  - `makeConfiguration` - Builds a NixOS configuration and auto-imports host and secrets files
+  - `generateVMAImage` - Builds Proxmox VMA archives
+  - `forAllSystems` - Creates attrs for `x86_64-linux` and `aarch64-linux`
+  - `library/makeUser.nix` - Directly imported user module factory for `/mnt/data`-backed homes
 
 ### Modules
 
-- **[Modules Overview](modules/README.md)** - Introduction to all custom modules
+- [Modules Overview](modules/README.md)
+- [Secrets Management](modules/secrets.md) - `secrets.*`
+- [Firewall Allowlist/Denylist](modules/firewall.md) - `networking.firewall.allowlist` and `denylist`
+- [Mesh Network](modules/meshNetwork.md) - `services.meshNetwork.*`
+- [Containers Profile](modules/containers.md) - Docker host profile and container maintenance timer
+- [Mount Data Profile](modules/mountData.md) - `/mnt/data` on QEMU `scsi1`
+- [Standard Profile](modules/standard.md) - Base profile imported by `makeConfiguration`
+- [Profiles Summary](profiles.md)
 
-#### Infrastructure Modules
+### Operations
 
-- **[Secrets Management](modules/secrets.md)** - `secrets.*` - Centralized secrets configuration
-- **[Firewall Allowlist/Denylist](modules/firewall.md)** - `networking.firewall.allowlist` - Source IP-based firewall rules
-- **[Mesh Network](modules/meshNetwork.md)** - `services.meshNetwork` - WireGuard mesh with auto-peer discovery
+- [Mesh Network Port Reference](mesh-network-ports.md)
+- [Bash Script Tools](bash-script-tools.md)
+- [Using makeUser](examples/makeUser.md)
 
-#### Profile Modules
+## Architecture Notes
 
-- **[Standard Profile](modules/standard.md)** - Base configuration for all systems
-- **[Containers Profile](modules/containers.md)** - Docker host with mesh networking
-- **[Mount Data Profile](modules/mountData.md)** - Secondary disk management
+- [Authentik OIDC Auto-Registration](architecture/authentik-oidc-auto-registration.md)
+- [Matrix Chat Architecture](architecture/matrix-setup.md)
+- [Stalwart Native ACME TLS](architecture/stalwart-native-acme-tls.md)
+- [Technitium DNS Cluster](architecture/technitium-dns-cluster.md)
 
-### Profiles Summary
-
-- **[Profiles](profiles.md)** - Overview of all available system profiles
-
-## Practical Guides
-
-- **[Examples](examples.md)** - Complete, working configuration examples
-  - Simple web server
-  - Database server with large disk
-  - Multi-host Docker cluster
-  - Secure application with firewall
-  - Complete infrastructure setup
-- **[User Management with Data Homes](examples/makeUser.md)** - Creating users with properly configured home directories
-
-## Architecture Documentation
-
-- **[Authentik OIDC Auto-Registration](architecture/authentik-oidc-auto-registration.md)** - SSO with automatic account provisioning across all Authentik-managed services
-- **[Technitium DNS Cluster](architecture/technitium-dns-cluster.md)** - Authoritative DNS cluster with centralized certificate management
-
-## Documentation by Topic
-
-### By Use Case
-
-**Building Proxmox VMs:**
-1. [Library Functions → makeDualExport](library-functions.md#makedualexport)
-2. [Standard Profile](modules/standard.md) (auto-included)
-3. [Examples → Simple Web Server](examples.md#simple-web-server-vm)
-
-**Docker Orchestration:**
-1. [Containers Profile](modules/containers.md)
-2. [Mesh Network Module](modules/meshNetwork.md)
-3. [Mount Data Profile](modules/mountData.md)
-4. [Examples → Multi-Host Docker Cluster](examples.md#multi-host-docker-cluster)
-
-**Security Configuration:**
-1. [Firewall Allowlist/Denylist](modules/firewall.md)
-2. [Secrets Management](modules/secrets.md)
-3. [Authentik OIDC Auto-Registration](architecture/authentik-oidc-auto-registration.md)
-4. [Examples → Secure Application](examples.md#secure-application-with-firewall)
-
-**Mesh Networking:**
-1. [Mesh Network Module](modules/meshNetwork.md)
-2. [Secrets Management](modules/secrets.md) (for credentials)
-3. [Examples → Multi-Host Docker Cluster](examples.md#multi-host-docker-cluster)
-
-### By Module Type
-
-**Library Functions:**
-- [makeDualExport](library-functions.md#makedualexport) (PRIMARY)
-- [makeUser](library-functions.md#makeuser)
-- [forAllSystems](library-functions.md#forallsystems)
-- [generateVMAImage](library-functions.md#generatevmaimage)
-- [makeConfiguration](library-functions.md#makeconfiguration)
-
-**NixOS Options:**
-- [secrets.*](modules/secrets.md)
-- [networking.firewall.allowlist](modules/firewall.md)
-- [services.meshNetwork.*](modules/meshNetwork.md)
-
-**System Profiles:**
-- [standard](modules/standard.md)
-- [containers](modules/containers.md)
-- [mountData](modules/mountData.md)
+Investigation notes under [docs/investigations/](investigations/) are historical incident writeups. Use them for context, but verify current behavior against source files before making changes.
 
 ## Quick Reference
 
+### Current Exported Hosts
+
+| Host | NixOS config | VMA package | Mesh node |
+|------|--------------|-------------|-----------|
+| `devenv` | `nixosConfigurations.devenv` | `packages.x86_64-linux.devenv` | `10.255.0.1` |
+| `rp1` | `nixosConfigurations.rp1` | `packages.x86_64-linux.rp1` | `10.255.0.2` |
+| `apps1` | `nixosConfigurations.apps1` | `packages.x86_64-linux.apps1` | `10.255.0.3` |
+| `apps2` | `nixosConfigurations.apps2` | `packages.x86_64-linux.apps2` | `10.255.0.4` |
+| `apps3` | `nixosConfigurations.apps3` | `packages.x86_64-linux.apps3` | `10.255.0.5` |
+| `ai1` | `nixosConfigurations.ai1` | `packages.x86_64-linux.ai1` | `10.255.0.9` |
+| `db1` | `nixosConfigurations.db1` | `packages.x86_64-linux.db1` | `10.255.0.11` |
+
+`gs1` is defined in topology and host files but is not currently exported from `flake.nix`.
+
 ### Common Tasks
 
-| Task | Documentation |
-|------|---------------|
-| Build a Proxmox VM | [makeDualExport](library-functions.md#makedualexport) |
-| Set up Docker cluster | [Multi-Host Example](examples.md#multi-host-docker-cluster) |
-| Configure firewall rules | [Firewall Module](modules/firewall.md) |
-| Manage secrets | [Secrets Module](modules/secrets.md) |
-| Manage SSO/OIDC | [Authentik OIDC](architecture/authentik-oidc-auto-registration.md) |
-| Create mesh network | [Mesh Network Module](modules/meshNetwork.md) |
-| Mount data disk | [Mount Data Profile](modules/mountData.md) |
-| Create users with data homes | [makeUser](library-functions.md#makeuser) |
-| Deploy fleet changes | [Fleet Management](#fleet-management-tools) |
+| Task | Start with |
+|------|------------|
+| Build one host configuration | `nix build path:.#nixosConfigurations.<host>.config.system.build.toplevel` |
+| Build one Proxmox VMA image | `nix build path:.#packages.x86_64-linux.<host>` |
+| Add a host export | [Library Functions](library-functions.md#makedualexport) |
+| Add a Docker host | [Containers Profile](modules/containers.md) and [Mount Data Profile](modules/mountData.md) |
+| Add a mesh node | [Mesh Network](modules/meshNetwork.md#adding-a-node) |
+| Add source-scoped firewall rules | [Firewall Allowlist/Denylist](modules/firewall.md) |
+| Add or change secret keys | [Secrets Management](modules/secrets.md) |
+| Deploy from `devenv` | [README Fleet Management](../README.md#fleet-management) |
 
-### Module Quick Links
+## Import Behavior
 
-| Module | Path | Auto-Import |
-|--------|------|-------------|
-| Secrets | `secrets.*` | Yes |
-| Firewall | `networking.firewall.allowlist` | Yes |
-| Mesh Network | `services.meshNetwork` | Yes (needs enable) |
-| Standard | Profile | Yes |
-| Containers | Profile | No |
-| Mount Data | Profile | No |
+| Module/profile | Imported by `nixosModules.default` | Imported by `makeConfiguration` / `makeDualExport` | Explicit import needed |
+|----------------|------------------------------------|-----------------------------------------------------|------------------------|
+| `secrets` | Yes | No, except when imported by another passed module such as `meshNetwork` or `containers`; host secret files are auto-imported after option definitions exist | Usually no for current hosts |
+| `firewall` | Yes | Yes | No |
+| `meshNetwork` | Yes | Only when passed explicitly or imported by another profile | Usually yes for hosts using it |
+| `standard` | No | Yes | No when using repo library functions |
+| `containers` | No | No | Yes |
+| `mountData` | No | No | Yes |
 
-### Configuration Templates
+## Contributing To Docs
 
-**Minimal VM (using makeDualExport):**
-```nix
-dualSystems.myvm = library.makeDualExport "myvm" {
-  vmId = 100;
-  modules = [ ./hosts/myvm.nix ];
-};
-# Export: nixosConfigurations.myvm = dualSystems.myvm.nixosSystem;
-# Export: packages.x86_64-linux.myvm = dualSystems.myvm.package;
-```
+When changing repository behavior:
 
-**Docker Host:**
-```nix
-dualSystems.docker = library.makeDualExport "docker" {
-  vmId = 100;
-  disks = [
-    { storage = "local-lvm"; size = 50; }
-    { storage = "local-lvm"; size = 500; }
-  ];
-  modules = [
-    "${inputs.self}/modules/profiles/mountData.nix"
-    "${inputs.self}/modules/profiles/containers"
-  ];
-};
-```
+1. Update the module, profile, or architecture document closest to the change.
+2. Update examples only when they remain valid against source.
+3. Update `modules/secrets.example/<host>.nix` when a host consumes a new or renamed secret.
+4. Keep historical investigation notes as history; add a superseding note instead of rewriting incident timelines.
 
-**With Mesh (autoPeers - recommended):**
-```nix
-{
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 1;
-    # autoPeers = true is default - peers auto-discovered from meshTopology.nix
-    # privateKeyFile is auto-sourced from secrets.meshNetwork.file
-  };
-}
-```
-
-**With Firewall:**
-```nix
-{
-  networking.firewall.allowlist = [
-    {
-      port = 443;
-      protocol = "tcp";
-      source = [ "10.0.0.0/8" ];
-    }
-  ];
-}
-```
-
-### Fleet Management Tools
-
-Available on the `devenv` host for deploying changes across the infrastructure:
-
-**`rebuildHost <hostname>`** - Deploy to a single host
-```bash
-rebuildHost apps1           # Deploy to remote host
-rebuildHost devenv          # Deploy locally
-rebuildHost rp1 --boot      # Activate on next reboot
-```
-
-**`updateInfra`** - Deploy to all hosts in the fleet
-```bash
-updateInfra                 # Updates all hosts from meshTopology.nix
-```
-
-## Documentation Structure
-
-```
-docs/
-├── INDEX.md                     # This file
-├── overview.md                  # Architecture overview
-├── library-functions.md         # Library function reference
-├── profiles.md                  # System profiles summary
-├── examples.md                  # Complete examples
-├── bash-script-tools.md         # Bash tool organization patterns
-├── mesh-network-ports.md        # Port allocation reference
-├── architecture/
-│   ├── authentik-oidc-auto-registration.md # SSO with OIDC auto-registration
-│   └── technitium-dns-cluster.md # DNS cluster architecture
-├── examples/
-│   └── makeUser.md              # User management examples
-├── investigations/
-│   ├── docker-volume-migration-permissions.md # Docker volume migration sudo fix
-│   ├── nixos-rebuild-access-denied.md
-│   ├── port-mapping-scheme-migration.md
-│   ├── stalwart-imap-auth-failure.md
-│   └── stalwart-migration-lock-loop.md
-└── modules/
-    ├── README.md                # Modules overview
-    ├── secrets.md               # Secrets module
-    ├── firewall.md              # Firewall module
-    ├── meshNetwork.md           # Mesh network module
-    ├── containers.md            # Containers profile
-    ├── standard.md              # Standard profile
-    └── mountData.md             # Mount data profile
-```
-
-## Contributing
-
-When adding new features:
-
-1. Document new options in the appropriate module file
-2. Add examples to `examples.md`
-3. Update this index if adding new documentation files
-4. Keep NixOS standard options undocumented (refer to official docs)
-
-## External Resources
-
-- [NixOS Manual](https://nixos.org/manual/nixos/stable/)
-- [Nix Language Documentation](https://nixos.org/manual/nix/stable/language/)
-- [Proxmox VE Documentation](https://pve.proxmox.com/wiki/Main_Page)
-- [WireGuard Documentation](https://www.wireguard.com/quickstart/)
-- [Docker Documentation](https://docs.docker.com/)
-
----
-
-**Last Updated:** February 7, 2026
-
-**Repository:** [reinitialized-net/infrastructure](https://github.com/reinitialized-net/infrastructure)
+Verified against source on May 26, 2026.

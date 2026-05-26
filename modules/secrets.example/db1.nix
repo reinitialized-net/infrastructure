@@ -3,7 +3,9 @@
   lib,
   ...
 }: {
+  secrets = {
     meshNetwork = {
+      description = "MeshNetwork WireGuard private key";
       file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PRIVATE KEY HERE");
     };
 
@@ -21,4 +23,5 @@
         -----END OPENSSH PRIVATE KEY-----
       '');
     };
+  };
 }

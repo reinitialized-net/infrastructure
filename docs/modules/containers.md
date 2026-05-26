@@ -1,30 +1,20 @@
-# Containers Profile Module
+# Containers Profile
 
-**Module Path:** `modules/profiles/containers/`
+**Module path:** `modules/profiles/containers/`
 
-**Import:** Not automatically included - import explicitly
+**Import:** Explicitly pass the profile in a host's module list.
 
 ## Overview
 
-Pre-configured Docker setup optimized for container orchestration with mesh networking support. Designed for NixOS hosts that will run Docker containers with shared storage and optional mesh network connectivity.
+The containers profile turns a host into a Docker-backed OCI container host. It is used by `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, and `db1`.
 
-## Features
+It imports:
 
-- Docker with optimized settings
-- Automatic data partition mounting
-- Mesh network integration
-- cgroups v2 support
-- Bind-mounted Docker data directory
-- Dedicated Docker user/group
-- Automatic daily cleanup of stale containers and images
+- `modules/profiles/meshNetwork`
+- `modules/profiles/secrets.nix`
+- `modules/profiles/containers/containerTools.nix`
 
-## Prerequisites
-
-**Required:**
-- `modules/profiles/mountData.nix` must be imported (enforced by assertion)
-
-**Optional:**
-- `modules/profiles/meshNetwork` for container mesh networking
+It assumes `/mnt/data` is available for persistent Docker storage. In this repository that is provided by `modules/profiles/mountData.nix`.
 
 ## What It Configures
 
@@ -32,22 +22,28 @@ Pre-configured Docker setup optimized for container orchestration with mesh netw
 
 ```nix
 virtualisation.docker = {
-  enable = true;
+  enable = lib.mkForce true;
   daemon.settings = {
-    icc = true;  # Inter-container communication
-    no-new-privileges = true;  # Security hardening
+    icc = lib.mkForce true;
+    no-new-privileges = lib.mkForce true;
   };
+  extraOptions = "--default-ulimit nofile=65536:65536";
 };
 
-virtualisation.oci-containers.backend = "docker";
+virtualisation.oci-containers.backend = lib.mkForce "docker";
 ```
 
-### Storage
-
-Bind mounts Docker data to persistent storage using a two-mount approach:
+For non-container hosts, it also adds:
 
 ```nix
-# Docker volumes are mounted first (dependency for main Docker mount)
+boot.kernelParams = [ "systemd.unified_cgroup_hierarchy=1" ];
+```
+
+### Docker Storage
+
+Docker data is bind-mounted from the data disk:
+
+```nix
 fileSystems."/var/lib/docker/volumes" = {
   device = "/mnt/data/docker/volumes";
   depends = [ "/mnt/data" ];
@@ -55,7 +51,6 @@ fileSystems."/var/lib/docker/volumes" = {
   options = [ "bind" ];
 };
 
-# Main Docker directory depends on volumes being mounted
 fileSystems."/var/lib/docker" = {
   device = "/mnt/data/docker";
   depends = [ "/mnt/data/docker/volumes" ];
@@ -64,18 +59,18 @@ fileSystems."/var/lib/docker" = {
 };
 ```
 
-**Storage Layout:**
-```
-/mnt/data/docker/           # Docker root
-  ├── volumes/              # Docker volumes (mounted first)
-  ├── containers/           # Container data
-  ├── image/               # Image layers
-  └── ...                  # Other Docker data
+Import `mountData` on hosts that use this profile:
+
+```nix
+modules = [
+  "${self}/modules/profiles/containers"
+  "${self}/modules/profiles/mountData.nix"
+];
 ```
 
-### Automatic Cleanup
+### Daily Prune
 
-A daily systemd timer runs `docker system prune` to remove stopped containers, dangling images, and unused networks older than 24 hours. This prevents stale CI job containers (e.g. from Forgejo Runner failures) from accumulating and filling the data disk.
+The profile enables Docker auto-prune:
 
 ```nix
 virtualisation.docker.autoPrune = {
@@ -85,547 +80,158 @@ virtualisation.docker.autoPrune = {
 };
 ```
 
-### Automatic Image Updates
+This removes stopped containers, dangling images, and unused networks older than 24 hours.
 
-Hosts already run system-level updates through `system.autoUpgrade` from the standard profile. For container images, add/update this dedicated timer block:
+## Container Image Auto-Update
 
-```nix
-services.containerAutoUpdate = {
-  enable = true;
-  schedule = "04:00";
-  randomizedDelaySec = "15min";
-  restartChangedOnly = true;
-  skipContainers = [ "stateful-db" "metrics-exporter" ];
-};
-```
+The profile defines `services.containerAutoUpdate`.
 
-Behavior:
+| Option | Default | Description |
+|--------|---------|-------------|
+| `enable` | `true` | Enables the timer and service |
+| `schedule` | `"04:00"` | systemd `OnCalendar` expression |
+| `randomizedDelaySec` | `"15min"` | Timer jitter |
+| `skipContainers` | `[]` | Container names from `virtualisation.oci-containers.containers` to skip |
+| `pullOnly` | `false` | Pull images without restarting containers |
+| `restartChangedOnly` | `true` | Restart only when the pulled image ID changes |
 
-- Daily timer triggers a pull check (`docker pull`) for each declarative container.
-- If `restartChangedOnly = true`, a container service is restarted only when the image digest changes.
-- If `pullOnly = true`, images are pulled without restarting containers.
-- `skipContainers` is a list of container names from `virtualisation.oci-containers.containers` to ignore.
-- Service names are resolved from each container's `serviceName` (defaults to `docker-<container-name>`).
+The service iterates through declarative containers, runs `docker pull`, and restarts the matching systemd unit when needed. Unit names come from each container's `serviceName`, defaulting to `docker-<container-name>`.
 
-### Override Examples
-
-Skip containers that should never auto-restart:
-
-```nix
-services.containerAutoUpdate.skipContainers = [ "stateful-db" "wireguard" ];
-```
-
-Run checks only during a maintenance window:
+Example override:
 
 ```nix
 services.containerAutoUpdate = {
-  schedule = "Mon *-*-* 03:00:00";
+  schedule = "Mon *-*-* 03:30:00";
   randomizedDelaySec = "30min";
+  skipContainers = [ "postgres1" "forgejoRunner" ];
 };
 ```
 
-### Validation
+Useful commands:
 
 ```bash
-# Confirm timer schedule
 systemctl list-timers docker-container-auto-update.timer
-
-# Run one manual update pass
 systemctl start docker-container-auto-update.service
-
-# Inspect execution output
 journalctl -u docker-container-auto-update.service
-
-# Targeted dry-run (no restarts): temporarily set pullOnly = true and run once
-systemctl start docker-container-auto-update.service
-journalctl -u docker-container-auto-update.service --since "5 minutes ago"
 ```
 
-### System Configuration
+## Docker User And Volume Migration
 
-- **cgroups v2**: Enabled for modern container resource management
-- **Docker user**: System user `docker` in group `docker`
-- **Mesh Network**: Automatically imports mesh network module
-
-## Usage
-
-### Basic Setup
-
-```nix
-{
-  imports = [
-    ./modules/profiles/mountData.nix
-    ./modules/profiles/containers
-  ];
-}
-```
-
-### With Mesh Network
-
-```nix
-{
-  imports = [
-    ./modules/profiles/mountData.nix
-    ./modules/profiles/containers
-  ];
-  
-  # Enable mesh networking
-  services.meshNetwork = {
-    enable = true;
-    nodeId = 1;
-    # Peers auto-discovered from meshTopology.nix
-  };
-}
-```
-
-### In a VM Image
-
-```nix
-{
-  packages.x86_64-linux.docker-host = generateVMAImage "docker-host" {
-    system = "x86_64-linux";
-    vmId = 100;
-    
-    disks = [
-      {
-        storage = "local-lvm";
-        size = 50;  # OS disk
-      }
-      {
-        storage = "local-lvm";
-        size = 500;  # Data disk for containers
-      }
-    ];
-    
-    modules = [
-      ./modules/profiles/mountData.nix
-      ./modules/profiles/containers
-      {
-        services.meshNetwork.enable = true;
-        services.meshNetwork.nodeId = 1;
-      }
-    ];
-  };
-}
-```
-
-**Note:** Use `makeDualExport` instead for new systems.
-
-## Docker Usage
-
-### Running Containers
-
-Standard Docker commands work as expected:
-
-```bash
-# Run a container
-docker run -d --name nginx nginx:latest
-
-# With volumes
-docker run -d \
-  --name postgres \
-  -v postgres-data:/var/lib/postgresql/data \
-  postgres:15
-
-# With mesh network
-docker run -d \
-  --name app \
-  --network backend \
-  myapp:latest
-```
-
-### Docker Compose
-
-Create `docker-compose.yml`:
-
-```yaml
-version: '3.8'
-
-services:
-  web:
-    image: nginx:latest
-    ports:
-      - "80:80"
-    volumes:
-      - web-data:/usr/share/nginx/html
-    networks:
-      - backend
-
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_PASSWORD: secret
-    volumes:
-      - db-data:/var/lib/postgresql/data
-    networks:
-      - backend
-
-volumes:
-  web-data:
-  db-data:
-
-networks:
-  backend:
-    external: true  # Use mesh network if enabled
-```
-
-Deploy:
-
-```bash
-docker-compose up -d
-```
-
-### NixOS Container Definitions
-
-Use `virtualisation.oci-containers` for declarative containers:
-
-```nix
-{
-  virtualisation.oci-containers.containers = {
-    nginx = {
-      image = "nginx:latest";
-      ports = [ "80:80" "443:443" ];
-      volumes = [
-        "/mnt/data/nginx/html:/usr/share/nginx/html:ro"
-        "/mnt/data/nginx/conf:/etc/nginx/conf.d:ro"
-      ];
-      extraOptions = [ "--network=backend" ];
-    };
-
-    postgres = {
-      image = "postgres:15";
-      environment = {
-        POSTGRES_PASSWORD = "secret";
-        POSTGRES_DB = "myapp";
-      };
-      volumes = [
-        "postgres-data:/var/lib/postgresql/data"
-      ];
-      extraOptions = [ "--network=backend" ];
-    };
-  };
-}
-```
-
-## Storage Management
-
-### Data Persistence
-
-All Docker data is stored on `/mnt/data/docker`, which is bind-mounted from the second disk (configured by mountData profile).
-
-**Benefits:**
-- Survives OS reinstalls (OS is on disk 1, data on disk 2)
-- Easy to snapshot/backup
-- Can be resized independently
-- Shared across system rebuilds
-
-### Volume Management
-
-```bash
-# List volumes
-docker volume ls
-
-# Inspect volume location
-docker volume inspect postgres-data
-# Location: /mnt/data/docker/volumes/postgres-data/_data
-
-# Backup volume
-tar -czf backup.tar.gz /mnt/data/docker/volumes/postgres-data
-
-# Restore volume
-docker volume create postgres-data
-tar -xzf backup.tar.gz -C /mnt/data/docker/volumes/postgres-data
-```
-
-### Disk Space
-
-Check Docker disk usage:
-
-```bash
-# Overall usage
-docker system df
-
-# Detailed usage
-docker system df -v
-
-# Clean up
-docker system prune -a --volumes
-```
-
-Check data partition:
-
-```bash
-df -h /mnt/data
-```
-
-## Mesh Network Integration
-
-When mesh networking is enabled, containers can communicate across physical hosts.
-
-### Architecture
-
-```
-Host 1 (10.255.0.1)
-  └── Container A (172.20.0.10)
-       └── Can reach: 10.255.0.2, 10.255.0.3
-
-Host 2 (10.255.0.2)
-  └── Container B (172.20.0.20)
-       └── Can reach: 10.255.0.1, 10.255.0.3
-
-Host 3 (10.255.0.3)
-  └── Container C (172.20.0.30)
-       └── Can reach: 10.255.0.1, 10.255.0.2
-```
-
-### Example: Multi-Host Application
-
-**Host 1: Web Server**
-
-```nix
-{
-  services.meshNetwork.nodeId = 1;
-  
-  virtualisation.oci-containers.containers.web = {
-    image = "nginx:latest";
-    ports = [ "80:80" ];
-    environment = {
-      BACKEND_HOST = "10.255.0.2";  # API on host 2
-      DB_HOST = "10.255.0.3";       # DB on host 3
-    };
-    extraOptions = [ "--network=backend" ];
-  };
-}
-```
-
-**Host 2: API Server**
-
-```nix
-{
-  services.meshNetwork.nodeId = 2;
-  
-  virtualisation.oci-containers.containers.api = {
-    image = "myapi:latest";
-    ports = [ "8080:8080" ];
-    environment = {
-      DB_HOST = "10.255.0.3";  # DB on host 3
-    };
-    extraOptions = [ "--network=backend" ];
-  };
-}
-```
-
-**Host 3: Database**
-
-```nix
-{
-  services.meshNetwork.nodeId = 3;
-  
-  virtualisation.oci-containers.containers.postgres = {
-    image = "postgres:15";
-    ports = [ "5432:5432" ];
-    volumes = [ "db-data:/var/lib/postgresql/data" ];
-    extraOptions = [ "--network=backend" ];
-  };
-}
-```
-
-## Configuration Options
-
-### Docker Daemon Settings
-
-Override default Docker settings:
-
-```nix
-{
-  virtualisation.docker.daemon.settings = {
-    # Logging
-    log-driver = "json-file";
-    log-opts = {
-      max-size = "10m";
-      max-file = "3";
-    };
-    
-    # Storage
-    storage-driver = "overlay2";
-    
-    # Network
-    default-address-pools = [
-      {
-        base = "172.20.0.0/16";
-        size = 24;
-      }
-    ];
-    
-    # Security
-    no-new-privileges = true;
-    icc = true;
-    userland-proxy = false;
-  };
-}
-```
-
-### Resource Limits
-
-Configure cgroups resource limits:
-
-```nix
-{
-  virtualisation.oci-containers.containers.myapp = {
-    image = "myapp:latest";
-    
-    # Memory limit: 1GB
-    extraOptions = [
-      "--memory=1g"
-      "--memory-swap=2g"
-      "--cpus=2"
-    ];
-  };
-}
-```
-
-## Security
-
-### User Isolation
-
-Containers run as the `docker` user (not root):
+The profile creates a system user and group named `docker`:
 
 ```nix
 users.users.docker = {
   isSystemUser = true;
+  shell = pkgs.bashInteractive;
+  home = "/home/docker";
+  createHome = true;
   group = "docker";
-  home = "/var/lib/docker";
+  initialHashedPassword = "!";
 };
 ```
 
-### Hardening
+The user has a fixed authorized key named `docker-volume-migration`. SSH access for this user is restricted by `ForceCommand` to Docker commands, SCP, and SFTP server commands needed by volume migration.
 
-Default settings include:
-
-- `no-new-privileges = true` - Prevents privilege escalation
-- `icc = true` - Inter-container communication (controlled by networks)
-- cgroups v2 - Better resource isolation
-
-Additional hardening:
+The private key for outbound migration is written by `deploy-docker-migration-key` from:
 
 ```nix
-{
-  virtualisation.oci-containers.containers.secure-app = {
-    image = "myapp:latest";
-    extraOptions = [
-      "--read-only"                    # Read-only root FS
-      "--tmpfs=/tmp"                   # Writable tmp
-      "--cap-drop=ALL"                 # Drop all capabilities
-      "--cap-add=NET_BIND_SERVICE"     # Add only needed caps
-      "--security-opt=no-new-privileges:true"
-    ];
-  };
-}
+config.secrets.volumeMigration.file
 ```
 
-## Monitoring
+The service writes `/home/docker/.ssh/volume-migration-key` with mode `0600` and configures SSH to use it.
 
-### Docker Stats
+The profile also grants members of the `docker` group passwordless sudo-rs access to run `ssh` and `test` as the `docker` user. This is used by `migrate-volumes`.
+
+## `migrate-volumes`
+
+The `migrate-volumes` tool is installed by `containerTools.nix`.
+
+### Modes
+
+| Mode | Required arguments | Purpose |
+|------|--------------------|---------|
+| `export` | `-v VOLUME` | Create a local backup in the staging directory |
+| `import` | `-v VOLUME -f BACKUP_FILE` | Restore a local backup into a Docker volume |
+| `transfer` | `-v VOLUME -r HOST` | Stream a volume directly to another host as the `docker` user |
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-V VOLUME` | Destination volume name when different from source |
+| `-c CONTAINER` | Local container to stop/start during export or transfer |
+| `-C CONTAINER` | Remote container to stop/start during transfer |
+| `-d DIR` | Backup directory, default `/var/lib/docker/volumes/.migration-staging` |
+| `-p PORT` | SSH port, default `22` |
+| `-n` | Do not stop containers |
+| `-k` | Skip checksum verification |
+| `-z COMP` | Compression: `gzip`, `bzip2`, `xz`, or `none`; default `gzip` |
+| `-h` | Show help |
+
+Examples:
 
 ```bash
-# Real-time stats
-docker stats
-
-# One-time stats
-docker stats --no-stream
+migrate-volumes export -v postgres1_data -c postgres1
+migrate-volumes import -v postgres1_data -f /var/lib/docker/volumes/.migration-staging/postgres1_data.tar.gz
+migrate-volumes transfer -v postgres1_data -r 10.1.11.3 -V imported_postgres1_data
 ```
 
-### System Resources
+Transfer mode streams data over SSH and does not leave intermediate backup files on either host.
 
-```bash
-# Disk usage
-df -h /mnt/data
+## Mesh Network Integration
 
-# Docker disk usage
-docker system df
-
-# Container logs
-docker logs container-name
-```
-
-### Integration with Monitoring Systems
-
-Export metrics for Prometheus:
+Because this profile imports `meshNetwork`, a host can enable mesh networking with:
 
 ```nix
-{
-  virtualisation.oci-containers.containers.cadvisor = {
-    image = "gcr.io/cadvisor/cadvisor:latest";
-    ports = [ "8080:8080" ];
-    volumes = [
-      "/:/rootfs:ro"
-      "/var/run:/var/run:ro"
-      "/sys:/sys:ro"
-      "/var/lib/docker/:/var/lib/docker:ro"
-    ];
-  };
-}
+services.meshNetwork.enable = true;
 ```
+
+When Docker is enabled and `services.meshNetwork.dockerIntegration = true`, the mesh module creates the Docker network named `backend`. Declarative containers can attach to it with:
+
+```nix
+virtualisation.oci-containers.containers.my-service = {
+  image = "nginx:latest";
+  networks = [ "backend" ];
+};
+```
+
+Current host files use the `networks` option rather than Docker `extraOptions = [ "--network=backend" ]`.
 
 ## Troubleshooting
 
-### Check Docker Status
+Check Docker and bind mounts:
 
 ```bash
 systemctl status docker
-```
-
-### Verify Storage Mount
-
-```bash
-mount | grep docker
-# Should show: /mnt/data/docker on /var/lib/docker type none (rw,bind)
-```
-
-### Check Docker Info
-
-```bash
+mount | grep /var/lib/docker
 docker info
-```
-
-### Test Mesh Connectivity (if enabled)
-
-```bash
-# From container to mesh network
-docker run --rm --network backend alpine ping 10.255.0.2
-```
-
-### Common Issues
-
-**1. Docker fails to start**
-```bash
-# Check if data directory exists
-ls -la /mnt/data/docker
-
-# Check permissions
-sudo chown -R docker:docker /mnt/data/docker
-```
-
-**2. Can't access mesh network from containers**
-```bash
-# Verify mesh is enabled
-systemctl status wireguard-wg-mesh
-
-# Check nftables rules
-nft list table inet mesh-docker
-```
-
-**3. Disk space issues**
-```bash
-# Clean up unused resources
-docker system prune -a --volumes
-
-# Check disk usage
+docker system df
 df -h /mnt/data
+```
+
+Check the image update timer:
+
+```bash
+systemctl status docker-container-auto-update.timer
+journalctl -u docker-container-auto-update.service
+```
+
+Check migration key deployment:
+
+```bash
+systemctl status deploy-docker-migration-key.service
+sudo -u docker test -f /home/docker/.ssh/volume-migration-key
+```
+
+Check Docker mesh network:
+
+```bash
+docker network inspect backend
+nft list table inet mesh-docker
 ```
 
 ## See Also
 
-- [Mount Data Profile](mountData.md) - Required data partition mounting
-- [Mesh Network Module](meshNetwork.md) - Container networking across hosts
-- [Examples](../examples.md) - Complete configurations
+- [Mount Data Profile](mountData.md)
+- [Mesh Network Module](meshNetwork.md)
+- [Secrets Management](secrets.md)

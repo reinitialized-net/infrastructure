@@ -1,174 +1,149 @@
 # Mesh Network Port Reference
 
-Quick reference for all mesh network port mappings using the incremental scheme (starting at 1024).
+Reference for container services bound on WireGuard mesh IPs (`10.255.0.0/24`). Physical services such as DNS on port 53 and mail ingress through `rp1` are noted separately where relevant.
 
-## apps1 (10.255.0.3)
+## apps1 (`10.255.0.3`)
 
-| Port | Service | Protocol | Description |
-|------|---------|----------|-------------|
-| 1024 | hudu_postgres1 | TCP | PostgreSQL database for Hudu |
-| 1025 | hudu1 | TCP | Hudu web application interface |
-| 1026 | dnsOne | TCP | Technitium DNS web admin UI (HTTP/5380) |
-| 1027 | dnsOne | TCP | Technitium DNS web admin UI (HTTPS/53443) |
-| 1028 | dnsOne | TCP | Technitium DNS service (TCP) |
-| 1029 | dnsOne | UDP | Technitium DNS service (UDP) |
-| 1029 | stalwartOne | TCP | Stalwart Mail HTTP/web interface |
-| 1030 | stalwartOne | TCP | Stalwart Mail SMTP (port 25) |
-| 1031 | stalwartOne | TCP | Stalwart Mail IMAP (port 143) |
-| 1032 | stalwartOne | TCP | Stalwart Mail SMTPS (port 465) |
-| 1033 | stalwartOne | TCP | Stalwart Mail Submission (port 587) |
-| 1034 | stalwartOne | TCP | Stalwart Mail IMAPS (port 993) |
-| 1035 | stalwartOne | TCP | Stalwart Mail POP3S (port 995) |
-| 1036 | stalwartOne | TCP | Stalwart Mail Sieve (port 4190) |
-| 1037 | forgejo | TCP | Forgejo Git forge web interface |
-| 1038 | jaeger | TCP | Jaeger OTLP gRPC receiver (from OTel Collector) |
-| 1039 | jaeger | TCP | Jaeger UI for trace visualization |
-| 1040 | grafana | TCP | Grafana metrics visualization web UI |
-| 1041 | stalwartOne | TCP | Stalwart Prometheus metrics endpoint (optional) |
-| 1042 | stalwartOne | TCP | Stalwart Mail HTTPS listener (port 443, for TLS passthrough) |
-| 1043 | authentik-server | TCP | Authentik SSO web UI + API (HTTP/9000) |
-| 1044 | ocis | TCP | ownCloud Infinite Scale web UI + WebDAV (HTTP/9200) |
+| Port | Service | Protocol | Container port | Description |
+|------|---------|----------|----------------|-------------|
+| 1025 | `hudu1` | TCP | 3000 | Hudu web application |
+| 1026 | `dnsOne` | TCP | 5380 | Technitium HTTP admin UI |
+| 1027 | `dnsOne` | TCP | 53443 | Technitium HTTPS admin UI |
+| 1028 | `dnsOne` | TCP/UDP | 53 | Technitium DNS service on mesh |
+| 1029 | `stalwartOne` | TCP | 8080 | Stalwart HTTP/API/ACME listener |
+| 1030 | `stalwartOne` | TCP | 25 | SMTP |
+| 1031 | `stalwartOne` | TCP | 143 | IMAP |
+| 1032 | `stalwartOne` | TCP | 465 | SMTPS |
+| 1033 | `stalwartOne` | TCP | 587 | Submission |
+| 1034 | `stalwartOne` | TCP | 993 | IMAPS |
+| 1035 | `stalwartOne` | TCP | 995 | POP3S |
+| 1036 | `stalwartOne` | TCP | 4190 | Sieve |
+| 1037 | `forgejo` | TCP | 3000 | Forgejo web UI |
+| 1038 | `jaeger` | TCP | 4317 | OTLP gRPC receiver |
+| 1039 | `jaeger` | TCP | 16686 | Jaeger UI |
+| 1040 | `grafana` | TCP | 3000 | Grafana web UI |
+| 1041 | `stalwartOne` | TCP | 9090 | Prometheus metrics endpoint, if enabled |
+| 1042 | `stalwartOne` | TCP | 443 | Stalwart HTTPS listener for TLS passthrough |
+| 1043 | `authentik-server` | TCP | 9000 | Authentik web UI and API |
 
-**Next Available Port:** 1045
+Next unused port after the highest current allocation: `1044`.
 
-## apps2 (10.255.0.4)
+## apps2 (`10.255.0.4`)
 
-| Port | Service | Protocol | Description |
-|------|---------|----------|-------------|
-| 1024 | dnsTwo | TCP | Technitium DNS web admin UI (HTTP/5380) |
-| 1025 | dnsTwo | TCP | Technitium DNS web admin UI (HTTPS/53443) |
-| 1026 | dnsTwo | TCP | Technitium DNS service (TCP) |
-| 1027 | dnsTwo | UDP | Technitium DNS service (UDP) |
-| 1027 | unifi | TCP | UniFi Network web admin |
-| 1028 | unifi | UDP | UniFi STUN protocol |
-| 1029 | unifi | UDP | UniFi device discovery |
-| 1030 | unifi | TCP | UniFi device communication |
-| 1031 | pgadmin4 | TCP | pgAdmin4 web interface |
-| 1032 | stalwartTwo (future) | TCP | Stalwart Mail HTTP/web interface |
-| 1033 | stalwartTwo (future) | TCP | Stalwart Mail SMTP (port 25) |
-| 1034 | stalwartTwo (future) | TCP | Stalwart Mail SMTPS (port 465) |
-| 1035 | stalwartTwo (future) | TCP | Stalwart Mail Submission (port 587) |
-| 1036 | stalwartTwo (future) | TCP | Stalwart Mail IMAP (port 143) |
-| 1037 | stalwartTwo (future) | TCP | Stalwart Mail IMAPS (port 993) |
-| 1038 | stalwartTwo (future) | TCP | Stalwart Mail POP3S (port 995) |
-| 1039 | stalwartTwo (future) | TCP | Stalwart Mail Sieve (port 4190) |
-| 1040 | cinny | TCP | Cinny Matrix web client |
+| Port | Service | Protocol | Container port | Description |
+|------|---------|----------|----------------|-------------|
+| 1024 | `dnsTwo` | TCP | 5380 | Technitium HTTP admin UI |
+| 1025 | `dnsTwo` | TCP | 53443 | Technitium HTTPS admin UI |
+| 1026 | `dnsTwo` | TCP/UDP | 53 | Technitium DNS service on mesh |
+| 1027 | `unifi` | TCP | 8443 | UniFi Network web admin |
+| 1028 | `unifi` | UDP | 3478 | UniFi STUN |
+| 1029 | `unifi` | UDP | 10001 | UniFi device discovery |
+| 1030 | `unifi` | TCP | 8080 | UniFi device communication |
+| 1031 | `pgadmin4` | TCP | 80 | pgAdmin4 web UI |
+| 1032 | `redisInsight` | TCP | 5540 | Redis Insight web UI |
+| 1040 | `cinny` | TCP | 80 | Cinny Matrix web client |
 
-**Next Available Port:** 1041
+Unused gap: `1033`-`1039`. Next unused port after the highest current allocation: `1041`.
 
-## db1 (10.255.0.11)
+## apps3 (`10.255.0.5`)
 
-| Port | Service | Protocol | Description |
-|------|---------|----------|-------------|
-| 1024 | postgres1 | TCP | PostgreSQL database server |
-| 1025 | valkey1 | TCP | Valkey (Redis-compatible) cache |
-| 1026 | otel-collector | TCP | OpenTelemetry Collector OTLP gRPC receiver |
-| 1027 | otel-collector | TCP | OpenTelemetry Collector OTLP HTTP receiver |
-| 1028 | otel-collector | TCP | OpenTelemetry Collector Prometheus metrics exporter |
-| 1029 | prometheus | TCP | Prometheus time-series database web UI and API |
+| Port | Service | Protocol | Container port | Description |
+|------|---------|----------|----------------|-------------|
+| 1001 | `immich-server` | TCP | 2283 | Immich web UI and API |
+| 1025 | `tuwunel` | TCP | 8008 | Matrix client/server API |
+| 1026 | `paperless-ngx` | TCP | 8000 | Paperless-ngx web UI and API |
+| 1027 | `pelican-panel` | TCP | 80 | Pelican Panel web UI |
+| 1028 | `ocis` | TCP | 9200 | ownCloud Infinite Scale web UI and WebDAV |
+| 1029 | `searxng` | TCP | 8080 | SearXNG web UI |
 
-**Next Available Port:** 1030
+Next unused port: `1030`.
 
-## apps3 (10.255.0.5)
+## ai1 (`10.255.0.9`)
 
-| Port | Service | Protocol | Description |
-|------|---------|----------|-------------|
-| 1001 | immich-server | TCP | Immich web UI and API |
-| 1025 | tuwunel | TCP | Tuwunel Matrix homeserver HTTP API |
-| 1026 | paperless-ngx | TCP | Paperless-ngx document management web UI |
-| 1027 | pelican-panel | TCP | Pelican Panel game server management web UI |
-**Next Available Port:** 1028
+No Docker container ports are declared in `hosts/ai1.nix`. The host allows `18789/tcp_udp` from private networks for the OpenClaw gateway.
 
-## gs1 (10.255.0.6)
+`rp1` currently has an `ollama.in.reinitialized.net` proxy target of `http://10.255.0.9:1024`; verify the target service before changing or deploying that route.
 
-| Port | Service | Protocol | Description |
-|------|---------|----------|-------------|
-| 1024 | wings | TCP | Pelican Wings API (Panel → Wings communication, mesh only) |
-| 1025 | wings | TCP | Pelican Wings SFTP (game file management, VLAN accessible on 10.1.11.6:2022) |
-| 25565–25600 | game servers | TCP+UDP | Game server ports (Minecraft and others, bound by Wings child containers) |
+## db1 (`10.255.0.11`)
 
-**Next Available Port:** 1026
+| Port | Service | Protocol | Container port | Description |
+|------|---------|----------|----------------|-------------|
+| 1024 | `postgres1` | TCP | 5432 | PostgreSQL with pgvector |
+| 1025 | `valkey1` | TCP | 6379 | Valkey cache |
+| 1026 | `otel-collector` | TCP | 4317 | OTLP gRPC receiver |
+| 1027 | `otel-collector` | TCP | 4318 | OTLP HTTP receiver |
+| 1028 | `otel-collector` | TCP | 8889 | Prometheus exporter |
+| 1029 | `prometheus` | TCP | 9090 | Prometheus web UI and API |
 
-## Access Patterns
+Next unused port: `1030`.
 
-### Direct Mesh Access
-Services are accessed directly via their mesh IP and incremental port:
-```bash
-# Example: Access Hudu PostgreSQL
-psql -h 10.255.0.3 -p 1024 -U hudu
+## gs1 (`10.255.0.6`)
 
-# Example: Access Technitium DNS admin UI
-https://10.255.0.3:1026
-```
+`gs1` is defined in `hosts/gs1.nix` and `meshTopology.nix`, but is not exported from `flake.nix`.
 
-### Via rp1 Reverse Proxy
-External services are accessed through rp1's nginx reverse proxy:
-```bash
-# Hudu web interface
-https://docs.reinitialized.net → http://10.255.0.3:1025
+| Port | Service | Protocol | Container port | Description |
+|------|---------|----------|----------------|-------------|
+| 1024 | `wings` | TCP | 8080 | Pelican Wings API, intended for Panel-to-Wings mesh traffic |
 
-# DNS admin UIs (HTTPS passthrough to backend)
-https://one.dns.reinitialized.net → https://10.255.0.3:1027
-https://two.dns.reinitialized.net → https://10.255.0.4:1025
+Physical host ports:
 
-# DNS admin UIs (legacy HTTP port on rp1, proxied to HTTPS admin)
-http://10.1.12.2:53443 → https://10.255.0.3:1027
-http://10.1.12.3:53443 → https://10.255.0.4:1025
+| Address/port | Protocol | Description |
+|--------------|----------|-------------|
+| `10.1.11.6:2022` | TCP | Wings SFTP |
+| `10.1.11.6:25565-25600` | TCP/UDP | Game server range opened by host firewall for child containers |
 
-# Jellyfin media server
-https://media.reinitialized.me → http://10.1.11.21:8096
+Next unused mesh port: `1025`.
 
-# UniFi controller
-https://unifi.in.reinitialized.net → https://10.255.0.4:1027
+## Reverse Proxy Routes On `rp1`
 
-# pgAdmin4
-https://pgadmin.in.reinitialized.net → http://10.255.0.4:1031
+Selected nginx routes from `hosts/rp1.nix`:
 
-# Matrix homeserver (Tuwunel)
-https://matrix.reinitialized.net → http://10.255.0.5:1025
+| Domain or listener | Upstream |
+|--------------------|----------|
+| `docs.reinitialized.net` | `http://10.255.0.3:1025` |
+| `one.dns.reinitialized.net` HTTPS | stream passthrough to `10.255.0.3:1027` |
+| `two.dns.reinitialized.net` HTTPS | stream passthrough to `10.255.0.4:1025` |
+| `10.1.12.2:53443` | stream to `10.255.0.3:1027` |
+| `10.1.12.3:53443` | stream to `10.255.0.4:1025` |
+| `unifi.in.reinitialized.net` | `https://10.255.0.4:1027` |
+| `pgadmin.in.reinitialized.net` | `http://10.255.0.4:1031` |
+| `redisadmin.in.reinitialized.net` | `http://10.255.0.4:1032` |
+| `git.ds.reinitialized.net` | `http://10.255.0.3:1037` |
+| `jaeger.in.reinitialized.net` | `http://10.255.0.3:1039` |
+| `grafana.in.reinitialized.net` | `http://10.255.0.3:1040` |
+| `prometheus.in.reinitialized.net` | `http://10.255.0.11:1029` |
+| `photos.reinitialized.me` | `http://10.255.0.5:1001` |
+| `chat.reinitialized.me` | `http://10.255.0.4:1040` |
+| `reinitialized.me` Matrix paths | `http://10.255.0.5:1025` |
+| `docs.reinitialized.me` | `http://10.255.0.5:1026` |
+| `gs.admin.reinitialized.net` | `http://10.255.0.5:1027` |
+| `access.reinitialized.net` | `http://10.255.0.3:1043` |
+| `cloud.reinitialized.net` | `http://ocis_backend`, currently `10.255.0.5:1028` |
+| `search.reinitialized.net` | `http://10.255.0.5:1029` |
 
-# Cinny Matrix client
-https://chat.reinitialized.me → http://10.255.0.4:1040
+Mail protocols are proxied through nginx stream on `10.1.12.2` with PROXY protocol to Stalwart on apps1.
 
-# Authentik SSO
-https://access.reinitialized.net → http://10.255.0.3:1043
+## Physical DNS Listeners
 
-# ownCloud Infinite Scale
-https://cloud.reinitialized.net → http://10.255.0.3:1044
-```
+Technitium also binds directly on physical VLAN addresses:
 
-### Mail Services via rp1
-Mail protocols are proxied through rp1's nginx stream module with PROXY protocol:
-```
-Public → rp1 (10.1.12.2) → stalwartOne (10.255.0.3)
-  SMTP:25    → mesh:1030
-  SMTPS:465  → mesh:1032
-  Submission:587 → mesh:1033
-  IMAP:143   → mesh:1031
-  IMAPS:993  → mesh:1034
-  POP3S:995  → mesh:1035
-  Sieve:4190 → mesh:1036
-```
+| Host | Address | Ports |
+|------|---------|-------|
+| `apps1` | `10.1.11.2` | 53 TCP/UDP, 853 TCP/UDP, 67 UDP |
+| `apps2` | `10.1.11.3` | 53 TCP/UDP, 853 TCP/UDP, 67 UDP |
 
-## Notes
+`rp1` listens on public-facing DNS ports and stream-proxies to the Technitium backends.
 
-- **DNS Service (port 53):** Remains on physical IPs (10.1.11.2, 10.1.11.3), not part of incremental scheme
-- **Physical IP Services:** External-facing services on physical IPs use standard ports
-- **Mesh Network Only:** All ports 1024+ are only accessible via the WireGuard mesh (10.255.0.0/24)
-- **Internal Container Ports:** Containers still use their standard ports internally; these are mapped to 1024+ on the mesh interface
-- **PROXY Protocol:** Mail services use PROXY protocol to preserve client IPs through the nginx stream proxy
+## Allocation Guidelines
 
-## Port Allocation Strategy
-
-When adding new services:
-
-1. **Find the next available port** for the target host (see "Next Available Port" above)
-2. **Increment sequentially** for each exposed service port
-3. **Update this reference** document with the new allocation
-4. **Document in the investigation file** for historical tracking
-5. **Update rp1 nginx config** if the service needs external access
+1. Prefer the next unused mesh port on the service host.
+2. Keep protocol and container port explicit in `hosts/<host>.nix`.
+3. Update this file whenever a mesh-facing port mapping changes.
+4. Update `rp1.nix` when a service needs reverse proxy or stream ingress.
+5. Update matching secret examples when new environment variables are required.
 
 ## Related Documentation
 
-- [Port Mapping Scheme Migration](investigations/port-mapping-scheme-migration.md) - Migration history and rationale
-- [Technitium DNS Cluster Architecture](architecture/technitium-dns-cluster.md) - DNS cluster setup
+- [Port Mapping Scheme Migration](investigations/port-mapping-scheme-migration.md)
+- [Technitium DNS Cluster Architecture](architecture/technitium-dns-cluster.md)
+- [Mesh Network Module](modules/meshNetwork.md)

@@ -114,7 +114,7 @@ curl -X POST https://reinitialized.me/_matrix/client/v3/register \
   -H "Content-Type: application/json" \
   -d '{
     "username": "rnetadmin",
-    "password": "YOUR_SECURE_PASSWO\",
+    "password": "YOUR_SECURE_PASSWORD",
     "auth": {
       "type": "m.login.registration_token",
       "token": "YOUR_REGISTRATION_TOKEN"
@@ -122,4 +122,4 @@ curl -X POST https://reinitialized.me/_matrix/client/v3/register \
   }'
 ```
 
-Then promote to admin via Conduwuit's admin room (auto-joined on first login) or the admin API.
+Then promote to admin through Tuwunel's admin room or admin API.

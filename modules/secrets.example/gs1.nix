@@ -30,7 +30,7 @@
           data: /var/lib/pelican/volumes
         token: PLACE_TOKEN_FROM_PANEL_HERE
         token_id: PLACE_TOKEN_ID_FROM_PANEL_HERE
-        panel_location: https://game.admin.reinitialized.net
+        panel_location: https://gs.admin.reinitialized.net
       '');
     };
   };
