@@ -228,14 +228,32 @@ nix.settings = {
 system.autoUpgrade = {
   enable = lib.mkForce true;
   flake = lib.mkDefault "github:reinitialized.net/infrastructure";
+  operation = lib.mkDefault "switch";
   dates = lib.mkDefault "02:00";
   randomizedDelaySec = lib.mkDefault "45min";
 };
 ```
 
-- Daily updates at 2:00 AM (±45 minutes)
-- Pulls from GitHub repository
+- Runs `nixos-rebuild switch` on the configured timer (`02:00`, with ±45 minute jitter)
+- Pulls from GitHub repository via flake lock
 - Keeps systems up to date automatically
+
+Validation:
+
+```bash
+nixos-rebuild test
+systemctl status nixos-upgrade
+systemctl list-timers | rg nixos-upgrade
+journalctl -u nixos-upgrade.service
+```
+
+Canary override example for a maintenance window:
+
+```nix
+system.autoUpgrade = {
+  dates = "Mon *-*-* 01:00";
+};
+```
 
 ### DBus Reconnect Workaround
 

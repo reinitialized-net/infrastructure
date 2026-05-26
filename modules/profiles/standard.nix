@@ -159,6 +159,7 @@
   system.autoUpgrade = {
     enable = lib.mkForce true;
     flake = lib.mkDefault "github:reinitialized.net/infrastructure";
+    operation = lib.mkDefault "switch";
     dates = lib.mkDefault "02:00";
     randomizedDelaySec = lib.mkDefault "45min";
   };

@@ -992,6 +992,7 @@ in
         locations."/" = {
           proxyPass = "http://10.255.0.5:1029";
           extraConfig = ''
+            ${internalOnly}
             # SearXNG specific proxy settings
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;

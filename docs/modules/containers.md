@@ -85,6 +85,62 @@ virtualisation.docker.autoPrune = {
 };
 ```
 
+### Automatic Image Updates
+
+Hosts already run system-level updates through `system.autoUpgrade` from the standard profile. For container images, add/update this dedicated timer block:
+
+```nix
+services.containerAutoUpdate = {
+  enable = true;
+  schedule = "04:00";
+  randomizedDelaySec = "15min";
+  restartChangedOnly = true;
+  skipContainers = [ "stateful-db" "metrics-exporter" ];
+};
+```
+
+Behavior:
+
+- Daily timer triggers a pull check (`docker pull`) for each declarative container.
+- If `restartChangedOnly = true`, a container service is restarted only when the image digest changes.
+- If `pullOnly = true`, images are pulled without restarting containers.
+- `skipContainers` is a list of container names from `virtualisation.oci-containers.containers` to ignore.
+- Service names are resolved from each container's `serviceName` (defaults to `docker-<container-name>`).
+
+### Override Examples
+
+Skip containers that should never auto-restart:
+
+```nix
+services.containerAutoUpdate.skipContainers = [ "stateful-db" "wireguard" ];
+```
+
+Run checks only during a maintenance window:
+
+```nix
+services.containerAutoUpdate = {
+  schedule = "Mon *-*-* 03:00:00";
+  randomizedDelaySec = "30min";
+};
+```
+
+### Validation
+
+```bash
+# Confirm timer schedule
+systemctl list-timers docker-container-auto-update.timer
+
+# Run one manual update pass
+systemctl start docker-container-auto-update.service
+
+# Inspect execution output
+journalctl -u docker-container-auto-update.service
+
+# Targeted dry-run (no restarts): temporarily set pullOnly = true and run once
+systemctl start docker-container-auto-update.service
+journalctl -u docker-container-auto-update.service --since "5 minutes ago"
+```
+
 ### System Configuration
 
 - **cgroups v2**: Enabled for modern container resource management
