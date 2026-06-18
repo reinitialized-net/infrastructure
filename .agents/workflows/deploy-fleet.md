@@ -17,7 +17,7 @@ updateInfra
 
 ## Notes
 
-- Deploys to all hosts defined in `meshTopology.nix`
+- Deploys to all hosts exported from `flake.nix` that also have mesh topology
 - Builds on devenv and deploys to remote targets via SSH
 - Uses `rnetadmin` user for remote connections
 - This can take significant time as it rebuilds every host sequentially

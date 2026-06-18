@@ -94,7 +94,7 @@ The first configured disk becomes `scsi0` and stores the OS. The `mountData` pro
 The `devenv` host installs generated fleet tools:
 
 - `rebuildHost` - rebuild one target from the repository checkout on `devenv`
-- `updateInfra` - rebuild every host listed in mesh topology
+- `updateInfra` - rebuild every exported host that also has mesh topology
 - `updateNetworkFirewallRules` - generate and optionally apply OPNsense firewall recommendations from traffic logs
 
 Remote deploys use SSH as `rnetadmin` with `--sudo` on the target. Do not run remote deploy tools with `sudo`.

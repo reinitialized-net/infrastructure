@@ -24,11 +24,11 @@ nix build path:.#packages.x86_64-linux.<host>
 rebuildHost <host>
 rebuildHost <host> --boot
 
-# Deploy all mesh-topology hosts from the devenv machine only
+# Deploy all exported mesh hosts from the devenv machine only
 updateInfra
 ```
 
-Exported hosts from `flake.nix`: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `ai1`, `db1`.
+Exported hosts from `flake.nix`: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `db1`.
 
 ## Tech Stack
 
@@ -76,7 +76,6 @@ nix build \
   path:.#nixosConfigurations.apps1.config.system.build.toplevel \
   path:.#nixosConfigurations.apps2.config.system.build.toplevel \
   path:.#nixosConfigurations.apps3.config.system.build.toplevel \
-  path:.#nixosConfigurations.ai1.config.system.build.toplevel \
   path:.#nixosConfigurations.db1.config.system.build.toplevel
 
 # Build one VMA package only when needed
@@ -167,8 +166,8 @@ API_MAX_TIMEOUT
 ## Common Gotchas
 
 - `gs1` exists in `hosts/`, `modules/secrets.example/`, and `meshTopology.nix`, but is currently commented out of `flake.nix` exports. Commands using `.#gs1` will not work until the flake exports it.
-- `updateInfra` derives valid hosts from `meshTopology.nix`, not from `nixosConfigurations`; verify exports before fleet-wide deploys.
-- Docs and `.agents` workflow snippets may lag behind `flake.nix`. For example, `.agents/workflows/deploy-host.md` still mentions `gs1`; trust `flake.nix` and successful `nix flake show` output for current exports.
+- `updateInfra` deploys hosts that are both exported from `flake.nix` and present in `meshTopology.nix`.
+- Docs and `.agents` workflow snippets may lag behind `flake.nix`; trust `flake.nix` and successful `nix flake show` output for current exports.
 - `mountData.nix` auto-formats and auto-resizes `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1`; only use it with the intended second disk.
 - VMA builds generate random `rnetadmin` credentials into `result/CREDENTIALS.txt`.
 - Docker hosts bind `/var/lib/docker` and `/var/lib/docker/volumes` into `/mnt/data/docker`; volume and disk changes can affect persistent service data.

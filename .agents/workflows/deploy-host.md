@@ -8,7 +8,7 @@ This workflow deploys NixOS configuration changes to a single host using the `re
 
 ## Steps
 
-1. Identify the target host name from the hosts table (devenv, rp1, apps1, apps2, apps3, gs1, db1).
+1. Identify the target host name from the hosts table (devenv, rp1, apps1, apps2, apps3, db1).
 
 2. Deploy to the target host (builds on devenv, deploys to target via SSH):
 ```bash

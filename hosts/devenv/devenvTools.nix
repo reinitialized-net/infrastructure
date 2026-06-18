@@ -15,9 +15,12 @@
     then toString opnsenseSecrets.file
     else "/run/secrets/opnsense-api-secret";
 
-  # Get list of valid hostnames from mesh topology
-  validHosts = builtins.attrNames meshTopology.nodes;
+  # Deployment tools can only target hosts exported by the flake and present in
+  # mesh topology for IP resolution.
+  exportedHosts = builtins.attrNames self.nixosConfigurations;
+  validHosts = lib.filter (name: builtins.hasAttr name meshTopology.nodes) exportedHosts;
   validHostsStr = lib.concatStringsSep " " validHosts;
+  validNodes = lib.genAttrs validHosts (name: meshTopology.nodes.${name});
 
   # Create a lookup table of hostname -> IP address (extracted from endpoint)
   # The endpoint format is "IP:PORT", we extract just the IP
@@ -25,7 +28,7 @@
     if node ? endpoint
     then lib.head (lib.splitString ":" node.endpoint)
     else null
-  ) meshTopology.nodes;
+  ) validNodes;
 
   # Generate case statements for host IP lookup
   hostIpCases = lib.concatStringsSep "\n" (

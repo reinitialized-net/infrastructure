@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Update all NixOS hosts defined in mesh topology
+# Update all deployable NixOS hosts
 set -euo pipefail
 
 VALID_HOSTS="@validHosts@"

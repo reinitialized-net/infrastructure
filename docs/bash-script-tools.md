@@ -200,7 +200,8 @@ get_host_ip() {
   ...
 }: let
   meshTopology = import "${self}/modules/profiles/meshNetwork/meshTopology.nix" { inherit lib; };
-  validHosts = builtins.attrNames meshTopology.nodes;
+  exportedHosts = builtins.attrNames self.nixosConfigurations;
+  validHosts = lib.filter (name: builtins.hasAttr name meshTopology.nodes) exportedHosts;
   validHostsStr = lib.concatStringsSep " " validHosts;
 
   hostIpCases = lib.concatStringsSep "\n" (
@@ -224,8 +225,9 @@ in {
 
 **Key Points:**
 - Substitution values are computed from Nix data (mesh topology, secrets module)
-- Host IPs and valid hostnames are automatically derived from `meshTopology.nix`
-- Changes to mesh topology automatically update the scripts on rebuild
+- Valid hostnames are exported flake hosts that also have mesh topology
+- Host IPs are automatically derived from `meshTopology.nix`
+- Changes to flake exports or mesh topology automatically update the scripts on rebuild
 - Available only on the `devenv` host
 
 ## Adding New Scripts
