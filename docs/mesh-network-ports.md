@@ -58,12 +58,6 @@ Unused gap: `1033`-`1039`. Next unused port after the highest current allocation
 
 Next unused port: `1030`.
 
-## ai1 (`10.255.0.9`)
-
-No Docker container ports are declared in `hosts/ai1.nix`. The host allows `18789/tcp_udp` from private networks for the OpenClaw gateway.
-
-`rp1` currently has an `ollama.in.reinitialized.net` proxy target of `http://10.255.0.9:1024`; verify the target service before changing or deploying that route.
-
 ## db1 (`10.255.0.11`)
 
 | Port | Service | Protocol | Container port | Description |

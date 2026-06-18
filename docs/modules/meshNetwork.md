@@ -48,7 +48,6 @@ It does not read `nodeId`, `listenPort`, or `peers` from `secrets.meshNetwork.ke
 | `apps2` | 4 | `10.255.0.4` | `10.1.11.3:51820` |
 | `apps3` | 5 | `10.255.0.5` | `10.1.11.4:51820` |
 | `gs1` | 6 | `10.255.0.6` | `10.1.11.6:51820` |
-| `ai1` | 9 | `10.255.0.9` | `10.1.11.9:51820` |
 | `db1` | 11 | `10.255.0.11` | `10.1.11.11:51820` |
 
 `gs1` is in topology but not currently exported from `flake.nix`.

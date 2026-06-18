@@ -134,7 +134,6 @@ Environment variables override secrets, and CLI flags override both:
 | `modules/secrets.example/apps1.nix` | `meshNetwork`, `acmeDns`, `hudu`, `jaeger`, `grafana`, `stalwart`, `forgejo`, `authentik`, `volumeMigration` |
 | `modules/secrets.example/apps2.nix` | `meshNetwork`, `acmeDns`, `unifi`, `pgAdmin4`, `redisInsight`, `forgejoRunner`, `volumeMigration` |
 | `modules/secrets.example/apps3.nix` | `meshNetwork`, `immich`, `tuwunel`, `paperless`, `pelican`, `ocis`, `volumeMigration` |
-| `modules/secrets.example/ai1.nix` | `meshNetwork`, `openclaw` |
 | `modules/secrets.example/db1.nix` | `meshNetwork`, `postgres1`, `volumeMigration` |
 | `modules/secrets.example/gs1.nix` | `meshNetwork`, `volumeMigration`, `wings` |
 

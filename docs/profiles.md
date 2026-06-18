@@ -125,7 +125,6 @@ Only use it on hosts where `scsi1` is intended to be the data disk.
 | `apps1` | `vscodeServer`, `containers`, `mountData` |
 | `apps2` | `vscodeServer`, `containers`, `mountData` |
 | `apps3` | `vscodeServer`, `containers`, `mountData` |
-| `ai1` | `vscodeServer`, `mountData`, `meshNetwork` |
 | `db1` | `vscodeServer`, `containers`, `mountData` |
 
 All of these also receive the standard, firewall, hardware, host, and host-secret imports from `makeConfiguration`.

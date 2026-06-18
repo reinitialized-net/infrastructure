@@ -212,13 +212,13 @@ The generated module:
     "${self}/modules/profiles/mountData.nix"
 
     (import "${self}/library/makeUser.nix" {
-      username = "openclaw";
-      group = "openclaw";
-      homeDirectory = "/mnt/data/openclaw";
-      dataPath = "/mnt/data/openclaw";
+      username = "servicebot";
+      group = "servicebot";
+      homeDirectory = "/mnt/data/servicebot";
+      dataPath = "/mnt/data/servicebot";
       extraUserAttrs = {
         isSystemUser = true;
-        description = "OpenClaw service user";
+        description = "Service bot user";
       };
     })
   ];

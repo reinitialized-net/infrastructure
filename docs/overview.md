@@ -22,7 +22,6 @@ Current exported hosts:
 - `apps1`
 - `apps2`
 - `apps3`
-- `ai1`
 - `db1`
 
 `gs1` has a host file, secret example, and mesh topology entry, but its export is commented out in `flake.nix`.
@@ -117,7 +116,6 @@ infrastructure/
 │   ├── apps1.nix
 │   ├── apps2.nix
 │   ├── apps3.nix
-│   ├── ai1.nix
 │   ├── db1.nix
 │   ├── gs1.nix
 │   └── devenv/tools/

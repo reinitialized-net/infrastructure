@@ -68,7 +68,6 @@ modules = [
 | `apps1` | `containers`, `mountData`, `vscodeServer` |
 | `apps2` | `containers`, `mountData`, `vscodeServer` |
 | `apps3` | `containers`, `mountData`, `vscodeServer` |
-| `ai1` | `mountData`, `meshNetwork`, `vscodeServer` |
 | `db1` | `containers`, `mountData`, `vscodeServer` |
 
 ## Related Docs

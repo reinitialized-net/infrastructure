@@ -54,22 +54,20 @@ When `homeDirectory` and `dataPath` are the same, no bind mount is generated.
 }: {
   imports = [
     (import "${self}/library/makeUser.nix" {
-      username = "openclaw";
-      group = "openclaw";
-      homeDirectory = "/mnt/data/openclaw";
-      dataPath = "/mnt/data/openclaw";
+      username = "servicebot";
+      group = "servicebot";
+      homeDirectory = "/mnt/data/servicebot";
+      dataPath = "/mnt/data/servicebot";
       homePermissions = "0755";
       extraUserAttrs = {
         isSystemUser = true;
-        description = "OpenClaw service user";
+        description = "Service bot user";
         shell = "${pkgs.bash}/bin/bash";
       };
     })
   ];
 }
 ```
-
-This is the pattern used by `hosts/ai1.nix`.
 
 ## Multiple Groups
 

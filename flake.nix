@@ -182,35 +182,6 @@
           ];
         };
 
-        ai1 = library.makeDualExport "ai1" {
-          system = "x86_64-linux";
-          vmId = 208;
-          enableProtection = true;
-          memory = 8192;
-          disks = [
-            { 
-              storage = "hotData";
-              size = 20; 
-            }
-            { 
-              storage = "hotData"; # Using hotData for both disks to optimize for performance of the models
-              size = 20;
-            }
-          ];
-          networking = [
-            { 
-              bridge = "vmbr0";
-              firewall = false;
-              vlan = 11;
-            }
-          ];
-          modules = [
-            inputs.vscodeServer.nixosModules.default
-            "${inputs.self}/modules/profiles/mountData.nix"
-            "${inputs.self}/modules/profiles/meshNetwork"
-          ];
-        };
-
         db1 = library.makeDualExport "db1" {
           system = "x86_64-linux";
           vmId = 206;
@@ -290,8 +261,6 @@
         apps2 = dualSystems.apps2.nixosSystem;
         apps3 = dualSystems.apps3.nixosSystem;
 
-        ai1 = dualSystems.ai1.nixosSystem;
-
         db1 = dualSystems.db1.nixosSystem;
         #gs1 = dualSystems.gs1.nixosSystem;
       };
@@ -306,8 +275,6 @@
             apps2 = dualSystems.apps2.package;
             apps3 = dualSystems.apps3.package;
 
-            ai1 = dualSystems.ai1.package;
-            
             db1 = dualSystems.db1.package;
         }
       );

@@ -37,7 +37,6 @@ The source of truth for exported hosts is `flake.nix`. As of this update, these 
 | `apps1` | 204 | 11 | `10.255.0.3` | Hudu, Technitium DNS primary, Stalwart, Forgejo, Jaeger, Grafana, Authentik |
 | `apps2` | 205 | 11 | `10.255.0.4` | Technitium DNS secondary, UniFi, pgAdmin, Redis Insight, Forgejo Runner, Cinny |
 | `apps3` | 207 | 11 | `10.255.0.5` | Immich, Tuwunel Matrix, Paperless-ngx, Pelican Panel, OCIS, SearXNG |
-| `ai1` | 208 | 11 | `10.255.0.9` | OpenClaw gateway and AI tooling |
 | `db1` | 206 | 11 | `10.255.0.11` | PostgreSQL, Valkey, OpenTelemetry Collector, Prometheus |
 
 `gs1` exists in `hosts/`, `modules/secrets.example/`, and `meshTopology.nix`, but it is commented out in `flake.nix`; `.#gs1` builds and deploys do not work until it is exported.
@@ -53,7 +52,6 @@ nix build \
   path:.#nixosConfigurations.apps1.config.system.build.toplevel \
   path:.#nixosConfigurations.apps2.config.system.build.toplevel \
   path:.#nixosConfigurations.apps3.config.system.build.toplevel \
-  path:.#nixosConfigurations.ai1.config.system.build.toplevel \
   path:.#nixosConfigurations.db1.config.system.build.toplevel
 ```
 

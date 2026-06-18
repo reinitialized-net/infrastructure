@@ -56,7 +56,6 @@ Investigation notes under [docs/investigations/](investigations/) are historical
 | `apps1` | `nixosConfigurations.apps1` | `packages.x86_64-linux.apps1` | `10.255.0.3` |
 | `apps2` | `nixosConfigurations.apps2` | `packages.x86_64-linux.apps2` | `10.255.0.4` |
 | `apps3` | `nixosConfigurations.apps3` | `packages.x86_64-linux.apps3` | `10.255.0.5` |
-| `ai1` | `nixosConfigurations.ai1` | `packages.x86_64-linux.ai1` | `10.255.0.9` |
 | `db1` | `nixosConfigurations.db1` | `packages.x86_64-linux.db1` | `10.255.0.11` |
 
 `gs1` is defined in topology and host files but is not currently exported from `flake.nix`.
