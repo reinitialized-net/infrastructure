@@ -37,7 +37,7 @@ Exported hosts from `flake.nix`: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `ai
 - WireGuard mesh networking, systemd-networkd, nftables firewall rules.
 - Docker/OCI containers managed declaratively through NixOS.
 - Bash tools generated into host packages with Nix-time placeholder substitution.
-- VS Code/Nix tooling: `.vscode/settings.json` enables `nixd` and sets formatting to `nixfmt`; `hosts/devenv.nix` installs `nixfmt-rfc-style`.
+- VS Code/Nix tooling: `.vscode/settings.json` enables `nixd` and configures `nixfmt`; `hosts/devenv.nix` installs `nixfmt-rfc-style`.
 
 ## Directory Map
 
@@ -52,11 +52,11 @@ Exported hosts from `flake.nix`: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `ai
 - `modules/secrets/` - live secrets, gitignored.
 - `docs/` - architecture, module, example, and investigation notes.
 - `.agents/workflows/` - workflow snippets for build, deploy, and host creation.
-- `.github/copilot-instructions.md` - older agent guidance; verify against current repo files before trusting it.
+- `.vscode/` - editor recommendations and Nix language-server settings.
 
 ## Setup And Install
 
-- There is no `devShell`, package manifest, Docker Compose setup, or devcontainer in repo files.
+- There is no `devShell`, package manifest, Docker Compose setup, devcontainer, or CI workflow in repo files.
 - Required local tool is Nix with flakes enabled. The NixOS standard profile also sets `nix.settings.experimental-features = [ "nix-command" "flakes" ];`.
 - On the `devenv` host, repo-specific tools are installed by `hosts/devenv.nix`: `rebuildHost`, `updateInfra`, `updateNetworkFirewallRules`, `nixd`, and `nixfmt-rfc-style`.
 - Unknown from repo files: non-Nix workstation bootstrap steps.
@@ -112,6 +112,7 @@ nixos-rebuild switch --flake path:.#<host> --target-host rnetadmin@<ip> --sudo
 
 - Define new hosts with `library.makeDualExport` in `flake.nix`; do not call `makeConfiguration` or `generateVMAImage` directly for normal host additions.
 - Add both outputs for new exported hosts: `nixosConfigurations.<name>` and `packages.<system>.<name>`.
+- `makeConfiguration` auto-imports `hosts/<name>.nix`; use the `modules` argument to `makeDualExport` only for extra profiles/modules such as `containers` or `mountData`.
 - `modules/profiles/standard.nix` is auto-included by `makeConfiguration`; avoid duplicating base SSH, sudo-rs, networking, Nix, or user defaults in host files.
 - Prefer existing Nix patterns: `lib.mkDefault` for overridable defaults, `lib.mkForce` only when the repo already enforces a value intentionally.
 - Host networking uses systemd-networkd, not NetworkManager. Existing hosts match the primary NIC with `matchConfig.Path = "pci-0000:06:12.0";`.
@@ -145,6 +146,8 @@ OPNSENSE_PORT
 OPNSENSE_VERIFY_TLS
 LOG_DAYS
 TOP_FLOWS
+API_CONNECT_TIMEOUT
+API_MAX_TIMEOUT
 ```
 
 ## Database, Migration, And Codegen
@@ -165,7 +168,7 @@ TOP_FLOWS
 
 - `gs1` exists in `hosts/`, `modules/secrets.example/`, and `meshTopology.nix`, but is currently commented out of `flake.nix` exports. Commands using `.#gs1` will not work until the flake exports it.
 - `updateInfra` derives valid hosts from `meshTopology.nix`, not from `nixosConfigurations`; verify exports before fleet-wide deploys.
-- README and older agent docs may lag behind `flake.nix`. Trust `flake.nix` and successful `nix flake show` output for current exports.
+- Docs and `.agents` workflow snippets may lag behind `flake.nix`. For example, `.agents/workflows/deploy-host.md` still mentions `gs1`; trust `flake.nix` and successful `nix flake show` output for current exports.
 - `mountData.nix` auto-formats and auto-resizes `/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1`; only use it with the intended second disk.
 - VMA builds generate random `rnetadmin` credentials into `result/CREDENTIALS.txt`.
 - Docker hosts bind `/var/lib/docker` and `/var/lib/docker/volumes` into `/mnt/data/docker`; volume and disk changes can affect persistent service data.
