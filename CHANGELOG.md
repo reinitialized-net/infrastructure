@@ -7,7 +7,9 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ## [Unreleased]
 
-- Track upcoming infrastructure changes before the next point release.
+### Fixed
+
+- Allow automatic update validation, deploy, and fallback `nixos-upgrade` builds from clean `indev` checkouts by importing live host secret modules from `INFRA_SECRETS_DIR`.
 
 ## [v0.1.0] - 2026-06-19
 

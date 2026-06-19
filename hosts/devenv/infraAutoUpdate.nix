@@ -12,6 +12,7 @@ let
   checkoutDir = "${stateDir}/checkout";
   logDir = "/var/log/infratainer";
   runDir = "/run/infratainer";
+  secretsDir = automationKeys.secretsDir or "${stateDir}/secrets";
 
   forgejoBaseUrl = automationKeys.forgejoBaseUrl or "https://git.ds.reinitialized.net";
   repoOwner = automationKeys.repoOwner or "reinitialized.net";
@@ -150,6 +151,7 @@ let
       token_file="${tokenFile}"
       repo_clone_url="${repoCloneUrl}"
       default_branch="${defaultBranch}"
+      secrets_dir="${secretsDir}"
       forgejo_base="${forgejoBaseUrl}"
       api_root="''${forgejo_base%/}/api/v1"
       forgejo_username="${forgejoUsername}"
@@ -200,6 +202,18 @@ let
         chmod 700 "$run_dir/git-askpass"
         export GIT_ASKPASS="$run_dir/git-askpass"
         export GIT_TERMINAL_PROMPT=0
+      }
+
+      require_secrets_dir() {
+        if [ ! -d "$secrets_dir" ]; then
+          echo "Secrets directory is missing: $secrets_dir" >&2
+          return 1
+        fi
+
+        if ! compgen -G "$secrets_dir/*.nix" >/dev/null; then
+          echo "Secrets directory has no host modules: $secrets_dir/*.nix" >&2
+          return 1
+        fi
       }
 
       ensure_checkout() {
@@ -266,8 +280,10 @@ $pr_title"
           git -C "$checkout_dir" checkout --detach FETCH_HEAD
 
           cd "$checkout_dir"
-          nix flake show path:. --no-write-lock-file
-          nix build --no-link \
+          require_secrets_dir
+          export INFRA_SECRETS_DIR="$secrets_dir"
+          nix flake show path:. --no-write-lock-file --impure
+          nix build --impure --no-link \
             path:.#nixosConfigurations.devenv.config.system.build.toplevel \
             path:.#nixosConfigurations.rp1.config.system.build.toplevel \
             path:.#nixosConfigurations.apps1.config.system.build.toplevel \
@@ -362,6 +378,7 @@ $excerpt
       token_file="${tokenFile}"
       repo_clone_url="${repoCloneUrl}"
       default_branch="${defaultBranch}"
+      secrets_dir="${secretsDir}"
       forgejo_username="${forgejoUsername}"
 
       mkdir -p "$state_dir" "$log_dir" "$run_dir"
@@ -385,6 +402,18 @@ $excerpt
         chmod 700 "$run_dir/git-askpass"
         export GIT_ASKPASS="$run_dir/git-askpass"
         export GIT_TERMINAL_PROMPT=0
+      }
+
+      require_secrets_dir() {
+        if [ ! -d "$secrets_dir" ]; then
+          echo "Secrets directory is missing: $secrets_dir" >&2
+          return 1
+        fi
+
+        if ! compgen -G "$secrets_dir/*.nix" >/dev/null; then
+          echo "Secrets directory has no host modules: $secrets_dir/*.nix" >&2
+          return 1
+        fi
       }
 
       ensure_checkout() {
@@ -417,7 +446,12 @@ $excerpt
         exit 1
       fi
 
-      if FLAKE_PATH="$checkout_dir" updateInfra >> "$log_file" 2>&1; then
+      if ! require_secrets_dir >> "$log_file" 2>&1; then
+        infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Failed to prepare live secrets for managed checkout $checkout_dir."
+        exit 1
+      fi
+
+      if INFRA_SECRETS_DIR="$secrets_dir" FLAKE_PATH="$checkout_dir" updateInfra >> "$log_file" 2>&1; then
         echo "Fleet deployment completed successfully. Log: $log_file"
       else
         infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Fleet deployment failed from managed checkout $checkout_dir."
@@ -441,6 +475,7 @@ in
 
   systemd.tmpfiles.rules = [
     "d ${stateDir} 0750 rnetadmin rnetadmin -"
+    "d ${secretsDir} 0750 rnetadmin rnetadmin -"
     "d ${logDir} 0750 rnetadmin rnetadmin -"
     "d ${runDir} 0700 rnetadmin rnetadmin -"
   ];
@@ -526,5 +561,8 @@ in
     };
   };
 
-  systemd.services.nixos-upgrade.unitConfig.OnFailure = "infra-update-report@%n.service";
+  systemd.services.nixos-upgrade = {
+    environment.INFRA_SECRETS_DIR = secretsDir;
+    unitConfig.OnFailure = "infra-update-report@%n.service";
+  };
 }

@@ -26,6 +26,7 @@
         repoName = "infrastructure";
         repoCloneUrl = "https://git.ds.reinitialized.net/reinitialized.net/infrastructure.git";
         defaultBranch = "indev";
+        secretsDir = "/var/lib/infratainer/secrets";
         issueLabels = "infra-auto-update";
         automationName = "Infratainer";
         forgejoUsername = "Infratainer";

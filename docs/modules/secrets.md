@@ -30,7 +30,11 @@ secrets.<name> = {
 
 ## Import Behavior
 
-`makeConfiguration` automatically imports `modules/secrets/<host>.nix` when the file exists. The `secrets` option must still be defined by importing `modules/profiles/secrets.nix`; current exported hosts get that through `meshNetwork` or `containers`.
+`makeConfiguration` automatically imports `modules/secrets/<host>.nix` when the file exists. If that in-tree file is absent and `INFRA_SECRETS_DIR` is set, it imports `$INFRA_SECRETS_DIR/<host>.nix` instead. This external path is used by automatic update jobs that build from a clean managed checkout or a fetched Forgejo flake.
+
+Using `INFRA_SECRETS_DIR` requires impure flake evaluation. The standard host-local `nixos-upgrade` path sets `--impure` automatically, and the devenv automation passes it for managed-checkout validation and deploys.
+
+The `secrets` option must still be defined by importing `modules/profiles/secrets.nix`; current exported hosts get that through `meshNetwork` or `containers`.
 
 `nixosModules.default` also imports the secrets module for external module consumers.
 

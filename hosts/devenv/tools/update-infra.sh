@@ -5,6 +5,11 @@ set -euo pipefail
 VALID_HOSTS="@validHosts@"
 FLAKE_PATH="${FLAKE_PATH:-/home/develop/projects/reinitialized.net/infrastructure}"
 SSH_USER="rnetadmin"
+NIXOS_REBUILD_FLAGS=()
+
+if [[ -n "${INFRA_SECRETS_DIR:-}" ]]; then
+  NIXOS_REBUILD_FLAGS+=(--impure)
+fi
 
 get_host_ip() {
   local host="$1"
@@ -44,7 +49,7 @@ for host in $VALID_HOSTS; do
   
   if [[ "$host" == "devenv" ]]; then
     echo "  (local host - building and activating directly)"
-    if sudo nixos-rebuild switch --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host"; then
+    if sudo INFRA_SECRETS_DIR="${INFRA_SECRETS_DIR:-}" nixos-rebuild switch "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host"; then
       SUCCESS_HOSTS+=("$host")
       echo "✓ $host updated successfully"
     else
@@ -59,13 +64,13 @@ for host in $VALID_HOSTS; do
     }
     
     echo "  (remote: $TARGET_IP - building on devenv, deploying to target)"
-    if nixos-rebuild switch --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host" \
+    if nixos-rebuild switch "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host" \
         --target-host "$SSH_USER@$TARGET_IP" \
         --sudo; then
       SUCCESS_HOSTS+=("$host")
       echo "✓ $host updated successfully"
     elif ssh "$SSH_USER@$TARGET_IP" 'sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null && \
-         nixos-rebuild switch --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host" \
+         nixos-rebuild switch "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host" \
            --target-host "$SSH_USER@$TARGET_IP" \
            --sudo; then
       SUCCESS_HOSTS+=("$host")

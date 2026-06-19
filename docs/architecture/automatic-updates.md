@@ -11,8 +11,8 @@
 3. PRs labeled `infra-auto-merge` are validated locally:
 
    ```bash
-   nix flake show path:. --no-write-lock-file
-   nix build --no-link \
+   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix flake show path:. --no-write-lock-file --impure
+   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix build --impure --no-link \
      path:.#nixosConfigurations.devenv.config.system.build.toplevel \
      path:.#nixosConfigurations.rp1.config.system.build.toplevel \
      path:.#nixosConfigurations.apps1.config.system.build.toplevel \
@@ -26,10 +26,10 @@
 5. `infra-deploy.timer` runs daily at `02:30`, refreshes the managed checkout to `origin/indev`, and runs:
 
    ```bash
-   FLAKE_PATH=/var/lib/infratainer/checkout updateInfra
+   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets FLAKE_PATH=/var/lib/infratainer/checkout updateInfra
    ```
 
-Host-local `nixos-upgrade.timer` remains enabled as a fallback and runs later from the Forgejo flake URL with `?ref=indev`.
+Host-local `nixos-upgrade.timer` remains enabled as a fallback and runs later from the Forgejo flake URL with `?ref=indev`. It passes `--impure` and `INFRA_SECRETS_DIR=/var/lib/infratainer/secrets` so the fetched clean flake can import host-local live secret modules.
 
 ## Secrets
 
@@ -42,6 +42,17 @@ The automation identity defaults to `Infratainer`. Set `secrets.infraAutomation.
 Example secret metadata lives in `modules/secrets.example/devenv.nix` and the container-host examples.
 
 Set `secrets.infraAutomation.keys.defaultBranch = "indev"` if overriding the default branch in live secrets.
+
+Set `secrets.infraAutomation.keys.secretsDir` if the automation secret overlay should live somewhere other than `/var/lib/infratainer/secrets`.
+
+The managed checkout does not contain `modules/secrets/` because those files are gitignored. Before automatic validation or deploy can build from `/var/lib/infratainer/checkout`, provision the live secret modules into the external secrets directory:
+
+```bash
+sudo install -d -o rnetadmin -g rnetadmin -m 0750 /var/lib/infratainer/secrets
+sudo install -o rnetadmin -g rnetadmin -m 0640 modules/secrets/*.nix /var/lib/infratainer/secrets/
+```
+
+The directory must include any helper files imported by host secret modules, such as `infraAutomation.nix`.
 
 ## Renovate Labels
 

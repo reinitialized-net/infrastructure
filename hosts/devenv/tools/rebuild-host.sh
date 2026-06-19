@@ -5,6 +5,11 @@ set -euo pipefail
 VALID_HOSTS="@validHosts@"
 FLAKE_PATH="${FLAKE_PATH:-/home/develop/projects/reinitialized.net/infrastructure}"
 SSH_USER="rnetadmin"
+NIXOS_REBUILD_FLAGS=()
+
+if [[ -n "${INFRA_SECRETS_DIR:-}" ]]; then
+  NIXOS_REBUILD_FLAGS+=(--impure)
+fi
 
 usage() {
   echo "Usage: rebuildHost TARGET [--boot]"
@@ -87,7 +92,7 @@ if [[ "$TARGET" == "devenv" ]]; then
 
   # Execute local nixos-rebuild
   echo "→ Rebuilding local system..."
-  sudo nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET"
+  sudo INFRA_SECRETS_DIR="${INFRA_SECRETS_DIR:-}" nixos-rebuild $ACTION "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET"
 else
   # Get target IP for remote host
   TARGET_IP=$(get_host_ip "$TARGET")
@@ -104,7 +109,7 @@ else
 
   # Execute nixos-rebuild from devenv with --target-host
   echo "→ Building and deploying to $TARGET_IP as $SSH_USER..."
-  if nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
+  if nixos-rebuild $ACTION "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
     --target-host "$SSH_USER@$TARGET_IP" \
     --sudo; then
     :
@@ -117,7 +122,7 @@ else
     # Recover dbus + logind on the remote host
     if ssh "$SSH_USER@$TARGET_IP" 'sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null; then
       echo "→ DBus recovered, retrying switch..."
-      nixos-rebuild $ACTION --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
+      nixos-rebuild $ACTION "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
         --target-host "$SSH_USER@$TARGET_IP" \
         --sudo
     else
