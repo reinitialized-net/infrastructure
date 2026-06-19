@@ -7,6 +7,8 @@
 }: let
   cfg = config.services.meshNetwork;
   meshInterface = "wg-mesh";
+  dockerIntegrationEnabled = cfg.dockerIntegration && config.virtualisation.docker.enable;
+  dockerPackage = config.virtualisation.docker.package;
   
   # Import centralized topology
   meshTopology = import ./meshTopology.nix { inherit lib; };
@@ -179,7 +181,7 @@ in {
     };
 
     # Docker integration
-    virtualisation.docker = lib.mkIf (cfg.dockerIntegration && config.virtualisation.docker.enable) {
+    virtualisation.docker = lib.mkIf dockerIntegrationEnabled {
       daemon.settings = {
         # Add mesh network to Docker daemon
         bip = lib.mkDefault "172.17.0.1/16";
@@ -188,7 +190,7 @@ in {
     };
     
     # Create a Docker network that routes through mesh
-    systemd.services.docker-meshNetwork = lib.mkIf (cfg.dockerIntegration && config.virtualisation.docker.enable) {
+    systemd.services.docker-meshNetwork = lib.mkIf dockerIntegrationEnabled {
       description = "Create Docker mesh network";
       after = [ "docker.service" "wireguard-${meshInterface}.service" "nftables.service" ];
       wants = [ "wireguard-${meshInterface}.service" ];
@@ -201,7 +203,7 @@ in {
 
       script = ''
         # Wait for Docker daemon
-        until ${pkgs.docker}/bin/docker info > /dev/null 2>&1; do
+        until ${dockerPackage}/bin/docker info > /dev/null 2>&1; do
           echo "Waiting for Docker daemon..."
           sleep 1
         done
@@ -213,9 +215,9 @@ in {
         done
 
         # Create mesh network if it doesn't exist
-        if ! ${pkgs.docker}/bin/docker network inspect backend > /dev/null 2>&1; then
+        if ! ${dockerPackage}/bin/docker network inspect backend > /dev/null 2>&1; then
           echo "Creating backend Docker network..."
-          ${pkgs.docker}/bin/docker network create \
+          ${dockerPackage}/bin/docker network create \
             --driver bridge \
             --subnet 172.20.0.0/16 \
             --opt "com.docker.network.bridge.name=br-mesh" \
@@ -243,7 +245,7 @@ in {
         ${pkgs.nftables}/bin/nft delete table inet mesh-docker 2>/dev/null || true
         
         # Remove network
-        ${pkgs.docker}/bin/docker network rm backend 2>/dev/null || true
+        ${dockerPackage}/bin/docker network rm backend 2>/dev/null || true
       '';
     };
 
@@ -286,10 +288,10 @@ in {
           echo -n "Node ${toString peer.nodeId} (${meshLib.getSubnetPrefix meshSubnet}.${toString peer.nodeId}): "
           ${pkgs.iputils}/bin/ping -c 1 -W 1 ${meshLib.getSubnetPrefix meshSubnet}.${toString peer.nodeId} > /dev/null 2>&1 && echo "✓ UP" || echo "✗ DOWN"
         '') cfg.peers}
-        ${lib.optionalString cfg.dockerIntegration ''
+        ${lib.optionalString dockerIntegrationEnabled ''
           echo
           echo "=== Docker Mesh Network ==="
-          ${pkgs.docker}/bin/docker network inspect backend 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[0].Name + " (" + .[0].Driver + ")"' || echo "Not created"
+          ${dockerPackage}/bin/docker network inspect backend 2>/dev/null | ${pkgs.jq}/bin/jq -r '.[0].Name + " (" + .[0].Driver + ")"' || echo "Not created"
         ''}
       '';
       mode = "0555";

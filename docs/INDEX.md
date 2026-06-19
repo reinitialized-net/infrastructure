@@ -34,10 +34,12 @@ Documentation for the Reinitialized Infrastructure NixOS flake.
 
 - [Mesh Network Port Reference](mesh-network-ports.md)
 - [Bash Script Tools](bash-script-tools.md)
+- [Automatic Updates](architecture/automatic-updates.md)
 - [Using makeUser](examples/makeUser.md)
 
 ## Architecture Notes
 
+- [Automatic Updates](architecture/automatic-updates.md)
 - [Authentik OIDC Auto-Registration](architecture/authentik-oidc-auto-registration.md)
 - [Matrix Chat Architecture](architecture/matrix-setup.md)
 - [Stalwart Native ACME TLS](architecture/stalwart-native-acme-tls.md)

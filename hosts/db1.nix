@@ -29,6 +29,11 @@
   services.meshNetwork = {
       enable = true;
   };
+  services.containerAutoUpdate.skipContainers = [
+    "postgres1"
+    "valkey1"
+    "prometheus"
+  ];
 
   # OpenTelemetry Collector Configuration
   environment.etc."otel-collector-config.yaml" = {

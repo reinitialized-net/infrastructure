@@ -29,6 +29,15 @@
   services.meshNetwork = {
       enable = true;
   };
+  services.containerAutoUpdate.skipContainers = [
+    "hudu1"
+    "hudu2"
+    "dnsOne"
+    "stalwartOne"
+    "forgejo"
+    "authentik-server"
+    "authentik-worker"
+  ];
   # ACME certificate generation for Technitium DNS (dnsOne)
   # Generates certificate with PKCS#12 for direct use by Technitium
   security.acme = {

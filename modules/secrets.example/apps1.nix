@@ -8,6 +8,16 @@
       description = "MeshNetwork secrets";
       file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
     };
+    infraAutomation = {
+      description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
+      file = lib.mkDefault /run/secrets/infra-automation-token;
+      keys = {
+        forgejoBaseUrl = "https://git.ds.reinitialized.net";
+        repoOwner = "reinitialized.net";
+        repoName = "infrastructure";
+        issueLabels = "infra-auto-update";
+      };
+    };
     acmeDns = {
       description = "Technitium DNS API token for ACME DNS-01 challenges";
       file = lib.mkDefault (builtins.toFile "acme-dns-token" ''

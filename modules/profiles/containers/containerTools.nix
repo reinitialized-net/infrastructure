@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   ...
@@ -19,7 +20,7 @@
   # Load and process each tool script with required package substitutions
   toolScripts = with pkgs; [
     (makeToolScript "migrate-volumes" ./tools/migrate-volumes.sh {
-      docker = "${docker}";
+      docker = "${config.virtualisation.docker.package}";
       coreutils = "${coreutils}";
       gawk = "${gawk}";
       openssh = "${openssh}";

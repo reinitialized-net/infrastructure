@@ -1,0 +1,102 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "config:recommended"
+  ],
+  "dependencyDashboard": true,
+  "enabledManagers": [
+    "nix",
+    "custom.regex"
+  ],
+  "nix": {
+    "enabled": true
+  },
+  "prConcurrentLimit": 4,
+  "prHourlyLimit": 2,
+  "rebaseWhen": "behind-base-branch",
+  "separateMajorMinor": true,
+  "labels": [
+    "dependencies"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "labels": [
+      "dependencies",
+      "nix",
+      "infra-auto-merge"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^hosts/.*\\.nix$/"
+      ],
+      "matchStrings": [
+        "image\\s*=\\s*\"(?<depName>[^\"\\s@:]+(?:/[^\"\\s@:]+)*):(?<currentValue>[^\"\\s@]+)\";"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "Group Nix flake input updates and make them eligible for local validation plus auto-merge.",
+      "matchManagers": [
+        "nix"
+      ],
+      "groupName": "nix flake inputs",
+      "labels": [
+        "dependencies",
+        "nix",
+        "infra-auto-merge"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Group detected Docker image tag updates.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "groupName": "container image tags",
+      "labels": [
+        "dependencies",
+        "container"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Allow local promoter automation for non-major and digest-level container updates.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pinDigest",
+        "minor",
+        "patch"
+      ],
+      "labels": [
+        "dependencies",
+        "container",
+        "infra-auto-merge"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Keep major container updates open for manual review.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "labels": [
+        "dependencies",
+        "container",
+        "manual-update"
+      ],
+      "automerge": false
+    }
+  ]
+}

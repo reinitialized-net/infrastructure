@@ -30,6 +30,12 @@
   services.meshNetwork = {
       enable = true;
   };
+  services.containerAutoUpdate.skipContainers = [
+    "dnsTwo"
+    "unifi_mongodb"
+    "unifi"
+    "forgejoRunner"
+  ];
   # ACME certificate generation for Technitium DNS (dnsTwo)
   # Generates certificate with PKCS#12 for direct use by Technitium
   security.acme = {

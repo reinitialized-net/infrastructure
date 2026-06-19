@@ -41,6 +41,7 @@
   in {
   imports = [ 
     "${self}/modules/profiles/meshNetwork"
+    "${self}/modules/profiles/infraUpdateReport.nix"
     "${self}/modules/profiles/secrets.nix"
     ./containerTools.nix
   ];
@@ -98,6 +99,7 @@
     virtualisation = {
       docker = {
         enable = lib.mkForce true;
+        package = lib.mkDefault pkgs.docker_29;
         daemon.settings = {
           icc = lib.mkForce true;
           no-new-privileges = lib.mkForce true;
@@ -120,13 +122,16 @@
     };
 
     # Declarative OCI container image maintenance.
+    services.infraUpdateReport.enable = lib.mkDefault true;
+
     systemd.services.docker-container-auto-update = lib.mkIf cfg.enable {
       description = "Update Docker OCI container images from declarative definitions";
       after = [ "docker.service" ];
+      unitConfig.OnFailure = "infra-update-report@%n.service";
       serviceConfig = {
         Type = "oneshot";
       };
-      path = [ pkgs.bash pkgs.coreutils pkgs.docker pkgs.systemd ];
+      path = [ pkgs.bash pkgs.coreutils config.virtualisation.docker.package pkgs.systemd ];
       script = ''
         #!/usr/bin/env bash
         set -euo pipefail
@@ -137,6 +142,7 @@
         skip_containers="${skipContainersScript}"
 
         container_entries="${containerDefinitionsScript}"
+        had_failure=0
 
         is_skipped() {
           local target="$1"
@@ -164,13 +170,16 @@
           IFS='|' read -r container_name container_image container_service <<< "$entry"
 
           if is_skipped "$container_name"; then
-            echo "Skipping container: $container_name"
+            echo "container_update_event container=$container_name image=$container_image service=$container_service action=skip_policy"
             continue
           fi
 
           before_id="$(get_image_id "$container_image")"
+          echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id action=pull"
           if ! docker pull "$container_image"; then
             echo "Failed to pull image for $container_name ($container_image)"
+            echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id after_id=__PULL_FAILED__ changed=unknown action=pull_failed"
+            had_failure=1
             continue
           fi
 
@@ -181,6 +190,7 @@
 
           after_id="$(get_image_id "$container_image")"
           unit_name="$(printf '%s' "$container_service" | sed 's/\\.service$//').service"
+          echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id action=inspect"
 
           if ! systemctl cat "$unit_name" > /dev/null 2>&1; then
             echo "Container service $unit_name not found; skipping."
@@ -188,16 +198,21 @@
           fi
 
           if [[ "$restart_changed_only" == "true" && "$before_id" == "$after_id" ]]; then
-            echo "No image change for $container_name; skipping restart."
+            echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=false action=skip_restart"
             continue
           fi
 
-          echo "Restarting $container_name service ($unit_name)"
+          echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=true action=restart"
           if ! systemctl restart "$unit_name"; then
             echo "Failed to restart $unit_name"
             exit 1
           fi
         done <<< "$container_entries"
+
+        if [ "$had_failure" -ne 0 ]; then
+          echo "One or more container image updates failed."
+          exit 1
+        fi
       '';
     };
 

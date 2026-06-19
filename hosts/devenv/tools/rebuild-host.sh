@@ -3,7 +3,7 @@
 set -euo pipefail
 
 VALID_HOSTS="@validHosts@"
-FLAKE_PATH="/home/develop/projects/reinitialized.net/infrastructure"
+FLAKE_PATH="${FLAKE_PATH:-/home/develop/projects/reinitialized.net/infrastructure}"
 SSH_USER="rnetadmin"
 
 usage() {

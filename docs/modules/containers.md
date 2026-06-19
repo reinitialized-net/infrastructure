@@ -11,6 +11,7 @@ The containers profile turns a host into a Docker-backed OCI container host. It 
 It imports:
 
 - `modules/profiles/meshNetwork`
+- `modules/profiles/infraUpdateReport.nix`
 - `modules/profiles/secrets.nix`
 - `modules/profiles/containers/containerTools.nix`
 
@@ -23,6 +24,7 @@ It assumes `/mnt/data` is available for persistent Docker storage. In this repos
 ```nix
 virtualisation.docker = {
   enable = lib.mkForce true;
+  package = pkgs.docker_29;
   daemon.settings = {
     icc = lib.mkForce true;
     no-new-privileges = lib.mkForce true;
@@ -96,6 +98,8 @@ The profile defines `services.containerAutoUpdate`.
 | `restartChangedOnly` | `true` | Restart only when the pulled image ID changes |
 
 The service iterates through declarative containers, runs `docker pull`, and restarts the matching systemd unit when needed. Unit names come from each container's `serviceName`, defaulting to `docker-<container-name>`.
+
+The service logs `container_update_event` lines containing container name, image, service, old image ID, new image ID, and action. Pull failures cause the service to fail after all containers have been checked. It also sets `OnFailure=infra-update-report@%n.service`; with `secrets.infraAutomation` configured, that reporter creates or updates a Forgejo issue through the automatic update tooling.
 
 Example override:
 

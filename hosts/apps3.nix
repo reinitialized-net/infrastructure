@@ -29,6 +29,14 @@
   services.meshNetwork = {
       enable = true;
   };
+  services.containerAutoUpdate.skipContainers = [
+    "immich-server"
+    "immich-machine-learning"
+    "tuwunel"
+    "paperless-ngx"
+    "pelican-panel"
+    "ocis"
+  ];
 
   # ownCloud OCIS Custom Content Security Policy
   environment.etc."ocis/csp.yaml".text = ''

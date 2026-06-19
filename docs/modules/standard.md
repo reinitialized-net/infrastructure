@@ -121,12 +121,14 @@ Only `rnetadmin` is explicitly listed in `trusted-users` by this profile.
 ```nix
 system.autoUpgrade = {
   enable = lib.mkForce true;
-  flake = lib.mkDefault "github:reinitialized.net/infrastructure";
+  flake = lib.mkDefault "git+https://git.ds.reinitialized.net/reinitialized.net/infrastructure.git";
   operation = lib.mkDefault "switch";
-  dates = lib.mkDefault "02:00";
+  dates = lib.mkDefault "05:00";
   randomizedDelaySec = lib.mkDefault "45min";
 };
 ```
+
+This host-local timer is a fallback after the `devenv` coordinated automatic update window. See [Automatic Updates](../architecture/automatic-updates.md).
 
 Check the timer and service:
 

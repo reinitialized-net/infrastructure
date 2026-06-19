@@ -9,6 +9,16 @@
       description = "MeshNetwork secrets";
       file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
     };
+    infraAutomation = {
+      description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
+      file = lib.mkDefault /run/secrets/infra-automation-token;
+      keys = {
+        forgejoBaseUrl = "https://git.ds.reinitialized.net";
+        repoOwner = "reinitialized.net";
+        repoName = "infrastructure";
+        issueLabels = "infra-auto-update";
+      };
+    };
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
       file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");

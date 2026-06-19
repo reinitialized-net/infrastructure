@@ -15,6 +15,7 @@ in
   imports = [
     # DevEnv-exclusive fleet management & infrastructure tools
     ./devenv/devenvTools.nix
+    ./devenv/infraAutoUpdate.nix
 
     (import "${self}/library/makeUser.nix" {
       username = "develop";
