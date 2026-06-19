@@ -64,6 +64,11 @@
       hostIpCases = hostIpCases;
     })
 
+    (makeToolScript "releaseInfra" ./tools/release-infra.sh {
+      validHosts = validHostsStr;
+      jq = "${jq}";
+    })
+
     (makeToolScript "updateNetworkFirewallRules" ./tools/update-network-firewall-rules.sh {
       curl = "${curl}";
       jq = "${jq}";

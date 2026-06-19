@@ -35,6 +35,7 @@ Documentation for the Reinitialized Infrastructure NixOS flake.
 - [Mesh Network Port Reference](mesh-network-ports.md)
 - [Bash Script Tools](bash-script-tools.md)
 - [Automatic Updates](architecture/automatic-updates.md)
+- [Release Process](release-process.md)
 - [Using makeUser](examples/makeUser.md)
 
 ## Architecture Notes

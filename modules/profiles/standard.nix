@@ -158,7 +158,7 @@
 
   system.autoUpgrade = {
     enable = lib.mkForce true;
-    flake = lib.mkDefault "git+https://git.ds.reinitialized.net/reinitialized.net/infrastructure.git";
+    flake = lib.mkDefault "git+https://git.ds.reinitialized.net/reinitialized.net/infrastructure.git?ref=indev";
     operation = lib.mkDefault "switch";
     dates = lib.mkDefault "05:00";
     randomizedDelaySec = lib.mkDefault "45min";

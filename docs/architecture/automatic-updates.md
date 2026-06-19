@@ -1,11 +1,11 @@
 # Automatic Updates
 
-`devenv` coordinates automatic infrastructure updates from a managed checkout under `/var/lib/infratainer`. The user's working tree is not used by scheduled automation.
+`devenv` coordinates automatic infrastructure updates from a managed checkout under `/var/lib/infratainer`. The user's working tree is not used by scheduled automation. Repository automation tracks the `indev` branch.
 
 ## Flow
 
 1. `infra-renovate.timer` runs daily at `01:00`.
-   It runs Renovate against Forgejo using `RENOVATE_PLATFORM=forgejo`, opens update PRs, and stores logs in `/var/log/infratainer`.
+   It runs Renovate against Forgejo using `RENOVATE_PLATFORM=forgejo`, opens update PRs against `indev`, and stores logs in `/var/log/infratainer`.
 2. `infra-promote.timer` runs daily at `01:45`.
    It inspects open Renovate PRs whose branch starts with `renovate/`.
 3. PRs labeled `infra-auto-merge` are validated locally:
@@ -22,14 +22,14 @@
    bash -n hosts/devenv/tools/update-network-firewall-rules.sh
    ```
 
-4. Passing PRs are merged through the Forgejo API. Failing PRs receive a comment and create or update a Forgejo issue.
-5. `infra-deploy.timer` runs daily at `02:30`, refreshes the managed checkout, and runs:
+4. Passing PRs are merged into `indev` through the Forgejo API. Failing PRs receive a comment and create or update a Forgejo issue.
+5. `infra-deploy.timer` runs daily at `02:30`, refreshes the managed checkout to `origin/indev`, and runs:
 
    ```bash
    FLAKE_PATH=/var/lib/infratainer/checkout updateInfra
    ```
 
-Host-local `nixos-upgrade.timer` remains enabled as a fallback and runs later from the Forgejo flake URL.
+Host-local `nixos-upgrade.timer` remains enabled as a fallback and runs later from the Forgejo flake URL with `?ref=indev`.
 
 ## Secrets
 
@@ -40,6 +40,8 @@ The token file defaults to `/run/secrets/infra-automation-token`. On `devenv`, i
 The automation identity defaults to `Infratainer`. Set `secrets.infraAutomation.keys.automationName` once for the display/git author name and override `forgejoUsername` only if Forgejo requires a different login string.
 
 Example secret metadata lives in `modules/secrets.example/devenv.nix` and the container-host examples.
+
+Set `secrets.infraAutomation.keys.defaultBranch = "indev"` if overriding the default branch in live secrets.
 
 ## Renovate Labels
 

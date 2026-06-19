@@ -25,7 +25,7 @@
         repoOwner = "reinitialized.net";
         repoName = "infrastructure";
         repoCloneUrl = "https://git.ds.reinitialized.net/reinitialized.net/infrastructure.git";
-        defaultBranch = "main";
+        defaultBranch = "indev";
         issueLabels = "infra-auto-update";
         automationName = "Infratainer";
         forgejoUsername = "Infratainer";

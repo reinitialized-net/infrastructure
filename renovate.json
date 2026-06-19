@@ -3,6 +3,9 @@
   "extends": [
     "config:recommended"
   ],
+  "baseBranches": [
+    "indev"
+  ],
   "dependencyDashboard": true,
   "enabledManagers": [
     "nix",

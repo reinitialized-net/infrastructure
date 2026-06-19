@@ -18,7 +18,7 @@ let
   repoName = automationKeys.repoName or "infrastructure";
   repoSlug = "${repoOwner}/${repoName}";
   repoCloneUrl = automationKeys.repoCloneUrl or "${forgejoBaseUrl}/${repoOwner}/${repoName}.git";
-  defaultBranch = automationKeys.defaultBranch or "main";
+  defaultBranch = automationKeys.defaultBranch or "indev";
   issueLabels = automationKeys.issueLabels or "infra-auto-update";
   automationName = automationKeys.automationName or "Infratainer";
   forgejoUsername = automationKeys.forgejoUsername or automationName;
