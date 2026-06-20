@@ -312,7 +312,7 @@
     cinny = {
       autoStart = true;
       hostname = "cinny";
-      image = "ghcr.io/cinnyapp/cinny:v4.3.0";
+      image = "ghcr.io/cinnyapp/cinny:v4.12.2";
       networks = [
         "backend"
       ];
