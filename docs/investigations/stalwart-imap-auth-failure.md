@@ -74,9 +74,9 @@ Key code paths in the Stalwart codebase (`stalwartlabs/stalwart`):
 4. **Identified directory uses RocksDB** via config: `directory.internal.store = "rocksdb"`
 5. **Verified RocksDB not corrupted** via LOG file
 6. **Checked for blocked IPs** — none found
-7. **Changed fallback-admin to known password** "AdminTest456!" to enable API testing
+7. **Changed fallback-admin to a temporary known password**; value intentionally redacted to avoid credential exposure
 8. **Confirmed user data exists** via API: admin@reinitialized.net (id=5), noreply (id=6), test (id=7)
-9. **Set known plaintext password** "TestPw999" via API PATCH — confirmed stored via GET
+9. **Set a temporary plaintext password** via API PATCH; value intentionally redacted — confirmed stored via GET
 10. **Proved auth still fails** with known password — eliminated password mismatch as cause
 11. **Reviewed full config.toml** — no IMAP-specific auth settings, no cache, no overrides
 12. **Checked PostgreSQL settings table** for config overrides — only `oauth.key` found
@@ -102,9 +102,20 @@ Then restarted the stalwartOne container. IMAP authentication immediately worked
 
 ⚠️ **These should be reverted:**
 
-1. **Fallback admin password** was changed from the original hash to the sha512 hash of "AdminTest456!" — update to the real admin password
-2. **admin@reinitialized.net password** was set to plaintext "TestPw999" via the management API — change to the real password
+1. **Fallback admin password** was changed from the original hash to a temporary sha512 password hash; rotate immediately
+2. **admin@reinitialized.net password** was set to a temporary plaintext password via the management API; rotate immediately
 3. **Trace logging** was enabled (`tracer.log.level = "trace"`) — consider reverting to a less verbose level for production
+
+## Security Remediation Required
+
+The temporary credentials used during this investigation were exposed in git history. Treat them as compromised even after this document is redacted. Do not test the leaked credentials against production.
+
+Required out-of-band actions:
+
+1. Rotate the fallback-admin/admin credential immediately.
+2. Rotate the admin@reinitialized.net mailbox credential immediately.
+3. Review Stalwart audit and authentication logs for use of those accounts after the leak time.
+4. If this repository is remote or shared, consider history rewrite or the organization's secret-revocation process; current-tree redaction does not remove secrets from existing history.
 
 ## Lessons Learned
 
