@@ -18,6 +18,18 @@ let
   liveTokenSource = "${liveSecretsSource}/infra-automation-token";
   hasLiveSecretsSource = builtins.pathExists liveSecretsSource;
   hasLiveTokenSource = builtins.pathExists liveTokenSource;
+  meshTopology = import "${self}/modules/profiles/meshNetwork/meshTopology.nix" { inherit lib; };
+  exportedHosts = builtins.attrNames self.nixosConfigurations;
+  deployHostIps = lib.filter (ip: ip != null) (
+    map (
+      host:
+      let
+        node = meshTopology.nodes.${host} or {};
+      in
+      if host != "devenv" && node ? endpoint then lib.head (lib.splitString ":" node.endpoint) else null
+    ) exportedHosts
+  );
+  deployHostIpsString = lib.concatStringsSep " " deployHostIps;
 
   forgejoBaseUrl = automationKeys.forgejoBaseUrl or "https://git.ds.reinitialized.net";
   repoOwner = automationKeys.repoOwner or "reinitialized.net";
@@ -49,7 +61,7 @@ let
       pkgs.renovate
     ];
     text = ''
-      export PATH="/run/current-system/sw/bin:$PATH"
+      export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
 
       state_dir="${stateDir}"
       checkout_dir="${checkoutDir}"
@@ -147,7 +159,7 @@ let
       pkgs.nix
     ];
     text = ''
-      export PATH="/run/current-system/sw/bin:$PATH"
+      export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
 
       state_dir="${stateDir}"
       checkout_dir="${checkoutDir}"
@@ -215,7 +227,8 @@ let
           return 1
         fi
 
-        if ! compgen -G "$secrets_dir/*.nix" >/dev/null; then
+        set -- "$secrets_dir"/*.nix
+        if [ ! -e "$1" ]; then
           echo "Secrets directory has no host modules: $secrets_dir/*.nix" >&2
           return 1
         fi
@@ -372,9 +385,10 @@ $excerpt
       infraUpdateReport
       pkgs.coreutils
       pkgs.git
+      pkgs.openssh
     ];
     text = ''
-      export PATH="/run/current-system/sw/bin:$PATH"
+      export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
 
       state_dir="${stateDir}"
       checkout_dir="${checkoutDir}"
@@ -385,6 +399,7 @@ $excerpt
       default_branch="${defaultBranch}"
       secrets_dir="${secretsDir}"
       forgejo_username="${forgejoUsername}"
+      deploy_host_ips="${deployHostIpsString}"
 
       mkdir -p "$state_dir" "$log_dir" "$run_dir"
 
@@ -415,7 +430,8 @@ $excerpt
           return 1
         fi
 
-        if ! compgen -G "$secrets_dir/*.nix" >/dev/null; then
+        set -- "$secrets_dir"/*.nix
+        if [ ! -e "$1" ]; then
           echo "Secrets directory has no host modules: $secrets_dir/*.nix" >&2
           return 1
         fi
@@ -437,6 +453,21 @@ $excerpt
         git -C "$checkout_dir" clean -fdx
       }
 
+      seed_known_hosts() {
+        local ssh_dir="$HOME/.ssh"
+        mkdir -p "$ssh_dir"
+        chmod 700 "$ssh_dir"
+        touch "$ssh_dir/known_hosts"
+        chmod 600 "$ssh_dir/known_hosts"
+
+        local host
+        for host in $deploy_host_ips; do
+          if ! ssh-keygen -F "$host" -f "$ssh_dir/known_hosts" >/dev/null; then
+            ssh-keyscan -T 10 -H "$host" >> "$ssh_dir/known_hosts" 2>/dev/null
+          fi
+        done
+      }
+
       token="$(read_token)"
       if [ -z "$token" ]; then
         echo "Token file is empty: $token_file" >&2
@@ -453,6 +484,11 @@ $excerpt
 
       if ! require_secrets_dir >> "$log_file" 2>&1; then
         infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Failed to prepare live secrets for managed checkout $checkout_dir."
+        exit 1
+      fi
+
+      if ! seed_known_hosts >> "$log_file" 2>&1; then
+        infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Failed to seed SSH known_hosts for fleet deployment."
         exit 1
       fi
 
