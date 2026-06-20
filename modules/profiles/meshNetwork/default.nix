@@ -17,6 +17,7 @@
   # Check if secrets.meshNetwork is configured
   hasSecrets = config.secrets ? meshNetwork;
   secretsCfg = if hasSecrets then config.secrets.meshNetwork else {};
+  meshPrivateKeyFile = secretsCfg.file or null;
 
   # Utility functions for subnet parsing
   meshLib = {
@@ -122,6 +123,13 @@ in {
     # Main configuration
     (lib.mkIf cfg.enable (lib.mkMerge [
     {
+      assertions = [
+        {
+          assertion = meshPrivateKeyFile != null;
+          message = "services.meshNetwork requires secrets.meshNetwork.file. For clean flake evaluations, set INFRA_SECRETS_DIR to a directory containing <host>.nix live secret modules and pass --impure.";
+        }
+      ];
+
       # Automatically configure firewall allowlist for mesh peers
       networking.firewall.allowlist = let
         # Determine final peer list (same logic as wireguard config)
@@ -156,7 +164,6 @@ in {
       in {
         ips = [ (meshLib.getPeerAllowedIP meshSubnet cfg.nodeId) ];
         listenPort = cfg.listenPort;
-        privateKeyFile = secretsCfg.file;
 
         peers = builtins.map (peer: {
           publicKey = peer.publicKey;
@@ -164,6 +171,8 @@ in {
           endpoint = lib.mkIf (peer.endpoint != null) peer.endpoint;
           persistentKeepalive = lib.mkIf (peer.persistentKeepalive != null) peer.persistentKeepalive;
         }) finalPeers;
+      } // lib.optionalAttrs (meshPrivateKeyFile != null) {
+        privateKeyFile = meshPrivateKeyFile;
       };
 
     # Configure WireGuard interface with networkd for routing

@@ -11,6 +11,7 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 - Seed Infratainer's external live-secret overlay and runtime Forgejo token during `devenv` activation when local gitignored secrets are available.
 - Allow automatic update validation, deploy, and fallback `nixos-upgrade` builds from clean `indev` checkouts by importing live host secret modules from `INFRA_SECRETS_DIR`.
+- Report a clear mesh private-key secret error when clean flake evaluations are missing the external live secret overlay.
 
 ## [v0.1.0] - 2026-06-19
 
