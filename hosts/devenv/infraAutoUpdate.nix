@@ -492,7 +492,7 @@ $excerpt
         exit 1
       fi
 
-      if INFRA_SECRETS_DIR="$secrets_dir" FLAKE_PATH="$checkout_dir" updateInfra >> "$log_file" 2>&1; then
+      if INFRA_SECRETS_DIR="$secrets_dir" FLAKE_PATH="$checkout_dir" UPDATE_INFRA_SKIP_HOSTS="devenv" updateInfra >> "$log_file" 2>&1; then
         echo "Fleet deployment completed successfully. Log: $log_file"
       else
         infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Fleet deployment failed from managed checkout $checkout_dir."

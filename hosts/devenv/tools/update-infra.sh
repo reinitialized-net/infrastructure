@@ -4,6 +4,7 @@ set -euo pipefail
 
 VALID_HOSTS="@validHosts@"
 FLAKE_PATH="${FLAKE_PATH:-/home/develop/projects/reinitialized.net/infrastructure}"
+UPDATE_INFRA_SKIP_HOSTS="${UPDATE_INFRA_SKIP_HOSTS:-}"
 SSH_USER="rnetadmin"
 NIXOS_REBUILD_FLAGS=()
 
@@ -17,6 +18,17 @@ get_host_ip() {
 @hostIpCases@
     *) echo "ERROR: Unknown host '$host'" >&2; return 1 ;;
   esac
+}
+
+should_skip_host() {
+  local host="$1"
+  local skipped_host
+  for skipped_host in $UPDATE_INFRA_SKIP_HOSTS; do
+    if [[ "$host" == "$skipped_host" ]]; then
+      return 0
+    fi
+  done
+  return 1
 }
 
 # Guard: fleet update includes remote hosts, don't run as root/sudo
@@ -43,6 +55,15 @@ FAILED_HOSTS=()
 SUCCESS_HOSTS=()
 
 for host in $VALID_HOSTS; do
+  if should_skip_host "$host"; then
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "→ Skipping: $host"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  (listed in UPDATE_INFRA_SKIP_HOSTS)"
+    echo ""
+    continue
+  fi
+
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo "→ Updating: $host"
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

@@ -14,6 +14,7 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 - Report a clear mesh private-key secret error when clean flake evaluations are missing the external live secret overlay.
 - Avoid unsupported `compgen` usage in Infratainer secret-directory checks so promotion and deploy scripts run under the generated Nix bash.
 - Seed Infratainer deployment SSH known_hosts and prefer wrapper-provided `sudo` so fleet deploys can run from the systemd service environment.
+- Let Infratainer skip local `devenv` during fleet deploys to avoid replacing the running deploy unit mid-run.
 
 ## [v0.1.0] - 2026-06-19
 
