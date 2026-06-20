@@ -1,6 +1,7 @@
 {
   self,
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -13,6 +14,10 @@ let
   logDir = "/var/log/infratainer";
   runDir = "/run/infratainer";
   secretsDir = automationKeys.secretsDir or "${stateDir}/secrets";
+  liveSecretsSource = "${self}/modules/secrets";
+  liveTokenSource = "${liveSecretsSource}/infra-automation-token";
+  hasLiveSecretsSource = builtins.pathExists liveSecretsSource;
+  hasLiveTokenSource = builtins.pathExists liveTokenSource;
 
   forgejoBaseUrl = automationKeys.forgejoBaseUrl or "https://git.ds.reinitialized.net";
   repoOwner = automationKeys.repoOwner or "reinitialized.net";
@@ -465,6 +470,13 @@ in
     "${self}/modules/profiles/infraUpdateReport.nix"
   ];
 
+  assertions = [
+    {
+      assertion = !(lib.hasPrefix "/nix/store/" tokenFile);
+      message = "secrets.infraAutomation.file must point to a runtime secret path such as /run/secrets/infra-automation-token, not a Nix store path.";
+    }
+  ];
+
   services.infraUpdateReport.enable = true;
 
   environment.systemPackages = [
@@ -479,6 +491,43 @@ in
     "d ${logDir} 0750 rnetadmin rnetadmin -"
     "d ${runDir} 0700 rnetadmin rnetadmin -"
   ];
+
+  system.activationScripts.infratainerSecrets = {
+    deps = [
+      "groups"
+      "users"
+    ];
+    text = ''
+      secrets_dir=${lib.escapeShellArg secretsDir}
+      source_dir=${lib.escapeShellArg liveSecretsSource}
+      token_file=${lib.escapeShellArg tokenFile}
+      persistent_token="$secrets_dir/infra-automation-token"
+
+      ${pkgs.coreutils}/bin/install -d -o rnetadmin -g rnetadmin -m 0750 "$secrets_dir"
+
+      ${lib.optionalString hasLiveSecretsSource ''
+        copied_modules=0
+        for secret_module in "$source_dir"/*.nix; do
+          [ -e "$secret_module" ] || continue
+          ${pkgs.coreutils}/bin/install -o rnetadmin -g rnetadmin -m 0640 "$secret_module" "$secrets_dir/$(${pkgs.coreutils}/bin/basename "$secret_module")"
+          copied_modules=1
+        done
+
+        if [ "$copied_modules" -eq 0 ]; then
+          echo "warning: no Infratainer secret modules found in $source_dir"
+        fi
+      ''}
+      ${lib.optionalString hasLiveTokenSource ''
+        ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 ${lib.escapeShellArg liveTokenSource} "$persistent_token"
+      ''}
+      ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$token_file")"
+      if [ -r "$persistent_token" ]; then
+        ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_token" "$token_file"
+      elif [ ! -r "$token_file" ]; then
+        echo "warning: Infratainer token is not readable at $token_file or $persistent_token"
+      fi
+    '';
+  };
 
   systemd.services.infra-renovate = {
     description = "Create dependency update PRs with Renovate";

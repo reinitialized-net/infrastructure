@@ -35,7 +35,7 @@ Host-local `nixos-upgrade.timer` remains enabled as a fallback and runs later fr
 
 `hosts/devenv/infraAutoUpdate.nix` reads `secrets.infraAutomation` for Renovate, promotion, deployment, and failure reporting. Container hosts also use `secrets.infraAutomation` for `docker-container-auto-update.service` failure reports.
 
-The token file defaults to `/run/secrets/infra-automation-token`. On `devenv`, it must be readable by `rnetadmin` because Renovate, promotion, and deployment run as that user. On container hosts, the reporting service runs as root and needs the same token available locally. The token needs Forgejo repository, pull request, and issue read/write access.
+The token file defaults to `/run/secrets/infra-automation-token`. On `devenv`, it must be readable by `rnetadmin` because Renovate, promotion, and deployment run as that user. On container hosts, the reporting service runs as root and needs the same token available locally. The token needs Forgejo repository, pull request, and issue read/write access. Do not point `secrets.infraAutomation.file` at a relative file in `modules/secrets`; `devenv` rejects Nix store token paths so the generated automation does not read bearer tokens from the store.
 
 The automation identity defaults to `Infratainer`. Set `secrets.infraAutomation.keys.automationName` once for the display/git author name and override `forgejoUsername` only if Forgejo requires a different login string.
 
@@ -45,11 +45,15 @@ Set `secrets.infraAutomation.keys.defaultBranch = "indev"` if overriding the def
 
 Set `secrets.infraAutomation.keys.secretsDir` if the automation secret overlay should live somewhere other than `/var/lib/infratainer/secrets`.
 
-The managed checkout does not contain `modules/secrets/` because those files are gitignored. Before automatic validation or deploy can build from `/var/lib/infratainer/checkout`, provision the live secret modules into the external secrets directory:
+The managed checkout does not contain `modules/secrets/` because those files are gitignored. During `devenv` activation, if the local flake source contains the live `modules/secrets` tree, activation copies `*.nix` secret modules into the external secrets directory and seeds `modules/secrets/infra-automation-token` as `/var/lib/infratainer/secrets/infra-automation-token`. Every `devenv` activation then restores `/run/secrets/infra-automation-token` from that persistent copy with `rnetadmin` read access. This makes the first automatic update cycle ready after `rebuildHost devenv` and keeps the runtime token available after later clean-checkout rebuilds.
+
+If activation cannot see the live secret tree, provision the live secret modules manually before automatic validation or deploy builds from `/var/lib/infratainer/checkout`:
 
 ```bash
 sudo install -d -o rnetadmin -g rnetadmin -m 0750 /var/lib/infratainer/secrets
 sudo install -o rnetadmin -g rnetadmin -m 0640 modules/secrets/*.nix /var/lib/infratainer/secrets/
+sudo install -d -o root -g rnetadmin -m 0750 /run/secrets
+sudo install -o root -g rnetadmin -m 0640 modules/secrets/infra-automation-token /run/secrets/infra-automation-token
 ```
 
 The directory must include any helper files imported by host secret modules, such as `infraAutomation.nix`.
