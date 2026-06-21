@@ -3,7 +3,7 @@
   "extends": [
     "config:recommended"
   ],
-  "baseBranches": [
+  "baseBranchPatterns": [
     "indev"
   ],
   "dependencyDashboard": true,
@@ -32,6 +32,7 @@
   "customManagers": [
     {
       "customType": "regex",
+      "description": "Track Docker image tags declared in host container definitions.",
       "managerFilePatterns": [
         "/^hosts/.*\\.nix$/"
       ],
@@ -40,6 +41,20 @@
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track the stable NixOS channel in flake.nix. Renovate 41's native nix manager detects this update but cannot replace the flake input ref before lockfile refresh.",
+      "managerFilePatterns": [
+        "/^flake\\.nix$/"
+      ],
+      "matchStrings": [
+        "nixpkgsStable\\.url\\s*=\\s*\"github:NixOS/nixpkgs/(?<currentValue>nixos-\\d{2}\\.\\d{2})\";"
+      ],
+      "depNameTemplate": "nixpkgsStable",
+      "packageNameTemplate": "https://github.com/NixOS/nixpkgs",
+      "datasourceTemplate": "git-refs",
+      "versioningTemplate": "nixpkgs"
     }
   ],
   "packageRules": [
@@ -57,9 +72,52 @@
       "automerge": false
     },
     {
+      "description": "Disable native major stable-channel bumps because Renovate 41.169.3 re-extracts the old ref from flake.lock before it runs the Nix artifact update.",
+      "matchManagers": [
+        "nix"
+      ],
+      "matchDepNames": [
+        "nixpkgsStable"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Update the stable NixOS channel through the regex manager and refresh flake.lock with a constrained self-hosted post-upgrade command.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "matchDepNames": [
+        "nixpkgsStable"
+      ],
+      "groupName": "nix flake inputs",
+      "labels": [
+        "dependencies",
+        "nix",
+        "infra-auto-merge"
+      ],
+      "postUpgradeTasks": {
+        "commands": [
+          "nix flake update {{{depName}}}"
+        ],
+        "fileFilters": [
+          "flake.lock"
+        ]
+      },
+      "automerge": false
+    },
+    {
       "description": "Detect Docker image tag updates and apply base container labels.",
       "matchManagers": [
         "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
       ],
       "labels": [
         "dependencies",
@@ -71,6 +129,9 @@
       "description": "Keep UniFi MongoDB on a version supported by the LinuxServer UniFi Network Application image.",
       "matchManagers": [
         "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
       ],
       "matchPackageNames": [
         "docker.io/library/mongo"
@@ -90,6 +151,9 @@
       "matchManagers": [
         "custom.regex"
       ],
+      "matchDatasources": [
+        "docker"
+      ],
       "matchPackageNames": [
         "pgvector/pgvector",
         "valkey/valkey"
@@ -107,6 +171,9 @@
       "matchManagers": [
         "custom.regex"
       ],
+      "matchDatasources": [
+        "docker"
+      ],
       "matchPackageNames": [
         "technitium/dns-server"
       ],
@@ -122,6 +189,9 @@
       "description": "Keep Authentik server and worker updates together.",
       "matchManagers": [
         "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
       ],
       "matchPackageNames": [
         "ghcr.io/goauthentik/server"
@@ -139,6 +209,9 @@
       "matchManagers": [
         "custom.regex"
       ],
+      "matchDatasources": [
+        "docker"
+      ],
       "matchPackageNames": [
         "hududocker/hudu"
       ],
@@ -154,6 +227,9 @@
       "description": "Keep paired Immich images together.",
       "matchManagers": [
         "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
       ],
       "matchPackageNames": [
         "ghcr.io/immich-app/immich-server",
@@ -173,6 +249,9 @@
       "matchManagers": [
         "custom.regex"
       ],
+      "matchDatasources": [
+        "docker"
+      ],
       "matchPackageNames": [
         "code.forgejo.org/forgejo/forgejo"
       ],
@@ -189,6 +268,9 @@
       "matchManagers": [
         "custom.regex"
       ],
+      "matchDatasources": [
+        "docker"
+      ],
       "matchPackageNames": [
         "code.forgejo.org/forgejo/runner"
       ],
@@ -204,6 +286,9 @@
       "description": "Allow local promoter automation for non-major and digest-level container updates.",
       "matchManagers": [
         "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
       ],
       "matchUpdateTypes": [
         "digest",
@@ -222,6 +307,9 @@
       "description": "Keep major container updates open for manual review.",
       "matchManagers": [
         "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
       ],
       "matchUpdateTypes": [
         "major"

@@ -47,6 +47,8 @@ Set `secrets.infraAutomation.keys.defaultBranch = "indev"` if overriding the def
 
 Set `secrets.infraAutomation.keys.secretsDir` if the automation secret overlay should live somewhere other than `/var/lib/infratainer/secrets`.
 
+Set `secrets.infraAutomation.keys.githubTokenFile` on `devenv` when Renovate should fetch release notes from public GitHub repositories. The file should contain a GitHub token with read-only public repository/API access and no write scopes. The service exports it as `GITHUB_COM_TOKEN` for Renovate only when the file is configured and readable. Omit this key if GitHub release-note lookup is intentionally disabled for the deployment.
+
 The managed checkout does not contain `modules/secrets/` because those files are gitignored. During `devenv` activation, if the local flake source contains the live `modules/secrets` tree, activation copies `*.nix` secret modules into the external secrets directory and seeds `modules/secrets/infra-automation-token` as `/var/lib/infratainer/secrets/infra-automation-token`. Every `devenv` activation then restores `/run/secrets/infra-automation-token` from that persistent copy with `rnetadmin` read access. This makes the first automatic update cycle ready after `rebuildHost devenv` and keeps the runtime token available after later clean-checkout rebuilds.
 
 If activation cannot see the live secret tree, provision the live secret modules manually before automatic validation or deploy builds from `/var/lib/infratainer/checkout`:
@@ -56,6 +58,7 @@ sudo install -d -o rnetadmin -g rnetadmin -m 0750 /var/lib/infratainer/secrets
 sudo install -o rnetadmin -g rnetadmin -m 0640 modules/secrets/*.nix /var/lib/infratainer/secrets/
 sudo install -d -o root -g rnetadmin -m 0750 /run/secrets
 sudo install -o root -g rnetadmin -m 0640 modules/secrets/infra-automation-token /run/secrets/infra-automation-token
+sudo install -o root -g rnetadmin -m 0640 /path/to/github-com-token /run/secrets/github-com-token
 ```
 
 The directory must include any helper files imported by host secret modules, such as `infraAutomation.nix`.
@@ -69,6 +72,14 @@ Major container updates are labeled `manual-update`. They stay open until a huma
 Manual approvals are evaluated against the current PR head when Forgejo exposes the review commit SHA, so a Renovate rebase or update requires a fresh approval.
 
 Container updates are split by service or risk rather than one broad container PR. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
+
+Lock-file maintenance uses Renovate's default schedule from `config:recommended` and is only created before 04:00 on Monday. When the dashboard lists lock-file maintenance as rate-limited outside that window, that is expected; it should become schedulable during the next Monday maintenance window.
+
+The stable NixOS channel input is handled by a scoped regex manager plus a self-hosted post-upgrade task because Renovate 41.169.3 detects `nixos-26.05` with the native `nix` manager but cannot replace the `flake.nix` ref before refreshing `flake.lock`. `infra-renovate` therefore allows only this post-upgrade command:
+
+```bash
+nix flake update nixpkgsStable
+```
 
 ## Container Image Updates
 
@@ -99,4 +110,11 @@ journalctl -u infra-renovate.service
 journalctl -u infra-promote.service
 journalctl -u infra-deploy.service
 journalctl -u docker-container-auto-update.service
+```
+
+Validate Renovate changes with the deployed Renovate package on `devenv`:
+
+```bash
+renovate-config-validator renovate.json
+sudo -n -u rnetadmin bash -lc 'RENOVATE_DRY_RUN=full LOG_LEVEL=debug infra-renovate'
 ```

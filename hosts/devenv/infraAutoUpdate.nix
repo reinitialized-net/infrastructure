@@ -43,6 +43,7 @@ let
   gitAuthorName = automationKeys.gitAuthorName or automationName;
   gitAuthorEmail = automationKeys.gitAuthorEmail or "infratainer@reinitialized.net";
   renovateBranchPrefix = automationKeys.renovateBranchPrefix or "renovate/";
+  githubTokenFile = toString (automationKeys.githubTokenFile or "");
   tokenFile =
     if automationSecret ? file && automationSecret.file != null
     then toString automationSecret.file
@@ -105,6 +106,7 @@ EOF
       forgejo_username="${forgejoUsername}"
       git_author_name="${gitAuthorName}"
       git_author_email="${gitAuthorEmail}"
+      github_token_file="${githubTokenFile}"
       extra_runtime_dirs=("$state_dir/renovate-cache" "$state_dir/renovate-home")
 
       ${runtimeDirSetup}
@@ -131,6 +133,26 @@ EOF
         export GIT_TERMINAL_PROMPT=0
       }
 
+      init_github_auth() {
+        local github_token
+
+        if [ -z "$github_token_file" ]; then
+          return 0
+        fi
+        if [ ! -r "$github_token_file" ]; then
+          echo "GitHub token file is configured but not readable: $github_token_file" >&2
+          return 1
+        fi
+
+        github_token="$(head -n 1 "$github_token_file" | tr -d '\r\n')"
+        if [ -z "$github_token" ]; then
+          echo "GitHub token file is empty: $github_token_file" >&2
+          return 1
+        fi
+
+        export GITHUB_COM_TOKEN="$github_token"
+      }
+
       ensure_checkout() {
         if [ -e "$checkout_dir" ] && [ ! -d "$checkout_dir/.git" ]; then
           echo "$checkout_dir exists but is not a git checkout" >&2
@@ -154,6 +176,7 @@ EOF
       fi
       export GIT_PASSWORD="$token"
       init_git_auth
+      init_github_auth
 
       log_file="$log_dir/renovate-$(date +%Y%m%d%H%M%S).log"
       if ! ensure_checkout > "$log_file" 2>&1; then
@@ -167,8 +190,9 @@ EOF
         RENOVATE_AUTODISCOVER="false" \
         RENOVATE_BASE_DIR="$state_dir/renovate-cache" \
         RENOVATE_GIT_AUTHOR="$git_author_name <$git_author_email>" \
+        RENOVATE_ALLOWED_COMMANDS='["^nix flake update nixpkgsStable$"]' \
         HOME="$state_dir/renovate-home" \
-        LOG_LEVEL="info" \
+        LOG_LEVEL="''${LOG_LEVEL:-info}" \
         renovate "$repo_slug" >> "$log_file" 2>&1; then
         echo "Renovate completed successfully. Log: $log_file"
       else

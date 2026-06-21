@@ -33,6 +33,7 @@
         gitAuthorName = "Infratainer";
         gitAuthorEmail = "infratainer@reinitialized.net";
         renovateBranchPrefix = "renovate/";
+        githubTokenFile = "/run/secrets/github-com-token";
       };
     };
     volumeMigration = {
