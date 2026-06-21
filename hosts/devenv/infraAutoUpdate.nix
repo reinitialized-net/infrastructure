@@ -47,6 +47,35 @@ let
     if automationSecret ? file && automationSecret.file != null
     then toString automationSecret.file
     else "/run/secrets/infra-automation-token";
+  runtimeDirSetup = ''
+    prepare_runtime_dirs() {
+      local mkdir_error
+      mkdir_error="$(mktemp)"
+
+      if mkdir -p "$state_dir" "$log_dir" "$run_dir" "''${extra_runtime_dirs[@]}" 2>"$mkdir_error"; then
+        rm -f "$mkdir_error"
+        return 0
+      fi
+
+      cat >&2 <<EOF
+Could not prepare Infratainer runtime directories as user $(id -un).
+
+These commands are intended to run through the devenv systemd units, which
+execute as rnetadmin after NixOS creates the managed state directories:
+
+  sudo systemctl start infra-renovate.service
+  sudo journalctl -u infra-renovate.service -e --no-pager
+
+For the full update flow, run infra-promote.service after Renovate creates PRs,
+then infra-deploy.service after PRs have merged.
+
+Original mkdir error:
+EOF
+      cat "$mkdir_error" >&2
+      rm -f "$mkdir_error"
+      return 1
+    }
+  '';
 
   infraUpdateReport = import "${self}/library/infraUpdateReport.nix" {
     inherit config pkgs;
@@ -76,8 +105,10 @@ let
       forgejo_username="${forgejoUsername}"
       git_author_name="${gitAuthorName}"
       git_author_email="${gitAuthorEmail}"
+      extra_runtime_dirs=("$state_dir/renovate-cache" "$state_dir/renovate-home")
 
-      mkdir -p "$state_dir" "$log_dir" "$run_dir" "$state_dir/renovate-cache" "$state_dir/renovate-home"
+      ${runtimeDirSetup}
+      prepare_runtime_dirs
 
       read_token() {
         if [ ! -r "$token_file" ]; then
@@ -177,8 +208,10 @@ let
       renovate_branch_prefix="${renovateBranchPrefix}"
       auto_label="infra-auto-merge"
       manual_label="manual-update"
+      extra_runtime_dirs=()
 
-      mkdir -p "$state_dir" "$log_dir" "$run_dir"
+      ${runtimeDirSetup}
+      prepare_runtime_dirs
 
       read_token() {
         if [ ! -r "$token_file" ]; then
@@ -449,8 +482,10 @@ $excerpt
       secrets_dir="${secretsDir}"
       forgejo_username="${forgejoUsername}"
       deploy_host_ips="${deployHostIpsString}"
+      extra_runtime_dirs=()
 
-      mkdir -p "$state_dir" "$log_dir" "$run_dir"
+      ${runtimeDirSetup}
+      prepare_runtime_dirs
 
       read_token() {
         if [ ! -r "$token_file" ]; then

@@ -76,6 +76,16 @@ The Docker image pull timer remains enabled through `services.containerAutoUpdat
 
 High-risk containers are skipped from digest-drift restarts on each host and are instead handled by Renovate PRs. Low-risk containers continue to pull and restart automatically when the image ID changes. The updater logs structured `container_update_event` lines with container name, image, service, old image ID, new image ID, and action.
 
+Run the Infratainer update flow manually through the systemd units on `devenv`, not by invoking the generated binaries from a normal shell user. The units run as `rnetadmin` and use the managed checkout, logs, and secrets under `/var/lib/infratainer` and `/var/log/infratainer`.
+
+```bash
+sudo systemctl start infra-renovate.service
+sudo systemctl start infra-promote.service
+sudo systemctl start infra-deploy.service
+```
+
+Use only the first command when you just want Renovate to create or refresh PRs. Run `infra-promote.service` after reviewing or approving manual PRs. Run `infra-deploy.service` after promoted PRs have merged and should be deployed to the fleet.
+
 Check the timers:
 
 ```bash
