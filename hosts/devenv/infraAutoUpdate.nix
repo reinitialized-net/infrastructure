@@ -256,6 +256,46 @@ let
         jq -e --arg label "$label" '.labels[]? | select(.name == $label)' <<< "$issue_json" >/dev/null
       }
 
+      has_manual_approval() {
+        local number="$1"
+        local head_sha="$2"
+        local reviews
+
+        if ! reviews="$(api GET "/repos/$repo_owner/$repo_name/pulls/$number/reviews" 2>/dev/null)"; then
+          echo "Could not read reviews for manual Renovate PR #$number; leaving it open." >&2
+          return 1
+        fi
+
+        jq -e --arg automation "$forgejo_username" --arg head "$head_sha" '
+          def login: (.user.login // .reviewer.login // .poster.login // "");
+          def state: ((.state // .State // "") | ascii_upcase);
+          def active_review: (((.dismissed // false) | not) and ((.stale // false) | not));
+          def commit_matches:
+            ((has("commit_id") | not) or (.commit_id == null) or (.commit_id == "") or (.commit_id == $head));
+          def submitted_at: (.submitted_at // .updated_at // .created_at // "");
+          def latest_review_states:
+            [
+              .[]?
+              | select(login != "")
+              | select(active_review)
+              | select(commit_matches)
+              | {
+                  login: (login | ascii_downcase),
+                  state: state,
+                  submitted_at: submitted_at
+                }
+            ]
+            | sort_by(.login, .submitted_at)
+            | group_by(.login)
+            | map(.[-1]);
+
+          ($automation | ascii_downcase) as $automation_login
+          | latest_review_states as $reviews
+          | (($reviews | map(select(.state == "APPROVED" and .login != $automation_login)) | length) > 0)
+            and (($reviews | map(select(.state == "REQUEST_CHANGES" or .state == "CHANGES_REQUESTED" or .state == "REQUESTED_CHANGES")) | length) == 0)
+        ' <<< "$reviews" >/dev/null
+      }
+
       comment_pr() {
         local number="$1"
         local body="$2"
@@ -332,6 +372,8 @@ $pr_title"
         number="$(jq -r '.number' <<< "$pull")"
         title="$(jq -r '.title' <<< "$pull")"
         head_ref="$(jq -r '.head.ref // empty' <<< "$pull")"
+        head_sha="$(jq -r '.head.sha // empty' <<< "$pull")"
+        approved_manual=false
 
         if [ -z "$head_ref" ] || [[ "$head_ref" != "$renovate_branch_prefix"* ]]; then
           continue
@@ -340,14 +382,17 @@ $pr_title"
         issue="$(api GET "/repos/$repo_owner/$repo_name/issues/$number")"
 
         if has_label "$issue" "$manual_label"; then
-          infra-update-report \
-            --source "renovate-pr-$number" \
-            --status "manual-review" \
-            --message "Renovate PR #$number is intentionally left open for manual review: $title"
-          continue
-        fi
-
-        if ! has_label "$issue" "$auto_label"; then
+          if has_manual_approval "$number" "$head_sha"; then
+            approved_manual=true
+            echo "Manual Renovate PR #$number has an approving review; validating before merge: $title"
+          else
+            infra-update-report \
+              --source "renovate-pr-$number" \
+              --status "manual-review" \
+              --message "Renovate PR #$number is waiting for a current approving review before Infratainer validates and merges it: $title"
+            continue
+          fi
+        elif ! has_label "$issue" "$auto_label"; then
           echo "Skipping Renovate PR #$number without $auto_label label: $title"
           continue
         fi
@@ -355,7 +400,11 @@ $pr_title"
         log_file="$log_dir/promote-pr-$number-$(date +%Y%m%d%H%M%S).log"
         if validate_pr "$number" "$head_ref" "$log_file"; then
           if merge_pr "$number" "$title"; then
-            comment_pr "$number" "infra-promote validated this PR and merged it automatically. Validation log: $log_file"
+            if [ "$approved_manual" = true ]; then
+              comment_pr "$number" "infra-promote found a current approving review, validated this manual-update PR, and merged it automatically. Validation log: $log_file"
+            else
+              comment_pr "$number" "infra-promote validated this PR and merged it automatically. Validation log: $log_file"
+            fi
             echo "Merged Renovate PR #$number"
           else
             excerpt="$(tail -c 12000 "$log_file")"

@@ -8,7 +8,9 @@
    It runs Renovate against Forgejo using `RENOVATE_PLATFORM=forgejo`, opens update PRs against `indev`, and stores logs in `/var/log/infratainer`.
 2. `infra-promote.timer` runs daily at `01:45`.
    It inspects open Renovate PRs whose branch starts with `renovate/`.
-3. PRs labeled `infra-auto-merge` are validated locally:
+3. PRs labeled `infra-auto-merge` are validated locally. PRs labeled `manual-update`
+   are left open until they have a current approving PR review from someone other
+   than the Infratainer automation account, then they use the same validation path:
 
    ```bash
    INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix flake show path:. --no-write-lock-file --impure
@@ -62,7 +64,11 @@ The directory must include any helper files imported by host secret modules, suc
 
 `renovate.json` labels eligible PRs with `infra-auto-merge`. The promoter only merges PRs with that label after validation passes.
 
-Major container updates are labeled `manual-update`; they stay open and produce a tracking issue instead of being merged automatically.
+Major container updates are labeled `manual-update`. They stay open until a human approves the PR in Forgejo. After approval, `infra-promote` validates the PR against the same flake and host build checks, then merges it through the Forgejo API if validation passes.
+
+Manual approvals are evaluated against the current PR head when Forgejo exposes the review commit SHA, so a Renovate rebase or update requires a fresh approval.
+
+Container updates are split by service or risk rather than one broad container PR. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
 
 ## Container Image Updates
 

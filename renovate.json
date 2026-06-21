@@ -57,14 +57,146 @@
       "automerge": false
     },
     {
-      "description": "Group detected Docker image tag updates.",
+      "description": "Detect Docker image tag updates and apply base container labels.",
       "matchManagers": [
         "custom.regex"
       ],
-      "groupName": "container image tags",
       "labels": [
         "dependencies",
         "container"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Keep UniFi MongoDB on a version supported by the LinuxServer UniFi Network Application image.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "docker.io/library/mongo"
+      ],
+      "allowedVersions": "<8.0",
+      "labels": [
+        "dependencies",
+        "container",
+        "service:unifi",
+        "stateful-data",
+        "manual-update"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Review datastore image updates separately because they own persistent service data.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "pgvector/pgvector",
+        "valkey/valkey"
+      ],
+      "labels": [
+        "dependencies",
+        "container",
+        "stateful-data",
+        "manual-update"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Keep redundant Technitium DNS nodes together without grouping them with unrelated services.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "technitium/dns-server"
+      ],
+      "groupName": "technitium dns server image",
+      "labels": [
+        "dependencies",
+        "container",
+        "service:dns"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Keep Authentik server and worker updates together.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/goauthentik/server"
+      ],
+      "groupName": "authentik server image",
+      "labels": [
+        "dependencies",
+        "container",
+        "service:authentik"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Keep Hudu web and worker updates together.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "hududocker/hudu"
+      ],
+      "groupName": "hudu image",
+      "labels": [
+        "dependencies",
+        "container",
+        "service:hudu"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Keep paired Immich images together.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/immich-app/immich-server",
+        "ghcr.io/immich-app/immich-machine-learning"
+      ],
+      "groupName": "immich images",
+      "labels": [
+        "dependencies",
+        "container",
+        "service:immich",
+        "manual-update"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Review Forgejo server updates separately from runners and other containers.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "code.forgejo.org/forgejo/forgejo"
+      ],
+      "groupName": "forgejo server image",
+      "labels": [
+        "dependencies",
+        "container",
+        "service:forgejo"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Review Forgejo runner updates separately from the Forgejo server.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "code.forgejo.org/forgejo/runner"
+      ],
+      "groupName": "forgejo runner image",
+      "labels": [
+        "dependencies",
+        "container",
+        "service:forgejo-runner"
       ],
       "automerge": false
     },
