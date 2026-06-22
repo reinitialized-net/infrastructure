@@ -6,6 +6,7 @@
 
 1. `infra-renovate.timer` runs daily at `01:00`.
    It runs Renovate against Forgejo using `RENOVATE_PLATFORM=forgejo`, opens update PRs against `indev`, and stores logs in `/var/log/infratainer`.
+   Dependency Dashboard checkbox clicks are also handled by `infra-renovate-dashboard-webhook.service` when the Forgejo repository webhook described below is configured. Forgejo persists the checkbox as an issue-body edit; the webhook starts `infra-renovate.service` so Renovate consumes the checked box immediately instead of waiting for the next daily timer.
 2. `infra-promote.timer` runs daily at `01:45`.
    It inspects open Renovate PRs whose branch starts with `renovate/`.
 3. PRs labeled `infra-auto-merge` are validated locally. PRs labeled `manual-update`
@@ -47,7 +48,13 @@ Set `secrets.infraAutomation.keys.defaultBranch = "indev"` if overriding the def
 
 Set `secrets.infraAutomation.keys.secretsDir` if the automation secret overlay should live somewhere other than `/var/lib/infratainer/secrets`.
 
+Set `secrets.infraAutomation.keys.githubTokenFile` on `devenv` when Renovate should fetch release notes from public GitHub repositories. The file should contain a GitHub token with read-only public repository/API access and no write scopes. The service exports it as `GITHUB_COM_TOKEN` for Renovate only when the file is configured and readable. Omit this key if GitHub release-note lookup is intentionally disabled for the deployment.
+
+Set `secrets.infraAutomation.keys.dashboardWebhookSecretFile` on `devenv` to enable immediate Dependency Dashboard checkbox handling. The file should contain a random webhook secret shared with the Forgejo repository webhook. By default the listener binds only to the WireGuard mesh address `10.255.0.1:1044`, validates Forgejo/Gitea/GitHub-style HMAC signatures, ignores Infratainer-authored dashboard rewrites, and starts only `infra-renovate.service`.
+
 The managed checkout does not contain `modules/secrets/` because those files are gitignored. During `devenv` activation, if the local flake source contains the live `modules/secrets` tree, activation copies `*.nix` secret modules into the external secrets directory and seeds `modules/secrets/infra-automation-token` as `/var/lib/infratainer/secrets/infra-automation-token`. Every `devenv` activation then restores `/run/secrets/infra-automation-token` from that persistent copy with `rnetadmin` read access. This makes the first automatic update cycle ready after `rebuildHost devenv` and keeps the runtime token available after later clean-checkout rebuilds.
+
+If `modules/secrets/infra-renovate-webhook-secret` exists and `dashboardWebhookSecretFile` is configured, `devenv` activation also seeds `/var/lib/infratainer/secrets/infra-renovate-webhook-secret` and restores the configured runtime webhook secret file with `rnetadmin` read access.
 
 If activation cannot see the live secret tree, provision the live secret modules manually before automatic validation or deploy builds from `/var/lib/infratainer/checkout`:
 
@@ -56,9 +63,23 @@ sudo install -d -o rnetadmin -g rnetadmin -m 0750 /var/lib/infratainer/secrets
 sudo install -o rnetadmin -g rnetadmin -m 0640 modules/secrets/*.nix /var/lib/infratainer/secrets/
 sudo install -d -o root -g rnetadmin -m 0750 /run/secrets
 sudo install -o root -g rnetadmin -m 0640 modules/secrets/infra-automation-token /run/secrets/infra-automation-token
+sudo install -o root -g rnetadmin -m 0640 /path/to/github-com-token /run/secrets/github-com-token
+sudo install -o root -g rnetadmin -m 0640 /path/to/infra-renovate-webhook-secret /var/lib/infratainer/secrets/infra-renovate-webhook-secret
+sudo install -o root -g rnetadmin -m 0640 /path/to/infra-renovate-webhook-secret /run/secrets/infra-renovate-webhook-secret
 ```
 
 The directory must include any helper files imported by host secret modules, such as `infraAutomation.nix`.
+
+Create a Forgejo repository webhook for Dependency Dashboard checkboxes:
+
+```text
+URL: http://10.255.0.1:1044/renovate-dashboard
+Content type: application/json
+Secret: same value as /run/secrets/infra-renovate-webhook-secret
+Trigger: issue events
+```
+
+The URL is intentionally mesh-local. Do not expose this listener through the public reverse proxy. The daily `infra-renovate.timer` remains the fallback if the webhook is disabled or temporarily unreachable.
 
 ## Renovate Labels
 
@@ -70,11 +91,30 @@ Manual approvals are evaluated against the current PR head when Forgejo exposes 
 
 Container updates are split by service or risk rather than one broad container PR. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
 
+Lock-file maintenance uses Renovate's default schedule from `config:recommended` and is only created before 04:00 on Monday. When the dashboard lists lock-file maintenance as rate-limited outside that window, that is expected; it should become schedulable during the next Monday maintenance window.
+
+The stable NixOS channel input is handled by a scoped regex manager plus a self-hosted post-upgrade task because Renovate 41.169.3 detects `nixos-26.05` with the native `nix` manager but cannot replace the `flake.nix` ref before refreshing `flake.lock`. `infra-renovate` therefore allows only this post-upgrade command:
+
+```bash
+nix flake update nixpkgsStable
+```
+
 ## Container Image Updates
 
 The Docker image pull timer remains enabled through `services.containerAutoUpdate`. The containers profile enables the shared `infra-update-report@.service` so Docker auto-update failures can create or update Forgejo issues from the affected host.
 
 High-risk containers are skipped from digest-drift restarts on each host and are instead handled by Renovate PRs. Low-risk containers continue to pull and restart automatically when the image ID changes. The updater logs structured `container_update_event` lines with container name, image, service, old image ID, new image ID, and action.
+
+Run the Infratainer update flow manually through the systemd units on `devenv`, not by invoking the generated binaries from a normal shell user. The units run as `rnetadmin` and use the managed checkout, logs, and secrets under `/var/lib/infratainer` and `/var/log/infratainer`.
+
+```bash
+sudo systemctl start infra-renovate.service
+sudo systemctl start infra-promote.service
+sudo systemctl start infra-deploy.service
+sudo systemctl status infra-renovate-dashboard-webhook.service
+```
+
+Use only the first command when you just want Renovate to create or refresh PRs. Run `infra-promote.service` after reviewing or approving manual PRs. Run `infra-deploy.service` after promoted PRs have merged and should be deployed to the fleet.
 
 Check the timers:
 
@@ -86,7 +126,15 @@ Inspect failures:
 
 ```bash
 journalctl -u infra-renovate.service
+journalctl -u infra-renovate-dashboard-webhook.service
 journalctl -u infra-promote.service
 journalctl -u infra-deploy.service
 journalctl -u docker-container-auto-update.service
+```
+
+Validate Renovate changes with the deployed Renovate package on `devenv`:
+
+```bash
+renovate-config-validator renovate.json
+sudo -n -u rnetadmin bash -lc 'RENOVATE_DRY_RUN=full LOG_LEVEL=debug infra-renovate'
 ```
