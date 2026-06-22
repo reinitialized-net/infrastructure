@@ -15,6 +15,7 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 - Avoid unsupported `compgen` usage in Infratainer secret-directory checks so promotion and deploy scripts run under the generated Nix bash.
 - Seed Infratainer deployment SSH known_hosts and prefer wrapper-provided `sudo` so fleet deploys can run from the systemd service environment.
 - Let Infratainer skip local `devenv` during fleet deploys to avoid replacing the running deploy unit mid-run.
+- Restore automatic updates on NixOS 26.05 by migrating ACME credential files to `environmentFile`, suppressing live DBus reloads during switches, and avoiding duplicate Infratainer failure issues.
 
 ## [v0.1.0] - 2026-06-19
 

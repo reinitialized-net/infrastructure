@@ -2,7 +2,8 @@
   lib,
   pkgs,
   ...
-}: {
+}:
+{
   time = {
     timeZone = lib.mkDefault "America/Chicago";
     hardwareClockInLocalTime = lib.mkDefault false; # Use UTC for RTC to avoid DST issues
@@ -50,7 +51,7 @@
     allowNoPasswordLogin = lib.mkForce true;
     defaultUserShell = lib.mkDefault pkgs.bashInteractive;
 
-    groups.rnetadmin = lib.mkDefault {};
+    groups.rnetadmin = lib.mkDefault { };
 
     users = {
       root = {
@@ -58,7 +59,7 @@
         shell = lib.mkForce pkgs.bashInteractive;
       };
       rnetadmin = {
-        # If this is used, it needs to be changed. 
+        # Hashed password for security
         initialHashedPassword = lib.mkDefault "$6$ELaXwtqP5R5l.n5e$wsn7KBDXQKIfCbbDOfOHG4OYJjb/KQmyp4ekmFHcv/oZbJyEkwpoHCjqEDzOBpkGCXdZw1F1CNApXXkiKOhrR.";
 
         isNormalUser = lib.mkForce true;
@@ -67,7 +68,9 @@
         extraGroups = lib.mkDefault [ "wheel" ];
         shell = lib.mkForce pkgs.bashInteractive;
 
-        openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5pCeT2IuImFk0Rc2qcxudr8hVTgWvQDcwkXi0Hybru rnetadmin" ];
+        openssh.authorizedKeys.keys = [
+          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIK5pCeT2IuImFk0Rc2qcxudr8hVTgWvQDcwkXi0Hybru rnetadmin"
+        ];
       };
     };
   };
@@ -91,7 +94,7 @@
             return polkit.Result.YES;
           }
         });
-        
+
         // Allow root user to manage systemd units (needed for sudo + systemd-run)
         polkit.addRule(function(action, subject) {
           if (action.id == "org.freedesktop.systemd1.manage-units" &&
@@ -113,6 +116,30 @@
   # missing from the bus (indicating PID 1 lost its connection) and recovers by
   # restarting dbus and logind. This is safer than forcing dbus restarts during
   # switch-to-configuration (which NixOS upstream explicitly warns against).
+  systemd.services.dbus = {
+    reloadIfChanged = lib.mkForce false;
+    restartIfChanged = lib.mkForce false;
+    stopIfChanged = lib.mkForce false;
+  };
+
+  systemd.services."dbus-broker" = {
+    reloadIfChanged = lib.mkForce false;
+    restartIfChanged = lib.mkForce false;
+    stopIfChanged = lib.mkForce false;
+  };
+
+  systemd.user.services.dbus = {
+    reloadIfChanged = lib.mkForce false;
+    restartIfChanged = lib.mkForce false;
+    stopIfChanged = lib.mkForce false;
+  };
+
+  systemd.user.services."dbus-broker" = {
+    reloadIfChanged = lib.mkForce false;
+    restartIfChanged = lib.mkForce false;
+    stopIfChanged = lib.mkForce false;
+  };
+
   systemd.services.dbus-reconnect = {
     description = "Recover systemd DBus connection after daemon-reexec";
     after = [ "dbus.service" ];
@@ -152,7 +179,10 @@
 
   nix.settings = {
     auto-optimise-store = lib.mkForce true;
-    experimental-features = lib.mkForce [ "nix-command" "flakes" ];
+    experimental-features = lib.mkForce [
+      "nix-command"
+      "flakes"
+    ];
     trusted-users = lib.mkForce [ "rnetadmin" ];
   };
 
@@ -165,5 +195,6 @@
     randomizedDelaySec = lib.mkDefault "45min";
   };
 
-  systemd.services.nixos-upgrade.environment.INFRA_SECRETS_DIR = lib.mkDefault "/var/lib/infratainer/secrets";
+  systemd.services.nixos-upgrade.environment.INFRA_SECRETS_DIR =
+    lib.mkDefault "/var/lib/infratainer/secrets";
 }

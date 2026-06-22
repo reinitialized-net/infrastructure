@@ -6,7 +6,7 @@
 
 ## Overview
 
-The standard profile defines the base NixOS behavior for hosts built through this repository's library functions. It sets time, SSH, users, sudo-rs, nftables, systemd-networkd, Nix settings, automatic system upgrades, and a DBus recovery timer used after some `nixos-rebuild switch` runs.
+The standard profile defines the base NixOS behavior for hosts built through this repository's library functions. It sets time, SSH, users, sudo-rs, nftables, systemd-networkd, Nix settings, automatic system upgrades, and DBus switch/recovery behavior used around some `nixos-rebuild switch` runs.
 
 ## Defaults
 
@@ -140,6 +140,8 @@ journalctl -u nixos-upgrade.service
 ```
 
 ### DBus Reconnect Timer
+
+The profile prevents the `dbus` and `dbus-broker` system and user units from being reloaded, restarted, or stopped during a NixOS switch. DBus changes are applied on the next boot instead of during live activation.
 
 The profile defines `dbus-reconnect.service` and `dbus-reconnect.timer`. The timer runs shortly after boot and every 30 seconds. If `org.freedesktop.systemd1` is missing from the system bus, the service restarts `dbus.service` and `systemd-logind.service`.
 

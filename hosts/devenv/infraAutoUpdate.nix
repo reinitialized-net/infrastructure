@@ -6,8 +6,8 @@
   ...
 }:
 let
-  automationSecret = config.secrets.infraAutomation or {};
-  automationKeys = automationSecret.keys or {};
+  automationSecret = config.secrets.infraAutomation or { };
+  automationKeys = automationSecret.keys or { };
 
   stateDir = "/var/lib/infratainer";
   checkoutDir = "${stateDir}/checkout";
@@ -26,7 +26,7 @@ let
     map (
       host:
       let
-        node = meshTopology.nodes.${host} or {};
+        node = meshTopology.nodes.${host} or { };
       in
       if host != "devenv" && node ? endpoint then lib.head (lib.splitString ":" node.endpoint) else null
     ) exportedHosts
@@ -56,37 +56,38 @@ let
     automationKeys.dashboardWebhookUrl
       or "http://${dashboardWebhookBindAddress}:${toString dashboardWebhookPort}/renovate-dashboard";
   tokenFile =
-    if automationSecret ? file && automationSecret.file != null
-    then toString automationSecret.file
-    else "/run/secrets/infra-automation-token";
+    if automationSecret ? file && automationSecret.file != null then
+      toString automationSecret.file
+    else
+      "/run/secrets/infra-automation-token";
   runtimeDirSetup = ''
-    prepare_runtime_dirs() {
-      local mkdir_error
-      mkdir_error="$(mktemp)"
+        prepare_runtime_dirs() {
+          local mkdir_error
+          mkdir_error="$(mktemp)"
 
-      if mkdir -p "$state_dir" "$log_dir" "$run_dir" "''${extra_runtime_dirs[@]}" 2>"$mkdir_error"; then
-        rm -f "$mkdir_error"
-        return 0
-      fi
+          if mkdir -p "$state_dir" "$log_dir" "$run_dir" "''${extra_runtime_dirs[@]}" 2>"$mkdir_error"; then
+            rm -f "$mkdir_error"
+            return 0
+          fi
 
-      cat >&2 <<EOF
-Could not prepare Infratainer runtime directories as user $(id -un).
+          cat >&2 <<EOF
+    Could not prepare Infratainer runtime directories as user $(id -un).
 
-These commands are intended to run through the devenv systemd units, which
-execute as rnetadmin after NixOS creates the managed state directories:
+    These commands are intended to run through the devenv systemd units, which
+    execute as rnetadmin after NixOS creates the managed state directories:
 
-  sudo systemctl start infra-renovate.service
-  sudo journalctl -u infra-renovate.service -e --no-pager
+      sudo systemctl start infra-renovate.service
+      sudo journalctl -u infra-renovate.service -e --no-pager
 
-For the full update flow, run infra-promote.service after Renovate creates PRs,
-then infra-deploy.service after PRs have merged.
+    For the full update flow, run infra-promote.service after Renovate creates PRs,
+    then infra-deploy.service after PRs have merged.
 
-Original mkdir error:
-EOF
-      cat "$mkdir_error" >&2
-      rm -f "$mkdir_error"
-      return 1
-    }
+    Original mkdir error:
+    EOF
+          cat "$mkdir_error" >&2
+          rm -f "$mkdir_error"
+          return 1
+        }
   '';
 
   dashboardWebhookPy = pkgs.writeText "infra-renovate-dashboard-webhook.py" ''
@@ -418,6 +419,28 @@ EOF
       git_author_email="${gitAuthorEmail}"
       github_token_file="${githubTokenFile}"
       extra_runtime_dirs=("$state_dir/renovate-cache" "$state_dir/renovate-home")
+      reported_failure=false
+      log_file=""
+
+      report_failure() {
+        local message="$1"
+        local args=(--source infra-renovate --status failure --message "$message")
+        reported_failure=true
+        if [ -n "$log_file" ] && [ -r "$log_file" ]; then
+          args+=(--log-file "$log_file")
+        fi
+        infra-update-report "''${args[@]}" || true
+      }
+
+      report_unexpected_failure() {
+        local exit_code="$?"
+        if [ "$exit_code" -eq 0 ] || [ "$reported_failure" = true ]; then
+          exit "$exit_code"
+        fi
+        report_failure "infra-renovate exited unexpectedly with status $exit_code."
+        exit "$exit_code"
+      }
+      trap report_unexpected_failure EXIT
 
       ${runtimeDirSetup}
       prepare_runtime_dirs
@@ -490,7 +513,7 @@ EOF
 
       log_file="$log_dir/renovate-$(date +%Y%m%d%H%M%S).log"
       if ! ensure_checkout > "$log_file" 2>&1; then
-        infra-update-report --source infra-renovate --status failure --log-file "$log_file" --message "Failed to prepare the managed checkout."
+        report_failure "Failed to prepare the managed checkout."
         exit 1
       fi
 
@@ -506,7 +529,7 @@ EOF
         renovate "$repo_slug" >> "$log_file" 2>&1; then
         echo "Renovate completed successfully. Log: $log_file"
       else
-        infra-update-report --source infra-renovate --status failure --log-file "$log_file" --message "Renovate failed while creating dependency update PRs."
+        report_failure "Renovate failed while creating dependency update PRs."
         exit 1
       fi
     '';
@@ -524,274 +547,299 @@ EOF
       pkgs.nix
     ];
     text = ''
-      export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
+            export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
 
-      state_dir="${stateDir}"
-      checkout_dir="${checkoutDir}"
-      log_dir="${logDir}"
-      run_dir="${runDir}"
-      token_file="${tokenFile}"
-      repo_clone_url="${repoCloneUrl}"
-      default_branch="${defaultBranch}"
-      secrets_dir="${secretsDir}"
-      forgejo_base="${forgejoBaseUrl}"
-      api_root="''${forgejo_base%/}/api/v1"
-      forgejo_username="${forgejoUsername}"
-      repo_owner="${repoOwner}"
-      repo_name="${repoName}"
-      renovate_branch_prefix="${renovateBranchPrefix}"
-      auto_label="infra-auto-merge"
-      manual_label="manual-update"
-      extra_runtime_dirs=()
+            state_dir="${stateDir}"
+            checkout_dir="${checkoutDir}"
+            log_dir="${logDir}"
+            run_dir="${runDir}"
+            token_file="${tokenFile}"
+            repo_clone_url="${repoCloneUrl}"
+            default_branch="${defaultBranch}"
+            secrets_dir="${secretsDir}"
+            forgejo_base="${forgejoBaseUrl}"
+            api_root="''${forgejo_base%/}/api/v1"
+            forgejo_username="${forgejoUsername}"
+            repo_owner="${repoOwner}"
+            repo_name="${repoName}"
+            renovate_branch_prefix="${renovateBranchPrefix}"
+            auto_label="infra-auto-merge"
+            manual_label="manual-update"
+            extra_runtime_dirs=()
+            reported_failure=false
+            log_file=""
 
-      ${runtimeDirSetup}
-      prepare_runtime_dirs
+            report_failure() {
+              local message="$1"
+              local args=(--source infra-promote --status failure --message "$message")
+              reported_failure=true
+              if [ -n "$log_file" ] && [ -r "$log_file" ]; then
+                args+=(--log-file "$log_file")
+              fi
+              infra-update-report "''${args[@]}" || true
+            }
 
-      read_token() {
-        if [ ! -r "$token_file" ]; then
-          echo "Token file is not readable: $token_file" >&2
-          return 1
-        fi
-        head -n 1 "$token_file" | tr -d '\r\n'
-      }
+            report_unexpected_failure() {
+              local exit_code="$?"
+              if [ "$exit_code" -eq 0 ] || [ "$reported_failure" = true ]; then
+                exit "$exit_code"
+              fi
+              report_failure "infra-promote exited unexpectedly with status $exit_code."
+              exit "$exit_code"
+            }
+            trap report_unexpected_failure EXIT
 
-      api() {
-        local method="$1"
-        local path="$2"
-        local data="''${3-}"
-        if [ -n "$data" ]; then
-          curl --fail-with-body -sS \
-            -X "$method" \
-            -H "Authorization: token $token" \
-            -H "Content-Type: application/json" \
-            --data "$data" \
-            "$api_root$path"
-        else
-          curl --fail-with-body -sS \
-            -X "$method" \
-            -H "Authorization: token $token" \
-            -H "Content-Type: application/json" \
-            "$api_root$path"
-        fi
-      }
+            ${runtimeDirSetup}
+            prepare_runtime_dirs
 
-      init_git_auth() {
-        {
-          printf '%s\n' '#!/usr/bin/env bash'
-          printf '%s\n' "case \"\$1\" in"
-          printf '%s\n' "  *Username*) printf \"%s\\n\" \"$forgejo_username\" ;;"
-          printf '%s\n' "  *) printf \"%s\\n\" \"\$GIT_PASSWORD\" ;;"
-          printf '%s\n' 'esac'
-        } > "$run_dir/git-askpass"
-        chmod 700 "$run_dir/git-askpass"
-        export GIT_ASKPASS="$run_dir/git-askpass"
-        export GIT_TERMINAL_PROMPT=0
-      }
+            read_token() {
+              if [ ! -r "$token_file" ]; then
+                echo "Token file is not readable: $token_file" >&2
+                return 1
+              fi
+              head -n 1 "$token_file" | tr -d '\r\n'
+            }
 
-      require_secrets_dir() {
-        if [ ! -d "$secrets_dir" ]; then
-          echo "Secrets directory is missing: $secrets_dir" >&2
-          return 1
-        fi
+            api() {
+              local method="$1"
+              local path="$2"
+              local data="''${3-}"
+              if [ -n "$data" ]; then
+                curl --fail-with-body -sS \
+                  -X "$method" \
+                  -H "Authorization: token $token" \
+                  -H "Content-Type: application/json" \
+                  --data "$data" \
+                  "$api_root$path"
+              else
+                curl --fail-with-body -sS \
+                  -X "$method" \
+                  -H "Authorization: token $token" \
+                  -H "Content-Type: application/json" \
+                  "$api_root$path"
+              fi
+            }
 
-        set -- "$secrets_dir"/*.nix
-        if [ ! -e "$1" ]; then
-          echo "Secrets directory has no host modules: $secrets_dir/*.nix" >&2
-          return 1
-        fi
-      }
+            init_git_auth() {
+              {
+                printf '%s\n' '#!/usr/bin/env bash'
+                printf '%s\n' "case \"\$1\" in"
+                printf '%s\n' "  *Username*) printf \"%s\\n\" \"$forgejo_username\" ;;"
+                printf '%s\n' "  *) printf \"%s\\n\" \"\$GIT_PASSWORD\" ;;"
+                printf '%s\n' 'esac'
+              } > "$run_dir/git-askpass"
+              chmod 700 "$run_dir/git-askpass"
+              export GIT_ASKPASS="$run_dir/git-askpass"
+              export GIT_TERMINAL_PROMPT=0
+            }
 
-      ensure_checkout() {
-        if [ -e "$checkout_dir" ] && [ ! -d "$checkout_dir/.git" ]; then
-          echo "$checkout_dir exists but is not a git checkout" >&2
-          return 1
-        fi
+            require_secrets_dir() {
+              if [ ! -d "$secrets_dir" ]; then
+                echo "Secrets directory is missing: $secrets_dir" >&2
+                return 1
+              fi
 
-        if [ ! -d "$checkout_dir/.git" ]; then
-          git clone --origin origin "$repo_clone_url" "$checkout_dir"
-        fi
+              set -- "$secrets_dir"/*.nix
+              if [ ! -e "$1" ]; then
+                echo "Secrets directory has no host modules: $secrets_dir/*.nix" >&2
+                return 1
+              fi
+            }
 
-        git -C "$checkout_dir" fetch --prune origin
-        git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch"
-        git -C "$checkout_dir" reset --hard "origin/$default_branch"
-        git -C "$checkout_dir" clean -fdx
-      }
+            ensure_checkout() {
+              if [ -e "$checkout_dir" ] && [ ! -d "$checkout_dir/.git" ]; then
+                echo "$checkout_dir exists but is not a git checkout" >&2
+                return 1
+              fi
 
-      has_label() {
-        local issue_json="$1"
-        local label="$2"
-        jq -e --arg label "$label" '.labels[]? | select(.name == $label)' <<< "$issue_json" >/dev/null
-      }
+              if [ ! -d "$checkout_dir/.git" ]; then
+                git clone --origin origin "$repo_clone_url" "$checkout_dir"
+              fi
 
-      has_manual_approval() {
-        local number="$1"
-        local head_sha="$2"
-        local reviews
+              git -C "$checkout_dir" fetch --prune origin
+              git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch"
+              git -C "$checkout_dir" reset --hard "origin/$default_branch"
+              git -C "$checkout_dir" clean -fdx
+            }
 
-        if ! reviews="$(api GET "/repos/$repo_owner/$repo_name/pulls/$number/reviews" 2>/dev/null)"; then
-          echo "Could not read reviews for manual Renovate PR #$number; leaving it open." >&2
-          return 1
-        fi
+            has_label() {
+              local issue_json="$1"
+              local label="$2"
+              jq -e --arg label "$label" '.labels[]? | select(.name == $label)' <<< "$issue_json" >/dev/null
+            }
 
-        jq -e --arg automation "$forgejo_username" --arg head "$head_sha" '
-          def login: (.user.login // .reviewer.login // .poster.login // "");
-          def state: ((.state // .State // "") | ascii_upcase);
-          def active_review: (((.dismissed // false) | not) and ((.stale // false) | not));
-          def commit_matches:
-            ((has("commit_id") | not) or (.commit_id == null) or (.commit_id == "") or (.commit_id == $head));
-          def submitted_at: (.submitted_at // .updated_at // .created_at // "");
-          def latest_review_states:
-            [
-              .[]?
-              | select(login != "")
-              | select(active_review)
-              | select(commit_matches)
-              | {
-                  login: (login | ascii_downcase),
-                  state: state,
-                  submitted_at: submitted_at
-                }
-            ]
-            | sort_by(.login, .submitted_at)
-            | group_by(.login)
-            | map(.[-1]);
+            has_manual_approval() {
+              local number="$1"
+              local head_sha="$2"
+              local reviews
 
-          ($automation | ascii_downcase) as $automation_login
-          | latest_review_states as $reviews
-          | (($reviews | map(select(.state == "APPROVED" and .login != $automation_login)) | length) > 0)
-            and (($reviews | map(select(.state == "REQUEST_CHANGES" or .state == "CHANGES_REQUESTED" or .state == "REQUESTED_CHANGES")) | length) == 0)
-        ' <<< "$reviews" >/dev/null
-      }
+              if ! reviews="$(api GET "/repos/$repo_owner/$repo_name/pulls/$number/reviews" 2>/dev/null)"; then
+                echo "Could not read reviews for manual Renovate PR #$number; leaving it open." >&2
+                return 1
+              fi
 
-      comment_pr() {
-        local number="$1"
-        local body="$2"
-        local payload
-        payload="$(jq -n --arg body "$body" '{body: $body}')"
-        api POST "/repos/$repo_owner/$repo_name/issues/$number/comments" "$payload" >/dev/null
-      }
+              jq -e --arg automation "$forgejo_username" --arg head "$head_sha" '
+                def login: (.user.login // .reviewer.login // .poster.login // "");
+                def state: ((.state // .State // "") | ascii_upcase);
+                def active_review: (((.dismissed // false) | not) and ((.stale // false) | not));
+                def commit_matches:
+                  ((has("commit_id") | not) or (.commit_id == null) or (.commit_id == "") or (.commit_id == $head));
+                def submitted_at: (.submitted_at // .updated_at // .created_at // "");
+                def latest_review_states:
+                  [
+                    .[]?
+                    | select(login != "")
+                    | select(active_review)
+                    | select(commit_matches)
+                    | {
+                        login: (login | ascii_downcase),
+                        state: state,
+                        submitted_at: submitted_at
+                      }
+                  ]
+                  | sort_by(.login, .submitted_at)
+                  | group_by(.login)
+                  | map(.[-1]);
 
-      merge_pr() {
-        local number="$1"
-        local pr_title="$2"
-        local merge_title="Auto-merge Renovate PR #$number"
-        local merge_message="Validated by infra-promote before merge.
+                ($automation | ascii_downcase) as $automation_login
+                | latest_review_states as $reviews
+                | (($reviews | map(select(.state == "APPROVED" and .login != $automation_login)) | length) > 0)
+                  and (($reviews | map(select(.state == "REQUEST_CHANGES" or .state == "CHANGES_REQUESTED" or .state == "REQUESTED_CHANGES")) | length) == 0)
+              ' <<< "$reviews" >/dev/null
+            }
 
-$pr_title"
-        local payload
+            comment_pr() {
+              local number="$1"
+              local body="$2"
+              local payload
+              payload="$(jq -n --arg body "$body" '{body: $body}')"
+              api POST "/repos/$repo_owner/$repo_name/issues/$number/comments" "$payload" >/dev/null
+            }
 
-        payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{Do: "merge", MergeTitleField: $title, MergeMessageField: $message}')"
-        if api POST "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1; then
-          return 0
-        fi
+            merge_pr() {
+              local number="$1"
+              local pr_title="$2"
+              local merge_title="Auto-merge Renovate PR #$number"
+              local merge_message="Validated by infra-promote before merge.
 
-        payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{do: "merge", merge_title_field: $title, merge_message_field: $message}')"
-        if api POST "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1; then
-          return 0
-        fi
+      $pr_title"
+              local payload
 
-        payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{Do: "merge", MergeTitleField: $title, MergeMessageField: $message}')"
-        api PUT "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1
-      }
+              payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{Do: "merge", MergeTitleField: $title, MergeMessageField: $message}')"
+              if api POST "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1; then
+                return 0
+              fi
 
-      validate_pr() {
-        local number="$1"
-        local head_ref="$2"
-        local log_file="$3"
+              payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{do: "merge", merge_title_field: $title, merge_message_field: $message}')"
+              if api POST "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1; then
+                return 0
+              fi
 
-        {
-          echo "Validating PR #$number from $head_ref"
-          git -C "$checkout_dir" fetch origin "$head_ref"
-          git -C "$checkout_dir" checkout --detach FETCH_HEAD
+              payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{Do: "merge", MergeTitleField: $title, MergeMessageField: $message}')"
+              api PUT "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1
+            }
 
-          cd "$checkout_dir"
-          require_secrets_dir
-          export INFRA_SECRETS_DIR="$secrets_dir"
-          nix flake show path:. --no-write-lock-file --impure
-          nix build --impure --no-link \
-            path:.#nixosConfigurations.devenv.config.system.build.toplevel \
-            path:.#nixosConfigurations.rp1.config.system.build.toplevel \
-            path:.#nixosConfigurations.apps1.config.system.build.toplevel \
-            path:.#nixosConfigurations.apps2.config.system.build.toplevel \
-            path:.#nixosConfigurations.apps3.config.system.build.toplevel \
-            path:.#nixosConfigurations.db1.config.system.build.toplevel
-          bash -n hosts/devenv/tools/update-network-firewall-rules.sh
-        } > "$log_file" 2>&1
-      }
+            validate_pr() {
+              local number="$1"
+              local head_ref="$2"
+              local log_file="$3"
 
-      token="$(read_token)"
-      if [ -z "$token" ]; then
-        echo "Token file is empty: $token_file" >&2
-        exit 1
-      fi
+              {
+                echo "Validating PR #$number from $head_ref"
+                git -C "$checkout_dir" fetch origin "$head_ref"
+                git -C "$checkout_dir" checkout --detach FETCH_HEAD
+
+                cd "$checkout_dir"
+                require_secrets_dir
+                export INFRA_SECRETS_DIR="$secrets_dir"
+                nix flake show path:. --no-write-lock-file --impure
+                nix build --impure --no-link \
+                  path:.#nixosConfigurations.devenv.config.system.build.toplevel \
+                  path:.#nixosConfigurations.rp1.config.system.build.toplevel \
+                  path:.#nixosConfigurations.apps1.config.system.build.toplevel \
+                  path:.#nixosConfigurations.apps2.config.system.build.toplevel \
+                  path:.#nixosConfigurations.apps3.config.system.build.toplevel \
+                  path:.#nixosConfigurations.db1.config.system.build.toplevel
+                bash -n hosts/devenv/tools/update-network-firewall-rules.sh
+              } > "$log_file" 2>&1
+            }
+
+            token="$(read_token)"
+            if [ -z "$token" ]; then
+              echo "Token file is empty: $token_file" >&2
+              exit 1
+            fi
       export GIT_PASSWORD="$token"
       init_git_auth
 
-      if ! ensure_checkout; then
-        infra-update-report --source infra-promote --status failure --message "Failed to prepare the managed checkout."
+      log_file="$log_dir/promote-$(date +%Y%m%d%H%M%S).log"
+      if ! ensure_checkout > "$log_file" 2>&1; then
+        report_failure "Failed to prepare the managed checkout."
         exit 1
       fi
 
-      pulls="$(api GET "/repos/$repo_owner/$repo_name/pulls?state=open&limit=100")"
-      mapfile -t pull_rows < <(jq -c '.[]?' <<< "$pulls")
+            pulls="$(api GET "/repos/$repo_owner/$repo_name/pulls?state=open&limit=100")"
+            mapfile -t pull_rows < <(jq -c '.[]?' <<< "$pulls")
 
-      for pull in "''${pull_rows[@]}"; do
-        number="$(jq -r '.number' <<< "$pull")"
-        title="$(jq -r '.title' <<< "$pull")"
-        head_ref="$(jq -r '.head.ref // empty' <<< "$pull")"
-        head_sha="$(jq -r '.head.sha // empty' <<< "$pull")"
-        approved_manual=false
+            for pull in "''${pull_rows[@]}"; do
+              number="$(jq -r '.number' <<< "$pull")"
+              title="$(jq -r '.title' <<< "$pull")"
+              head_ref="$(jq -r '.head.ref // empty' <<< "$pull")"
+              head_sha="$(jq -r '.head.sha // empty' <<< "$pull")"
+              approved_manual=false
 
-        if [ -z "$head_ref" ] || [[ "$head_ref" != "$renovate_branch_prefix"* ]]; then
-          continue
-        fi
+              if [ -z "$head_ref" ] || [[ "$head_ref" != "$renovate_branch_prefix"* ]]; then
+                continue
+              fi
 
-        issue="$(api GET "/repos/$repo_owner/$repo_name/issues/$number")"
+              issue="$(api GET "/repos/$repo_owner/$repo_name/issues/$number")"
 
-        if has_label "$issue" "$manual_label"; then
-          if has_manual_approval "$number" "$head_sha"; then
-            approved_manual=true
-            echo "Manual Renovate PR #$number has an approving review; validating before merge: $title"
-          else
-            infra-update-report \
-              --source "renovate-pr-$number" \
-              --status "manual-review" \
-              --message "Renovate PR #$number is waiting for a current approving review before Infratainer validates and merges it: $title"
-            continue
-          fi
-        elif ! has_label "$issue" "$auto_label"; then
-          echo "Skipping Renovate PR #$number without $auto_label label: $title"
-          continue
-        fi
+              if has_label "$issue" "$manual_label"; then
+                if has_manual_approval "$number" "$head_sha"; then
+                  approved_manual=true
+                  echo "Manual Renovate PR #$number has an approving review; validating before merge: $title"
+                else
+                  infra-update-report \
+                    --source "renovate-pr-$number" \
+                    --status "manual-review" \
+                    --message "Renovate PR #$number is waiting for a current approving review before Infratainer validates and merges it: $title"
+                  continue
+                fi
+              elif ! has_label "$issue" "$auto_label"; then
+                echo "Skipping Renovate PR #$number without $auto_label label: $title"
+                continue
+              fi
 
-        log_file="$log_dir/promote-pr-$number-$(date +%Y%m%d%H%M%S).log"
-        if validate_pr "$number" "$head_ref" "$log_file"; then
-          if merge_pr "$number" "$title"; then
-            if [ "$approved_manual" = true ]; then
-              comment_pr "$number" "infra-promote found a current approving review, validated this manual-update PR, and merged it automatically. Validation log: $log_file"
-            else
-              comment_pr "$number" "infra-promote validated this PR and merged it automatically. Validation log: $log_file"
-            fi
-            echo "Merged Renovate PR #$number"
-          else
-            excerpt="$(tail -c 12000 "$log_file")"
-            comment_pr "$number" "infra-promote validation passed, but the Forgejo merge API failed. Recent validation log:
-\`\`\`text
-$excerpt
-\`\`\`"
-            infra-update-report --source "renovate-pr-$number" --status failure --log-file "$log_file" --message "Validation passed for PR #$number, but merge failed: $title"
-            exit 1
-          fi
-        else
-          excerpt="$(tail -c 12000 "$log_file")"
-          comment_pr "$number" "infra-promote validation failed. Recent validation log:
-\`\`\`text
-$excerpt
-\`\`\`"
-          infra-update-report --source "renovate-pr-$number" --status failure --log-file "$log_file" --message "Validation failed for Renovate PR #$number: $title"
-          exit 1
-        fi
-      done
+              log_file="$log_dir/promote-pr-$number-$(date +%Y%m%d%H%M%S).log"
+              if validate_pr "$number" "$head_ref" "$log_file"; then
+                if merge_pr "$number" "$title"; then
+                  if [ "$approved_manual" = true ]; then
+                    comment_pr "$number" "infra-promote found a current approving review, validated this manual-update PR, and merged it automatically. Validation log: $log_file"
+                  else
+                    comment_pr "$number" "infra-promote validated this PR and merged it automatically. Validation log: $log_file"
+                  fi
+                  echo "Merged Renovate PR #$number"
+                else
+                  excerpt="$(tail -c 12000 "$log_file")"
+                  comment_pr "$number" "infra-promote validation passed, but the Forgejo merge API failed. Recent validation log:
+      \`\`\`text
+      $excerpt
+      \`\`\`"
+                  reported_failure=true
+                  infra-update-report --source "renovate-pr-$number" --status failure --log-file "$log_file" --message "Validation passed for PR #$number, but merge failed: $title"
+                  exit 1
+                fi
+              else
+                excerpt="$(tail -c 12000 "$log_file")"
+                comment_pr "$number" "infra-promote validation failed. Recent validation log:
+      \`\`\`text
+      $excerpt
+      \`\`\`"
+                reported_failure=true
+                infra-update-report --source "renovate-pr-$number" --status failure --log-file "$log_file" --message "Validation failed for Renovate PR #$number: $title"
+                exit 1
+              fi
+            done
     '';
   };
 
@@ -817,6 +865,28 @@ $excerpt
       forgejo_username="${forgejoUsername}"
       deploy_host_ips="${deployHostIpsString}"
       extra_runtime_dirs=()
+      reported_failure=false
+      log_file=""
+
+      report_failure() {
+        local message="$1"
+        local args=(--source infra-deploy --status failure --message "$message")
+        reported_failure=true
+        if [ -n "$log_file" ] && [ -r "$log_file" ]; then
+          args+=(--log-file "$log_file")
+        fi
+        infra-update-report "''${args[@]}" || true
+      }
+
+      report_unexpected_failure() {
+        local exit_code="$?"
+        if [ "$exit_code" -eq 0 ] || [ "$reported_failure" = true ]; then
+          exit "$exit_code"
+        fi
+        report_failure "infra-deploy exited unexpectedly with status $exit_code."
+        exit "$exit_code"
+      }
+      trap report_unexpected_failure EXIT
 
       ${runtimeDirSetup}
       prepare_runtime_dirs
@@ -896,24 +966,24 @@ $excerpt
 
       log_file="$log_dir/deploy-$(date +%Y%m%d%H%M%S).log"
       if ! ensure_checkout > "$log_file" 2>&1; then
-        infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Failed to prepare the managed checkout."
+        report_failure "Failed to prepare the managed checkout."
         exit 1
       fi
 
       if ! require_secrets_dir >> "$log_file" 2>&1; then
-        infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Failed to prepare live secrets for managed checkout $checkout_dir."
+        report_failure "Failed to prepare live secrets for managed checkout $checkout_dir."
         exit 1
       fi
 
       if ! seed_known_hosts >> "$log_file" 2>&1; then
-        infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Failed to seed SSH known_hosts for fleet deployment."
+        report_failure "Failed to seed SSH known_hosts for fleet deployment."
         exit 1
       fi
 
       if INFRA_SECRETS_DIR="$secrets_dir" FLAKE_PATH="$checkout_dir" UPDATE_INFRA_SKIP_HOSTS="devenv" updateInfra >> "$log_file" 2>&1; then
         echo "Fleet deployment completed successfully. Log: $log_file"
       else
-        infra-update-report --source infra-deploy --status failure --log-file "$log_file" --message "Fleet deployment failed from managed checkout $checkout_dir."
+        report_failure "Fleet deployment failed from managed checkout $checkout_dir."
         exit 1
       fi
     '';
@@ -941,7 +1011,8 @@ in
     infraDeploy
     infraPromote
     infraRenovate
-  ] ++ lib.optionals dashboardWebhookEnabled [
+  ]
+  ++ lib.optionals dashboardWebhookEnabled [
     dashboardWebhook
     dashboardWebhookEnsure
   ];
@@ -1016,7 +1087,6 @@ in
     description = "Create dependency update PRs with Renovate";
     wants = [ "network-online.target" ];
     after = [ "network-online.target" ];
-    unitConfig.OnFailure = "infra-update-report@%n.service";
     serviceConfig = {
       Type = "oneshot";
       User = "rnetadmin";
@@ -1101,7 +1171,6 @@ in
       "network-online.target"
       "infra-renovate.service"
     ];
-    unitConfig.OnFailure = "infra-update-report@%n.service";
     serviceConfig = {
       Type = "oneshot";
       User = "rnetadmin";
@@ -1129,7 +1198,6 @@ in
       "network-online.target"
       "infra-promote.service"
     ];
-    unitConfig.OnFailure = "infra-update-report@%n.service";
     serviceConfig = {
       Type = "oneshot";
       User = "rnetadmin";

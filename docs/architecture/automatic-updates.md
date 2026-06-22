@@ -29,10 +29,13 @@
 5. `infra-deploy.timer` runs daily at `02:30`, refreshes the managed checkout to `origin/indev`, and runs:
 
    ```bash
-   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets FLAKE_PATH=/var/lib/infratainer/checkout updateInfra
+   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets \
+     FLAKE_PATH=/var/lib/infratainer/checkout \
+     UPDATE_INFRA_SKIP_HOSTS=devenv \
+     updateInfra
    ```
 
-Host-local `nixos-upgrade.timer` remains enabled as a fallback and runs later from the Forgejo flake URL with `?ref=indev`. It passes `--impure` and `INFRA_SECRETS_DIR=/var/lib/infratainer/secrets` so the fetched clean flake can import host-local live secret modules.
+`infra-deploy` intentionally skips `devenv` so the service does not replace its own running unit during the fleet deploy. Host-local `nixos-upgrade.timer` remains enabled as the fallback path for `devenv` and for any host missed by the coordinated deploy. It runs later from the Forgejo flake URL with `?ref=indev`, passes `--impure` and `INFRA_SECRETS_DIR=/var/lib/infratainer/secrets`, and suppresses live DBus reloads during switches so DBus implementation changes take effect after reboot instead of failing activation.
 
 ## Secrets
 

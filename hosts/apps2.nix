@@ -2,7 +2,8 @@
   config,
   pkgs,
   ...
-}:{
+}:
+{
   # Networking Configuration
   networking = {
     hostName = "apps2";
@@ -28,7 +29,7 @@
   };
   # Configure MeshNetwork
   services.meshNetwork = {
-      enable = true;
+    enable = true;
   };
   services.containerAutoUpdate.skipContainers = [
     "dnsTwo"
@@ -45,9 +46,9 @@
       #server = "https://acme-staging-v02.api.letsencrypt.org/directory";
       profile = "shortlived";
       dnsProvider = "technitium";
-      credentialsFile = config.secrets.acmeDns.file;
+      environmentFile = config.secrets.acmeDns.file;
       dnsResolver = "10.255.0.3:1028";
-      extraLegoFlags = [ 
+      extraLegoFlags = [
         "--pfx"
         "--pfx.pass="
         "--dns.resolvers=10.255.0.4:1026"
@@ -138,10 +139,10 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:1027:8443/tcp"      # UniFi web admin
-        "10.255.0.4:1028:3478/udp"      # STUN
-        "10.255.0.4:1029:10001/udp"     # Device discovery
-        "10.255.0.4:1030:8080/tcp"      # Device communication
+        "10.255.0.4:1027:8443/tcp" # UniFi web admin
+        "10.255.0.4:1028:3478/udp" # STUN
+        "10.255.0.4:1029:10001/udp" # Device discovery
+        "10.255.0.4:1030:8080/tcp" # Device communication
       ];
       volumes = [
         "unifi_config:/config"
@@ -160,8 +161,8 @@
       networks = [
         "backend"
       ];
-      ports = [  
-        "10.255.0.4:1031:80/tcp"     # pgAdmin4 web interface
+      ports = [
+        "10.255.0.4:1031:80/tcp" # pgAdmin4 web interface
       ];
       volumes = [
         "pgadmin4_data:/var/lib/pgadmin"
@@ -178,7 +179,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:1032:5540"     # Redis Insight web interface
+        "10.255.0.4:1032:5540" # Redis Insight web interface
       ];
       volumes = [
         "redisInsight_data:/data"
@@ -191,7 +192,8 @@
       hostname = "forgejoRunner";
       image = "code.forgejo.org/forgejo/runner:12";
       cmd = [
-        "bash" "-c"
+        "bash"
+        "-c"
         ''
           # Secrets interpolated at Nix build time into bash variables
           FORGEJO_INSTANCE_URL="${config.secrets.forgejoRunner.keys.FORGEJO_INSTANCE_URL}"
@@ -317,14 +319,18 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:1040:80/tcp"  # Cinny web UI
+        "10.255.0.4:1040:80/tcp" # Cinny web UI
       ];
       volumes = [
-        "${pkgs.writeText "cinny-config" (builtins.toJSON {
-          defaultHomeserver = 0;
-          homeserverList = [ "reinitialized.me" ];
-          allowCustomHomeservers = 1;
-        })}:/usr/share/nginx/html/config.json:ro"
+        "${
+          pkgs.writeText "cinny-config" (
+            builtins.toJSON {
+              defaultHomeserver = 0;
+              homeserverList = [ "reinitialized.me" ];
+              allowCustomHomeservers = 1;
+            }
+          )
+        }:/usr/share/nginx/html/config.json:ro"
       ];
     };
   };

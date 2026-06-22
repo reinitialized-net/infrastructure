@@ -27,12 +27,12 @@ in
     ];
 
     systemd.services."infra-update-report@" = {
-      description = "Report infrastructure update failure for %I";
+      description = "Report infrastructure update failure for %i";
       wants = [ "network-online.target" ];
       after = [ "network-online.target" ];
       serviceConfig = {
         Type = "oneshot";
-        ExecStart = "${infraUpdateReport}/bin/infra-update-report --source %I --status failure --log-unit %I";
+        ExecStart = "${infraUpdateReport}/bin/infra-update-report --source %i --status failure --log-unit %i";
       };
     };
   };

@@ -1,7 +1,8 @@
 {
   config,
   ...
-}:{
+}:
+{
   # Networking Configuration
   networking = {
     hostName = "apps1";
@@ -27,7 +28,7 @@
   };
   # Configure MeshNetwork
   services.meshNetwork = {
-      enable = true;
+    enable = true;
   };
   services.containerAutoUpdate.skipContainers = [
     "hudu1"
@@ -47,9 +48,9 @@
       #server = "https://acme-staging-v02.api.letsencrypt.org/directory";
       profile = "shortlived";
       dnsProvider = "technitium";
-      credentialsFile = config.secrets.acmeDns.file;
+      environmentFile = config.secrets.acmeDns.file;
       dnsResolver = "10.255.0.3:1028";
-      extraLegoFlags = [ 
+      extraLegoFlags = [
         "--pfx"
         "--pfx.pass="
         "--dns.resolvers=10.255.0.4:1026"
@@ -80,11 +81,11 @@
   virtualisation.oci-containers.containers = {
     ### Hudu
     hudu1 = {
-      autoStart = true;      
+      autoStart = true;
       hostname = "hudu1";
       image = "hududocker/hudu:2.43.2";
       environment = config.secrets.hudu.keys;
-      networks = [ 
+      networks = [
         "backend"
       ];
       ports = [
@@ -101,14 +102,14 @@
       hostname = "hudu2";
       image = "hududocker/hudu:2.43.2";
       environment = config.secrets.hudu.keys;
-      cmd = [ 
-        "bundle" 
-        "exec" 
-        "sidekiq" 
-        "-C" 
+      cmd = [
+        "bundle"
+        "exec"
+        "sidekiq"
+        "-C"
         "config/sidekiq.yml"
       ];
-      networks = [ 
+      networks = [
         "backend"
       ];
       volumes = [
@@ -204,8 +205,8 @@
         "backend"
       ];
       ports = [
-        "10.255.0.3:1038:4317/tcp"   # OTLP gRPC receiver (from OTel Collector)
-        "10.255.0.3:1039:16686/tcp"  # Jaeger UI
+        "10.255.0.3:1038:4317/tcp" # OTLP gRPC receiver (from OTel Collector)
+        "10.255.0.3:1039:16686/tcp" # Jaeger UI
       ];
       volumes = [
         "jaeger_data:/badger"
@@ -222,7 +223,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.3:1040:3000/tcp"  # Grafana web UI
+        "10.255.0.3:1040:3000/tcp" # Grafana web UI
       ];
       volumes = [
         "grafana_data:/var/lib/grafana"
@@ -240,7 +241,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.3:1043:9000/tcp"  # Authentik HTTP web UI + API
+        "10.255.0.3:1043:9000/tcp" # Authentik HTTP web UI + API
       ];
       volumes = [
         "authentik_media:/media"
