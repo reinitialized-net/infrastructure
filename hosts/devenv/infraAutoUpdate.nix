@@ -46,10 +46,15 @@ let
   gitAuthorEmail = automationKeys.gitAuthorEmail or "infratainer@reinitialized.net";
   renovateBranchPrefix = automationKeys.renovateBranchPrefix or "renovate/";
   githubTokenFile = toString (automationKeys.githubTokenFile or "");
-  dashboardWebhookSecretFile = toString (automationKeys.dashboardWebhookSecretFile or "");
+  dashboardWebhookEnabled = automationKeys.dashboardWebhookEnabled or true;
+  dashboardWebhookSecretFile = toString (
+    automationKeys.dashboardWebhookSecretFile or "/run/secrets/infra-renovate-webhook-secret"
+  );
   dashboardWebhookBindAddress = automationKeys.dashboardWebhookBindAddress or "10.255.0.1";
   dashboardWebhookPort = automationKeys.dashboardWebhookPort or 1044;
-  dashboardWebhookEnabled = dashboardWebhookSecretFile != "";
+  dashboardWebhookUrl =
+    automationKeys.dashboardWebhookUrl
+      or "http://${dashboardWebhookBindAddress}:${toString dashboardWebhookPort}/renovate-dashboard";
   tokenFile =
     if automationSecret ? file && automationSecret.file != null
     then toString automationSecret.file
@@ -285,6 +290,101 @@ EOF
     ];
     text = ''
       exec ${pkgs.python3}/bin/python3 ${dashboardWebhookPy}
+    '';
+  };
+
+  dashboardWebhookEnsure = pkgs.writeShellApplication {
+    name = "infra-renovate-dashboard-webhook-ensure";
+    runtimeInputs = [
+      pkgs.coreutils
+      pkgs.curl
+      pkgs.jq
+    ];
+    text = ''
+      token_file="${tokenFile}"
+      secret_file="${dashboardWebhookSecretFile}"
+      forgejo_base="${forgejoBaseUrl}"
+      repo_owner="${repoOwner}"
+      repo_name="${repoName}"
+      webhook_url="${dashboardWebhookUrl}"
+      api_root="''${forgejo_base%/}/api/v1"
+
+      read_first_line() {
+        local file="$1"
+        local description="$2"
+
+        if [ ! -r "$file" ]; then
+          echo "$description is not readable: $file" >&2
+          return 1
+        fi
+
+        local value
+        value="$(head -n 1 "$file" | tr -d '\r\n')"
+        if [ -z "$value" ]; then
+          echo "$description is empty: $file" >&2
+          return 1
+        fi
+
+        printf '%s\n' "$value"
+      }
+
+      api() {
+        local method="$1"
+        local path="$2"
+        local payload_file="''${3-}"
+
+        if [ -n "$payload_file" ]; then
+          curl --fail-with-body -sS \
+            -X "$method" \
+            -H "Authorization: token $token" \
+            -H "Content-Type: application/json" \
+            --data-binary "@$payload_file" \
+            "$api_root$path"
+        else
+          curl --fail-with-body -sS \
+            -X "$method" \
+            -H "Authorization: token $token" \
+            -H "Content-Type: application/json" \
+            "$api_root$path"
+        fi
+      }
+
+      token="$(read_first_line "$token_file" "Forgejo automation token")"
+      read_first_line "$secret_file" "dashboard webhook secret" >/dev/null
+      hooks="$(api GET "/repos/$repo_owner/$repo_name/hooks")"
+      hook_id="$(
+        jq -r --arg url "$webhook_url" '
+          .[]?
+          | select((.config.url // .config.URL // "") == $url)
+          | .id
+        ' <<< "$hooks" | head -n 1
+      )"
+
+      payload_file="$(mktemp)"
+      trap 'rm -f "$payload_file"' EXIT
+      jq -n \
+        --arg url "$webhook_url" \
+        --rawfile secret "$secret_file" \
+        '{
+          active: true,
+          type: "forgejo",
+          events: ["issues"],
+          branch_filter: "",
+          config: {
+            url: $url,
+            content_type: "json",
+            http_method: "post",
+            secret: ($secret | split("\n")[0])
+          }
+        }' > "$payload_file"
+
+      if [ -n "$hook_id" ]; then
+        api PATCH "/repos/$repo_owner/$repo_name/hooks/$hook_id" "$payload_file" >/dev/null
+      else
+        api POST "/repos/$repo_owner/$repo_name/hooks" "$payload_file" >/dev/null
+      fi
+
+      echo "Forgejo Dependency Dashboard webhook is configured for $webhook_url"
     '';
   };
 
@@ -843,6 +943,7 @@ in
     infraRenovate
   ] ++ lib.optionals dashboardWebhookEnabled [
     dashboardWebhook
+    dashboardWebhookEnsure
   ];
 
   systemd.tmpfiles.rules = [
@@ -895,8 +996,17 @@ in
         ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$webhook_secret_file")"
         if [ -r "$persistent_webhook_secret" ]; then
           ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_webhook_secret" "$webhook_secret_file"
-        elif [ ! -r "$webhook_secret_file" ]; then
-          echo "warning: Renovate dashboard webhook secret is not readable at $webhook_secret_file or $persistent_webhook_secret"
+        else
+          if [ -r "$webhook_secret_file" ]; then
+            ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$webhook_secret_file" "$persistent_webhook_secret"
+          else
+            secret_tmp="$(${pkgs.coreutils}/bin/mktemp)"
+            ${pkgs.openssl}/bin/openssl rand -hex 32 > "$secret_tmp"
+            ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$secret_tmp" "$persistent_webhook_secret"
+            ${pkgs.coreutils}/bin/rm -f "$secret_tmp"
+          fi
+
+          ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_webhook_secret" "$webhook_secret_file"
         fi
       ''}
     '';
@@ -950,6 +1060,27 @@ in
         "AF_INET6"
         "AF_UNIX"
       ];
+    };
+  };
+
+  systemd.services.infra-renovate-dashboard-webhook-ensure = lib.mkIf dashboardWebhookEnabled {
+    description = "Ensure Forgejo Dependency Dashboard webhook registration";
+    wantedBy = [ "multi-user.target" ];
+    wants = [
+      "network-online.target"
+      "infra-renovate-dashboard-webhook.service"
+    ];
+    after = [
+      "network-online.target"
+      "infra-renovate-dashboard-webhook.service"
+    ];
+    unitConfig.OnFailure = "infra-update-report@%n.service";
+    serviceConfig = {
+      Type = "oneshot";
+      User = "rnetadmin";
+      Group = "rnetadmin";
+      ExecStart = "${dashboardWebhookEnsure}/bin/infra-renovate-dashboard-webhook-ensure";
+      TimeoutStartSec = "2min";
     };
   };
 

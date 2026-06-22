@@ -6,7 +6,7 @@
 
 1. `infra-renovate.timer` runs daily at `01:00`.
    It runs Renovate against Forgejo using `RENOVATE_PLATFORM=forgejo`, opens update PRs against `indev`, and stores logs in `/var/log/infratainer`.
-   Dependency Dashboard checkbox clicks are also handled by `infra-renovate-dashboard-webhook.service` when the Forgejo repository webhook described below is configured. Forgejo persists the checkbox as an issue-body edit; the webhook starts `infra-renovate.service` so Renovate consumes the checked box immediately instead of waiting for the next daily timer.
+   Dependency Dashboard checkbox clicks are also handled by `infra-renovate-dashboard-webhook.service`. Forgejo persists the checkbox as an issue-body edit; the webhook starts `infra-renovate.service` so Renovate consumes the checked box immediately instead of waiting for the next daily timer.
 2. `infra-promote.timer` runs daily at `01:45`.
    It inspects open Renovate PRs whose branch starts with `renovate/`.
 3. PRs labeled `infra-auto-merge` are validated locally. PRs labeled `manual-update`
@@ -50,11 +50,13 @@ Set `secrets.infraAutomation.keys.secretsDir` if the automation secret overlay s
 
 Set `secrets.infraAutomation.keys.githubTokenFile` on `devenv` when Renovate should fetch release notes from public GitHub repositories. The file should contain a GitHub token with read-only public repository/API access and no write scopes. The service exports it as `GITHUB_COM_TOKEN` for Renovate only when the file is configured and readable. Omit this key if GitHub release-note lookup is intentionally disabled for the deployment.
 
-Set `secrets.infraAutomation.keys.dashboardWebhookSecretFile` on `devenv` to enable immediate Dependency Dashboard checkbox handling. The file should contain a random webhook secret shared with the Forgejo repository webhook. By default the listener binds only to the WireGuard mesh address `10.255.0.1:1044`, validates Forgejo/Gitea/GitHub-style HMAC signatures, ignores Infratainer-authored dashboard rewrites, and starts only `infra-renovate.service`.
+Immediate Dependency Dashboard checkbox handling is enabled by default on `devenv`. Override `secrets.infraAutomation.keys.dashboardWebhookEnabled = false` only when the deployment should rely on the daily timer. The listener binds only to the WireGuard mesh address `10.255.0.1:1044`, validates Forgejo/Gitea/GitHub-style HMAC signatures, ignores Infratainer-authored dashboard rewrites, and starts only `infra-renovate.service`.
+
+`secrets.infraAutomation.keys.dashboardWebhookSecretFile` defaults to `/run/secrets/infra-renovate-webhook-secret`. During activation, `devenv` restores that file from `/var/lib/infratainer/secrets/infra-renovate-webhook-secret`; if neither copy exists, activation generates a new random secret and stores it persistently outside the repository. `infra-renovate-dashboard-webhook-ensure.service` then creates or updates the Forgejo repository webhook with that secret through the existing Infratainer Forgejo token.
 
 The managed checkout does not contain `modules/secrets/` because those files are gitignored. During `devenv` activation, if the local flake source contains the live `modules/secrets` tree, activation copies `*.nix` secret modules into the external secrets directory and seeds `modules/secrets/infra-automation-token` as `/var/lib/infratainer/secrets/infra-automation-token`. Every `devenv` activation then restores `/run/secrets/infra-automation-token` from that persistent copy with `rnetadmin` read access. This makes the first automatic update cycle ready after `rebuildHost devenv` and keeps the runtime token available after later clean-checkout rebuilds.
 
-If `modules/secrets/infra-renovate-webhook-secret` exists and `dashboardWebhookSecretFile` is configured, `devenv` activation also seeds `/var/lib/infratainer/secrets/infra-renovate-webhook-secret` and restores the configured runtime webhook secret file with `rnetadmin` read access.
+If `modules/secrets/infra-renovate-webhook-secret` exists, `devenv` activation seeds `/var/lib/infratainer/secrets/infra-renovate-webhook-secret` from it before restoring the runtime webhook secret file with `rnetadmin` read access. This is optional; generated local secrets are preferred unless a specific shared secret must be retained.
 
 If activation cannot see the live secret tree, provision the live secret modules manually before automatic validation or deploy builds from `/var/lib/infratainer/checkout`:
 
@@ -64,20 +66,20 @@ sudo install -o rnetadmin -g rnetadmin -m 0640 modules/secrets/*.nix /var/lib/in
 sudo install -d -o root -g rnetadmin -m 0750 /run/secrets
 sudo install -o root -g rnetadmin -m 0640 modules/secrets/infra-automation-token /run/secrets/infra-automation-token
 sudo install -o root -g rnetadmin -m 0640 /path/to/github-com-token /run/secrets/github-com-token
-sudo install -o root -g rnetadmin -m 0640 /path/to/infra-renovate-webhook-secret /var/lib/infratainer/secrets/infra-renovate-webhook-secret
-sudo install -o root -g rnetadmin -m 0640 /path/to/infra-renovate-webhook-secret /run/secrets/infra-renovate-webhook-secret
 ```
 
 The directory must include any helper files imported by host secret modules, such as `infraAutomation.nix`.
 
-Create a Forgejo repository webhook for Dependency Dashboard checkboxes:
+`infra-renovate-dashboard-webhook-ensure.service` maintains this Forgejo repository webhook for Dependency Dashboard checkboxes:
 
 ```text
 URL: http://10.255.0.1:1044/renovate-dashboard
 Content type: application/json
-Secret: same value as /run/secrets/infra-renovate-webhook-secret
+Secret: generated/restored from /run/secrets/infra-renovate-webhook-secret
 Trigger: issue events
 ```
+
+After changing this automation module, apply it with `rebuildHost devenv`; the switch starts the listener and the ensure service creates or updates the Forgejo webhook. The ensure service mutates only this repository's webhook configuration.
 
 The URL is intentionally mesh-local. Do not expose this listener through the public reverse proxy. The daily `infra-renovate.timer` remains the fallback if the webhook is disabled or temporarily unreachable.
 
@@ -89,7 +91,7 @@ Major container updates are labeled `manual-update`. They stay open until a huma
 
 Manual approvals are evaluated against the current PR head when Forgejo exposes the review commit SHA, so a Renovate rebase or update requires a fresh approval.
 
-Container updates are split by service or risk rather than one broad container PR. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
+Container updates are split by service or risk rather than one broad container PR. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Hudu is pinned to published version tags instead of `latest` so Renovate can monitor and update it. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
 
 Lock-file maintenance uses Renovate's default schedule from `config:recommended` and is only created before 04:00 on Monday. When the dashboard lists lock-file maintenance as rate-limited outside that window, that is expected; it should become schedulable during the next Monday maintenance window.
 
@@ -112,6 +114,7 @@ sudo systemctl start infra-renovate.service
 sudo systemctl start infra-promote.service
 sudo systemctl start infra-deploy.service
 sudo systemctl status infra-renovate-dashboard-webhook.service
+sudo systemctl status infra-renovate-dashboard-webhook-ensure.service
 ```
 
 Use only the first command when you just want Renovate to create or refresh PRs. Run `infra-promote.service` after reviewing or approving manual PRs. Run `infra-deploy.service` after promoted PRs have merged and should be deployed to the fleet.
@@ -127,6 +130,7 @@ Inspect failures:
 ```bash
 journalctl -u infra-renovate.service
 journalctl -u infra-renovate-dashboard-webhook.service
+journalctl -u infra-renovate-dashboard-webhook-ensure.service
 journalctl -u infra-promote.service
 journalctl -u infra-deploy.service
 journalctl -u docker-container-auto-update.service
