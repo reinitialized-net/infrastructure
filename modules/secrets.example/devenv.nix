@@ -34,6 +34,9 @@
         gitAuthorEmail = "infratainer@reinitialized.net";
         renovateBranchPrefix = "renovate/";
         githubTokenFile = "/run/secrets/github-com-token";
+        dashboardWebhookSecretFile = "/run/secrets/infra-renovate-webhook-secret";
+        dashboardWebhookBindAddress = "10.255.0.1";
+        dashboardWebhookPort = 1044;
       };
     };
     volumeMigration = {

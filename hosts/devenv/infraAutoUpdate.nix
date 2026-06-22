@@ -16,8 +16,10 @@ let
   secretsDir = automationKeys.secretsDir or "${stateDir}/secrets";
   liveSecretsSource = "${self}/modules/secrets";
   liveTokenSource = "${liveSecretsSource}/infra-automation-token";
+  liveDashboardWebhookSecretSource = "${liveSecretsSource}/infra-renovate-webhook-secret";
   hasLiveSecretsSource = builtins.pathExists liveSecretsSource;
   hasLiveTokenSource = builtins.pathExists liveTokenSource;
+  hasLiveDashboardWebhookSecretSource = builtins.pathExists liveDashboardWebhookSecretSource;
   meshTopology = import "${self}/modules/profiles/meshNetwork/meshTopology.nix" { inherit lib; };
   exportedHosts = builtins.attrNames self.nixosConfigurations;
   deployHostIps = lib.filter (ip: ip != null) (
@@ -44,6 +46,10 @@ let
   gitAuthorEmail = automationKeys.gitAuthorEmail or "infratainer@reinitialized.net";
   renovateBranchPrefix = automationKeys.renovateBranchPrefix or "renovate/";
   githubTokenFile = toString (automationKeys.githubTokenFile or "");
+  dashboardWebhookSecretFile = toString (automationKeys.dashboardWebhookSecretFile or "");
+  dashboardWebhookBindAddress = automationKeys.dashboardWebhookBindAddress or "10.255.0.1";
+  dashboardWebhookPort = automationKeys.dashboardWebhookPort or 1044;
+  dashboardWebhookEnabled = dashboardWebhookSecretFile != "";
   tokenFile =
     if automationSecret ? file && automationSecret.file != null
     then toString automationSecret.file
@@ -77,6 +83,210 @@ EOF
       return 1
     }
   '';
+
+  dashboardWebhookPy = pkgs.writeText "infra-renovate-dashboard-webhook.py" ''
+    import hashlib
+    import hmac
+    import http.server
+    import json
+    import os
+    import re
+    import subprocess
+    import sys
+
+    BIND_ADDRESS = os.environ["RENOVATE_DASHBOARD_WEBHOOK_BIND"]
+    PORT = int(os.environ["RENOVATE_DASHBOARD_WEBHOOK_PORT"])
+    SECRET_FILE = os.environ["RENOVATE_DASHBOARD_WEBHOOK_SECRET_FILE"]
+    REPOSITORY = os.environ["RENOVATE_DASHBOARD_WEBHOOK_REPOSITORY"]
+    ISSUE_TITLE = os.environ["RENOVATE_DASHBOARD_WEBHOOK_ISSUE_TITLE"]
+    BOT_USERNAME = os.environ["RENOVATE_DASHBOARD_WEBHOOK_BOT_USERNAME"].lower()
+    SYSTEMCTL = os.environ.get("RENOVATE_DASHBOARD_WEBHOOK_SYSTEMCTL", "systemctl")
+    SERVICE = os.environ.get("RENOVATE_DASHBOARD_WEBHOOK_SERVICE", "infra-renovate.service")
+    MAX_BODY_BYTES = 1024 * 1024
+    CHECKED_COMMAND_RE = re.compile(
+        r" - \[x\] <!-- (?:(?:[a-zA-Z]+)-branch=[^\s]+|"
+        r"rebase-all-open-prs|approve-all-pending-prs|"
+        r"create-all-rate-limited-prs|create-config-migration-pr) -->"
+    )
+
+
+    def log(message):
+        print(message, flush=True)
+
+
+    def read_secret():
+        with open(SECRET_FILE, "rb") as secret_file:
+            secret = secret_file.readline().strip()
+        if not secret:
+            raise RuntimeError("webhook secret file is empty")
+        return secret
+
+
+    def signature_values(headers):
+        for header in ("X-Forgejo-Signature", "X-Gitea-Signature"):
+            value = headers.get(header)
+            if value:
+                yield value.strip().lower()
+
+        value = headers.get("X-Hub-Signature-256")
+        if value:
+            yield value.strip().lower()
+
+        value = headers.get("X-Hub-Signature")
+        if value:
+            yield value.strip().lower()
+
+
+    def valid_signature(headers, body):
+        secret = read_secret()
+        sha256 = hmac.new(secret, body, hashlib.sha256).hexdigest()
+        sha1 = hmac.new(secret, body, hashlib.sha1).hexdigest()
+        accepted = {
+            sha256,
+            "sha256=" + sha256,
+            sha1,
+            "sha1=" + sha1,
+        }
+
+        return any(
+            hmac.compare_digest(candidate, expected)
+            for candidate in signature_values(headers)
+            for expected in accepted
+        )
+
+
+    def get_sender(payload):
+        sender = payload.get("sender") or {}
+        return (sender.get("username") or sender.get("login") or "").lower()
+
+
+    def should_start_renovate(headers, payload):
+        event = (
+            headers.get("X-Forgejo-Event")
+            or headers.get("X-Gitea-Event")
+            or headers.get("X-GitHub-Event")
+            or ""
+        ).lower()
+        if event not in ("issue", "issues"):
+            return False, "ignored non-issue event"
+
+        action = (payload.get("action") or "").lower()
+        if action not in ("edited", "updated"):
+            return False, "ignored issue action"
+
+        sender = get_sender(payload)
+        if sender and sender == BOT_USERNAME:
+            return False, "ignored bot-authored dashboard update"
+
+        repository = payload.get("repository") or {}
+        full_name = repository.get("full_name") or repository.get("fullName")
+        if full_name and full_name != REPOSITORY:
+            return False, "ignored different repository"
+
+        issue = payload.get("issue") or {}
+        if issue.get("title") != ISSUE_TITLE:
+            return False, "ignored different issue"
+
+        body = issue.get("body") or ""
+        if not CHECKED_COMMAND_RE.search(body):
+            return False, "ignored dashboard edit without a checked Renovate command"
+
+        return True, "dashboard command detected"
+
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        server_version = "infra-renovate-dashboard-webhook"
+
+        def log_message(self, fmt, *args):
+            sys.stdout.write("%s - %s\n" % (self.address_string(), fmt % args))
+            sys.stdout.flush()
+
+        def respond(self, status, message):
+            body = (message + "\n").encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_GET(self):
+            if self.path == "/healthz":
+                self.respond(200, "ok")
+            else:
+                self.respond(404, "not found")
+
+        def do_POST(self):
+            if self.path != "/renovate-dashboard":
+                self.respond(404, "not found")
+                return
+
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self.respond(400, "invalid content length")
+                return
+
+            if content_length <= 0 or content_length > MAX_BODY_BYTES:
+                self.respond(413, "invalid payload size")
+                return
+
+            body = self.rfile.read(content_length)
+
+            try:
+                if not valid_signature(self.headers, body):
+                    self.respond(401, "invalid signature")
+                    return
+            except Exception as err:
+                log("signature validation failed: %s" % err)
+                self.respond(500, "signature validation failed")
+                return
+
+            try:
+                payload = json.loads(body.decode("utf-8"))
+            except json.JSONDecodeError:
+                self.respond(400, "invalid json")
+                return
+
+            should_start, reason = should_start_renovate(self.headers, payload)
+            if not should_start:
+                log(reason)
+                self.respond(202, reason)
+                return
+
+            result = subprocess.run(
+                [SYSTEMCTL, "start", SERVICE],
+                text=True,
+                capture_output=True,
+            )
+            if result.returncode != 0:
+                log("failed to start %s: %s" % (SERVICE, result.stderr.strip()))
+                self.respond(500, "failed to start renovate")
+                return
+
+            log("started %s after Dependency Dashboard checkbox edit" % SERVICE)
+            self.respond(202, "renovate started")
+
+
+    def main():
+        httpd = http.server.ThreadingHTTPServer((BIND_ADDRESS, PORT), Handler)
+        log("listening on http://%s:%s/renovate-dashboard" % (BIND_ADDRESS, PORT))
+        httpd.serve_forever()
+
+
+    if __name__ == "__main__":
+        main()
+  '';
+
+  dashboardWebhook = pkgs.writeShellApplication {
+    name = "infra-renovate-dashboard-webhook";
+    runtimeInputs = [
+      pkgs.python3
+      pkgs.systemd
+    ];
+    text = ''
+      exec ${pkgs.python3}/bin/python3 ${dashboardWebhookPy}
+    '';
+  };
 
   infraUpdateReport = import "${self}/library/infraUpdateReport.nix" {
     inherit config pkgs;
@@ -619,6 +829,10 @@ in
       assertion = !(lib.hasPrefix "/nix/store/" tokenFile);
       message = "secrets.infraAutomation.file must point to a runtime secret path such as /run/secrets/infra-automation-token, not a Nix store path.";
     }
+    {
+      assertion = !dashboardWebhookEnabled || !(lib.hasPrefix "/nix/store/" dashboardWebhookSecretFile);
+      message = "secrets.infraAutomation.keys.dashboardWebhookSecretFile must point to a runtime secret path such as /run/secrets/infra-renovate-webhook-secret, not a Nix store path.";
+    }
   ];
 
   services.infraUpdateReport.enable = true;
@@ -627,6 +841,8 @@ in
     infraDeploy
     infraPromote
     infraRenovate
+  ] ++ lib.optionals dashboardWebhookEnabled [
+    dashboardWebhook
   ];
 
   systemd.tmpfiles.rules = [
@@ -645,7 +861,9 @@ in
       secrets_dir=${lib.escapeShellArg secretsDir}
       source_dir=${lib.escapeShellArg liveSecretsSource}
       token_file=${lib.escapeShellArg tokenFile}
+      webhook_secret_file=${lib.escapeShellArg dashboardWebhookSecretFile}
       persistent_token="$secrets_dir/infra-automation-token"
+      persistent_webhook_secret="$secrets_dir/infra-renovate-webhook-secret"
 
       ${pkgs.coreutils}/bin/install -d -o rnetadmin -g rnetadmin -m 0750 "$secrets_dir"
 
@@ -664,12 +882,23 @@ in
       ${lib.optionalString hasLiveTokenSource ''
         ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 ${lib.escapeShellArg liveTokenSource} "$persistent_token"
       ''}
+      ${lib.optionalString (dashboardWebhookEnabled && hasLiveDashboardWebhookSecretSource) ''
+        ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 ${lib.escapeShellArg liveDashboardWebhookSecretSource} "$persistent_webhook_secret"
+      ''}
       ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$token_file")"
       if [ -r "$persistent_token" ]; then
         ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_token" "$token_file"
       elif [ ! -r "$token_file" ]; then
         echo "warning: Infratainer token is not readable at $token_file or $persistent_token"
       fi
+      ${lib.optionalString dashboardWebhookEnabled ''
+        ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$webhook_secret_file")"
+        if [ -r "$persistent_webhook_secret" ]; then
+          ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_webhook_secret" "$webhook_secret_file"
+        elif [ ! -r "$webhook_secret_file" ]; then
+          echo "warning: Renovate dashboard webhook secret is not readable at $webhook_secret_file or $persistent_webhook_secret"
+        fi
+      ''}
     '';
   };
 
@@ -685,6 +914,42 @@ in
       WorkingDirectory = stateDir;
       ExecStart = "${infraRenovate}/bin/infra-renovate";
       TimeoutStartSec = "2h";
+    };
+  };
+
+  systemd.services.infra-renovate-dashboard-webhook = lib.mkIf dashboardWebhookEnabled {
+    description = "Trigger Renovate from Dependency Dashboard issue checkbox edits";
+    wantedBy = [ "multi-user.target" ];
+    wants = [ "network-online.target" ];
+    after = [ "network-online.target" ];
+    unitConfig.OnFailure = "infra-update-report@%n.service";
+    environment = {
+      RENOVATE_DASHBOARD_WEBHOOK_BIND = dashboardWebhookBindAddress;
+      RENOVATE_DASHBOARD_WEBHOOK_PORT = toString dashboardWebhookPort;
+      RENOVATE_DASHBOARD_WEBHOOK_SECRET_FILE = dashboardWebhookSecretFile;
+      RENOVATE_DASHBOARD_WEBHOOK_REPOSITORY = repoSlug;
+      RENOVATE_DASHBOARD_WEBHOOK_ISSUE_TITLE = "Dependency Dashboard";
+      RENOVATE_DASHBOARD_WEBHOOK_BOT_USERNAME = forgejoUsername;
+      RENOVATE_DASHBOARD_WEBHOOK_SYSTEMCTL = "${pkgs.systemd}/bin/systemctl";
+      RENOVATE_DASHBOARD_WEBHOOK_SERVICE = "infra-renovate.service";
+    };
+    serviceConfig = {
+      Type = "simple";
+      User = "rnetadmin";
+      Group = "rnetadmin";
+      SupplementaryGroups = [ "wheel" ];
+      ExecStart = "${dashboardWebhook}/bin/infra-renovate-dashboard-webhook";
+      Restart = "on-failure";
+      RestartSec = "10s";
+      NoNewPrivileges = true;
+      PrivateTmp = true;
+      ProtectHome = true;
+      ProtectSystem = "strict";
+      RestrictAddressFamilies = [
+        "AF_INET"
+        "AF_INET6"
+        "AF_UNIX"
+      ];
     };
   };
 
