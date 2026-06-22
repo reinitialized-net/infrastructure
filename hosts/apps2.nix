@@ -80,7 +80,7 @@
     dnsTwo = {
       autoStart = true;
       hostname = "dnsTwo";
-      image = "technitium/dns-server:14.3.0";
+      image = "technitium/dns-server:15.2.0";
       networks = [
         "backend"
       ];
