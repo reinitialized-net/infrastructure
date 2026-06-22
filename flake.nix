@@ -4,7 +4,7 @@
   inputs = {
     nixpkgsMaster.url = "github:NixOS/nixpkgs/master";
     nixpkgsUnstable.url = "github:NixOS/nixpkgs/nixos-unstable";
-    nixpkgsStable.url = "github:NixOS/nixpkgs/nixos-25.11";
+    nixpkgsStable.url = "github:NixOS/nixpkgs/nixos-26.05";
 
     vscodeServer = {
       url = "github:nix-community/nixos-vscode-server";
