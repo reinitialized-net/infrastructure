@@ -7,6 +7,11 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ## [Unreleased]
 
+### Changed
+
+- Preserve additive Renovate service and risk labels for Infratainer-managed dependency PRs and label every active container image family by affected service.
+- Report declarative container unit failures through the shared Infratainer Forgejo issue reporter, including containers skipped by digest-drift restarts.
+
 ### Fixed
 
 - Seed Infratainer's external live-secret overlay and runtime Forgejo token during `devenv` activation when local gitignored secrets are available.

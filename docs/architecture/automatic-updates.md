@@ -88,13 +88,13 @@ The URL is intentionally mesh-local. Do not expose this listener through the pub
 
 ## Renovate Labels
 
-`renovate.json` labels eligible PRs with `infra-auto-merge`. The promoter only merges PRs with that label after validation passes.
+`renovate.json` gives every PR the base `dependencies` label and appends manager, service, and risk labels with `addLabels` so matching rules do not overwrite each other. Eligible PRs get `infra-auto-merge`. The promoter only merges PRs with that label after validation passes.
 
 Major container updates are labeled `manual-update`. They stay open until a human approves the PR in Forgejo. After approval, `infra-promote` validates the PR against the same flake and host build checks, then merges it through the Forgejo API if validation passes.
 
 Manual approvals are evaluated against the current PR head when Forgejo exposes the review commit SHA, so a Renovate rebase or update requires a fresh approval.
 
-Container updates are split by service or risk rather than one broad container PR. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Hudu is pinned to published version tags instead of `latest` so Renovate can monitor and update it. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
+Container updates are split by service or risk rather than one broad container PR. Every image family used by an exported host has a `service:*` label so the Dependency Dashboard and PR list show the affected service. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Hudu is pinned to published version tags instead of `latest` so Renovate can monitor and update it. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
 
 Lock-file maintenance uses Renovate's default schedule from `config:recommended` and is only created before 04:00 on Monday. When the dashboard lists lock-file maintenance as rate-limited outside that window, that is expected; it should become schedulable during the next Monday maintenance window.
 
@@ -106,7 +106,7 @@ nix flake update nixpkgsStable
 
 ## Container Image Updates
 
-The Docker image pull timer remains enabled through `services.containerAutoUpdate`. The containers profile enables the shared `infra-update-report@.service` so Docker auto-update failures can create or update Forgejo issues from the affected host.
+The Docker image pull timer remains enabled through `services.containerAutoUpdate`. The containers profile enables the shared `infra-update-report@.service` so Docker auto-update failures and declarative container unit failures can create or update Forgejo issues from the affected host.
 
 High-risk containers are skipped from digest-drift restarts on each host and are instead handled by Renovate PRs. Low-risk containers continue to pull and restart automatically when the image ID changes. The updater logs structured `container_update_event` lines with container name, image, service, old image ID, new image ID, and action.
 

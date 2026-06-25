@@ -4,21 +4,29 @@
   config,
   pkgs,
   ...
-}: let
+}:
+let
   cfg = config.services.containerAutoUpdate;
-  containerEntries = lib.mapAttrsToList
-    (name: container: {
-      name = name;
-      image = container.image;
-      serviceName = if container ? serviceName then container.serviceName else "docker-${name}";
-    })
-    config.virtualisation.oci-containers.containers;
+  containerEntries = lib.mapAttrsToList (name: container: {
+    name = name;
+    image = container.image;
+    serviceName = if container ? serviceName then container.serviceName else "docker-${name}";
+  }) config.virtualisation.oci-containers.containers;
 
-  containerDefinitionsScript = lib.concatMapStringsSep "\n" (entry:
-    "${entry.name}|${entry.image}|${entry.serviceName}"
+  containerDefinitionsScript = lib.concatMapStringsSep "\n" (
+    entry: "${entry.name}|${entry.image}|${entry.serviceName}"
   ) containerEntries;
 
   skipContainersScript = lib.concatMapStringsSep "\n" (entry: entry) cfg.skipContainers;
+
+  containerFailureServices = lib.listToAttrs (
+    map (
+      entry:
+      lib.nameValuePair (lib.removeSuffix ".service" entry.serviceName) {
+        unitConfig.OnFailure = lib.mkDefault "infra-update-report@%n.service";
+      }
+    ) containerEntries
+  );
 
   # Validation script for docker user SSH commands.
   # Only allows commands needed for volume migration:
@@ -38,8 +46,9 @@
         ;;
     esac
   '';
-  in {
-  imports = [ 
+in
+{
+  imports = [
     "${self}/modules/profiles/meshNetwork"
     "${self}/modules/profiles/infraUpdateReport.nix"
     "${self}/modules/profiles/secrets.nix"
@@ -76,7 +85,10 @@
         Container names from `virtualisation.oci-containers.containers` to skip during
         image pull/restart checks.
       '';
-      example = [ "stateful-db" "wireguard" ];
+      example = [
+        "stateful-db"
+        "wireguard"
+      ];
     };
 
     pullOnly = lib.mkOption {
@@ -95,225 +107,247 @@
     };
   };
 
-  config = {
-    virtualisation = {
-      docker = {
-        enable = lib.mkForce true;
-        package = lib.mkDefault pkgs.docker_29;
-        daemon.settings = {
-          icc = lib.mkForce true;
-          no-new-privileges = lib.mkForce true;
+  config = lib.mkMerge [
+    {
+      virtualisation = {
+        docker = {
+          enable = lib.mkForce true;
+          package = lib.mkDefault pkgs.docker_29;
+          daemon.settings = {
+            icc = lib.mkForce true;
+            no-new-privileges = lib.mkForce true;
+          };
+          # Ensure containers inherit host time and timezone
+          extraOptions = "--default-ulimit nofile=65536:65536";
         };
-        # Ensure containers inherit host time and timezone
-        extraOptions = "--default-ulimit nofile=65536:65536";
+        oci-containers.backend = lib.mkForce "docker";
       };
-      oci-containers.backend = lib.mkForce "docker";
-    };
 
-    boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
+      boot.kernelParams = lib.mkIf (!config.boot.isContainer) [ "systemd.unified_cgroup_hierarchy=1" ];
 
-    # Automatically prune stopped containers, dangling images, and unused networks daily.
-    # This prevents stale CI job containers (e.g. from Forgejo Runner) from accumulating
-    # and filling the data disk.
-    virtualisation.docker.autoPrune = {
-      enable = true;
-      dates = "daily";
-      flags = [ "--filter" "until=24h" ];
-    };
-
-    # Declarative OCI container image maintenance.
-    services.infraUpdateReport.enable = lib.mkDefault true;
-
-    systemd.services.docker-container-auto-update = lib.mkIf cfg.enable {
-      description = "Update Docker OCI container images from declarative definitions";
-      after = [ "docker.service" ];
-      unitConfig.OnFailure = "infra-update-report@%n.service";
-      serviceConfig = {
-        Type = "oneshot";
+      # Automatically prune stopped containers, dangling images, and unused networks daily.
+      # This prevents stale CI job containers (e.g. from Forgejo Runner) from accumulating
+      # and filling the data disk.
+      virtualisation.docker.autoPrune = {
+        enable = true;
+        dates = "daily";
+        flags = [
+          "--filter"
+          "until=24h"
+        ];
       };
-      path = [ pkgs.bash pkgs.coreutils config.virtualisation.docker.package pkgs.systemd ];
-      script = ''
-        #!/usr/bin/env bash
-        set -euo pipefail
 
-        pull_only=${if cfg.pullOnly then "true" else "false"}
-        restart_changed_only=${if cfg.restartChangedOnly then "true" else "false"}
+      # Declarative OCI container image maintenance.
+      services.infraUpdateReport.enable = lib.mkDefault true;
 
-        skip_containers="${skipContainersScript}"
+      systemd.services.docker-container-auto-update = lib.mkIf cfg.enable {
+        description = "Update Docker OCI container images from declarative definitions";
+        after = [ "docker.service" ];
+        unitConfig.OnFailure = "infra-update-report@%n.service";
+        serviceConfig = {
+          Type = "oneshot";
+        };
+        path = [
+          pkgs.bash
+          pkgs.coreutils
+          config.virtualisation.docker.package
+          pkgs.systemd
+        ];
+        script = ''
+          #!/usr/bin/env bash
+          set -euo pipefail
 
-        container_entries="${containerDefinitionsScript}"
-        had_failure=0
+          pull_only=${if cfg.pullOnly then "true" else "false"}
+          restart_changed_only=${if cfg.restartChangedOnly then "true" else "false"}
 
-        is_skipped() {
-          local target="$1"
-          while IFS= read -r candidate; do
-            [ -z "$candidate" ] && continue
-            if [ "$candidate" = "$target" ]; then
-              return 0
+          skip_containers="${skipContainersScript}"
+
+          container_entries="${containerDefinitionsScript}"
+          had_failure=0
+
+          is_skipped() {
+            local target="$1"
+            while IFS= read -r candidate; do
+              [ -z "$candidate" ] && continue
+              if [ "$candidate" = "$target" ]; then
+                return 0
+              fi
+            done <<< "$skip_containers"
+            return 1
+          }
+
+          get_image_id() {
+            local image="$1"
+            docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || echo "__IMAGE_UNKNOWN__"
+          }
+
+          if [ -z "$container_entries" ]; then
+            echo "No OCI containers are configured under virtualisation.oci-containers.containers."
+            exit 0
+          fi
+
+          while IFS= read -r entry; do
+            [ -z "$entry" ] && continue
+            IFS='|' read -r container_name container_image container_service <<< "$entry"
+
+            if is_skipped "$container_name"; then
+              echo "container_update_event container=$container_name image=$container_image service=$container_service action=skip_policy"
+              continue
             fi
-          done <<< "$skip_containers"
-          return 1
-        }
 
-        get_image_id() {
-          local image="$1"
-          docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || echo "__IMAGE_UNKNOWN__"
-        }
+            before_id="$(get_image_id "$container_image")"
+            echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id action=pull"
+            if ! docker pull "$container_image"; then
+              echo "Failed to pull image for $container_name ($container_image)"
+              echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id after_id=__PULL_FAILED__ changed=unknown action=pull_failed"
+              had_failure=1
+              continue
+            fi
 
-        if [ -z "$container_entries" ]; then
-          echo "No OCI containers are configured under virtualisation.oci-containers.containers."
-          exit 0
-        fi
+            if [[ "$pull_only" == "true" ]]; then
+              echo "Pulled image for $container_name; pull-only mode enabled."
+              continue
+            fi
 
-        while IFS= read -r entry; do
-          [ -z "$entry" ] && continue
-          IFS='|' read -r container_name container_image container_service <<< "$entry"
+            after_id="$(get_image_id "$container_image")"
+            unit_name="$(printf '%s' "$container_service" | sed 's/\\.service$//').service"
+            echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id action=inspect"
 
-          if is_skipped "$container_name"; then
-            echo "container_update_event container=$container_name image=$container_image service=$container_service action=skip_policy"
-            continue
-          fi
+            if ! systemctl cat "$unit_name" > /dev/null 2>&1; then
+              echo "Container service $unit_name not found; skipping."
+              continue
+            fi
 
-          before_id="$(get_image_id "$container_image")"
-          echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id action=pull"
-          if ! docker pull "$container_image"; then
-            echo "Failed to pull image for $container_name ($container_image)"
-            echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id after_id=__PULL_FAILED__ changed=unknown action=pull_failed"
-            had_failure=1
-            continue
-          fi
+            if [[ "$restart_changed_only" == "true" && "$before_id" == "$after_id" ]]; then
+              echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=false action=skip_restart"
+              continue
+            fi
 
-          if [[ "$pull_only" == "true" ]]; then
-            echo "Pulled image for $container_name; pull-only mode enabled."
-            continue
-          fi
+            echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=true action=restart"
+            if ! systemctl restart "$unit_name"; then
+              echo "Failed to restart $unit_name"
+              exit 1
+            fi
+          done <<< "$container_entries"
 
-          after_id="$(get_image_id "$container_image")"
-          unit_name="$(printf '%s' "$container_service" | sed 's/\\.service$//').service"
-          echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id action=inspect"
-
-          if ! systemctl cat "$unit_name" > /dev/null 2>&1; then
-            echo "Container service $unit_name not found; skipping."
-            continue
-          fi
-
-          if [[ "$restart_changed_only" == "true" && "$before_id" == "$after_id" ]]; then
-            echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=false action=skip_restart"
-            continue
-          fi
-
-          echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=true action=restart"
-          if ! systemctl restart "$unit_name"; then
-            echo "Failed to restart $unit_name"
+          if [ "$had_failure" -ne 0 ]; then
+            echo "One or more container image updates failed."
             exit 1
           fi
-        done <<< "$container_entries"
+        '';
+      };
 
-        if [ "$had_failure" -ne 0 ]; then
-          echo "One or more container image updates failed."
-          exit 1
-        fi
+      systemd.timers.docker-container-auto-update = lib.mkIf cfg.enable {
+        description = "Run Docker container image update checks";
+        wantedBy = [ "timers.target" ];
+        timerConfig = {
+          OnCalendar = cfg.schedule;
+          RandomizedDelaySec = cfg.randomizedDelaySec;
+          Persistent = true;
+        };
+      };
+
+      fileSystems = {
+        "/var/lib/docker/volumes" = {
+          depends = [ "/mnt/data" ];
+          device = "/mnt/data/docker/volumes";
+          fsType = "none";
+          options = [ "bind" ];
+        };
+        "/var/lib/docker" = lib.mkForce {
+          device = "/mnt/data/docker";
+          depends = [ "/mnt/data/docker/volumes" ];
+          fsType = "none";
+          options = [ "bind" ];
+        };
+      };
+
+      users = {
+        groups.docker = lib.mkForce { };
+
+        users.docker = {
+          isSystemUser = lib.mkForce true;
+          shell = lib.mkForce pkgs.bashInteractive;
+          home = lib.mkForce "/home/docker";
+          createHome = lib.mkForce true;
+          group = lib.mkForce "docker";
+          initialHashedPassword = lib.mkForce "!";
+
+          # SSH authorized key for volume migration between Docker hosts
+          openssh.authorizedKeys.keys = [
+            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfLHdV15r9vsPKZsrzLMjOfH9VgsKF8SK2vu9A6kDsJ docker-volume-migration"
+          ];
+        };
+      };
+
+      # Allow docker group members to run ssh as the docker user for volume migration.
+      # This is scoped to only the ssh binary — no general shell access.
+      security.sudo-rs.extraRules = [
+        {
+          groups = [ "docker" ];
+          commands = [
+            {
+              command = "${pkgs.openssh}/bin/ssh *";
+              options = [
+                "NOPASSWD"
+                "SETENV"
+              ];
+            }
+            {
+              command = "${pkgs.coreutils}/bin/test *";
+              options = [ "NOPASSWD" ];
+            }
+          ];
+          runAs = "docker";
+        }
+      ];
+
+      # Restrict the docker user's SSH access to only SCP/SFTP file transfers
+      # and docker commands needed for volume migration. No interactive shell,
+      # no port forwarding, no agent forwarding.
+      services.openssh.extraConfig = ''
+        Match User docker
+          AllowTcpForwarding no
+          AllowAgentForwarding no
+          X11Forwarding no
+          PermitTunnel no
+          ForceCommand ${dockerSshValidator}
       '';
-    };
 
-    systemd.timers.docker-container-auto-update = lib.mkIf cfg.enable {
-      description = "Run Docker container image update checks";
-      wantedBy = [ "timers.target" ];
-      timerConfig = {
-        OnCalendar = cfg.schedule;
-        RandomizedDelaySec = cfg.randomizedDelaySec;
-        Persistent = true;
+      # Deploy the SSH private key for the docker user to use when connecting to other hosts.
+      # The key is sourced from config.secrets.volumeMigration.file and written with
+      # strict permissions (0600, owned by docker:docker) as required by SSH.
+      systemd.services.deploy-docker-migration-key = {
+        description = "Deploy SSH private key for docker volume migration";
+        wantedBy = [ "multi-user.target" ];
+        after = [ "network.target" ];
+        serviceConfig = {
+          Type = "oneshot";
+          RemainAfterExit = true;
+        };
+        script = ''
+          mkdir -p /home/docker/.ssh
+          # Write key, stripping leading whitespace from heredoc-style nix strings
+          sed 's/^[[:space:]]*//' "${config.secrets.volumeMigration.file}" > /home/docker/.ssh/volume-migration-key
+          chmod 700 /home/docker/.ssh
+          chmod 600 /home/docker/.ssh/volume-migration-key
+          chown -R docker:docker /home/docker/.ssh
+
+          # Configure SSH client for the docker user to use this key and
+          # accept new host keys automatically (mesh IPs are trusted)
+          cat > /home/docker/.ssh/config << 'EOF'
+          Host *
+            IdentityFile /home/docker/.ssh/volume-migration-key
+            StrictHostKeyChecking accept-new
+            UserKnownHostsFile /home/docker/.ssh/known_hosts
+          EOF
+          chmod 600 /home/docker/.ssh/config
+          chown docker:docker /home/docker/.ssh/config
+        '';
       };
-    };
-
-    fileSystems = {
-      "/var/lib/docker/volumes" = {
-        depends = [ "/mnt/data" ];
-        device = "/mnt/data/docker/volumes";
-        fsType = "none";
-        options = [ "bind" ];
-      };
-      "/var/lib/docker" = lib.mkForce {
-        device = "/mnt/data/docker";
-        depends = [ "/mnt/data/docker/volumes" ];
-        fsType = "none";
-        options = [ "bind" ];
-      };
-    };
-
-    users = {
-      groups.docker = lib.mkForce {};
-
-      users.docker = {
-        isSystemUser = lib.mkForce true;
-        shell = lib.mkForce pkgs.bashInteractive;
-        home = lib.mkForce "/home/docker";
-        createHome = lib.mkForce true;
-        group = lib.mkForce "docker";
-        initialHashedPassword = lib.mkForce "!";
-
-        # SSH authorized key for volume migration between Docker hosts
-        openssh.authorizedKeys.keys = [
-          "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFfLHdV15r9vsPKZsrzLMjOfH9VgsKF8SK2vu9A6kDsJ docker-volume-migration"
-        ];
-      };
-    };
-
-    # Allow docker group members to run ssh as the docker user for volume migration.
-    # This is scoped to only the ssh binary — no general shell access.
-    security.sudo-rs.extraRules = [
-      {
-        groups = [ "docker" ];
-        commands = [
-          { command = "${pkgs.openssh}/bin/ssh *"; options = [ "NOPASSWD" "SETENV" ]; }
-          { command = "${pkgs.coreutils}/bin/test *"; options = [ "NOPASSWD" ]; }
-        ];
-        runAs = "docker";
-      }
-    ];
-
-    # Restrict the docker user's SSH access to only SCP/SFTP file transfers
-    # and docker commands needed for volume migration. No interactive shell,
-    # no port forwarding, no agent forwarding.
-    services.openssh.extraConfig = ''
-      Match User docker
-        AllowTcpForwarding no
-        AllowAgentForwarding no
-        X11Forwarding no
-        PermitTunnel no
-        ForceCommand ${dockerSshValidator}
-    '';
-
-    # Deploy the SSH private key for the docker user to use when connecting to other hosts.
-    # The key is sourced from config.secrets.volumeMigration.file and written with
-    # strict permissions (0600, owned by docker:docker) as required by SSH.
-    systemd.services.deploy-docker-migration-key = {
-      description = "Deploy SSH private key for docker volume migration";
-      wantedBy = [ "multi-user.target" ];
-      after = [ "network.target" ];
-      serviceConfig = {
-        Type = "oneshot";
-        RemainAfterExit = true;
-      };
-      script = ''
-        mkdir -p /home/docker/.ssh
-        # Write key, stripping leading whitespace from heredoc-style nix strings
-        sed 's/^[[:space:]]*//' "${config.secrets.volumeMigration.file}" > /home/docker/.ssh/volume-migration-key
-        chmod 700 /home/docker/.ssh
-        chmod 600 /home/docker/.ssh/volume-migration-key
-        chown -R docker:docker /home/docker/.ssh
-
-        # Configure SSH client for the docker user to use this key and
-        # accept new host keys automatically (mesh IPs are trusted)
-        cat > /home/docker/.ssh/config << 'EOF'
-        Host *
-          IdentityFile /home/docker/.ssh/volume-migration-key
-          StrictHostKeyChecking accept-new
-          UserKnownHostsFile /home/docker/.ssh/known_hosts
-        EOF
-        chmod 600 /home/docker/.ssh/config
-        chown docker:docker /home/docker/.ssh/config
-      '';
-    };
-  };
+    }
+    {
+      systemd.services = containerFailureServices;
+    }
+  ];
 }

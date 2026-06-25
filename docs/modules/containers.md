@@ -101,6 +101,8 @@ The service iterates through declarative containers, runs `docker pull`, and res
 
 The service logs `container_update_event` lines containing container name, image, service, old image ID, new image ID, and action. Pull failures cause the service to fail after all containers have been checked. It also sets `OnFailure=infra-update-report@%n.service`; with `secrets.infraAutomation` configured, that reporter creates or updates a Forgejo issue through the automatic update tooling.
 
+The profile also attaches the same `OnFailure` reporter to each generated declarative container unit. This covers service crashes and failed restarts, including containers listed in `skipContainers` that are intentionally not restarted by the image pull timer.
+
 Example override:
 
 ```nix

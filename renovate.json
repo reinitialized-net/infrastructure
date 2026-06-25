@@ -64,8 +64,7 @@
         "nix"
       ],
       "groupName": "nix flake inputs",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "nix",
         "infra-auto-merge"
       ],
@@ -96,8 +95,7 @@
         "nixpkgsStable"
       ],
       "groupName": "nix flake inputs",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "nix",
         "infra-auto-merge"
       ],
@@ -119,8 +117,7 @@
       "matchDatasources": [
         "docker"
       ],
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container"
       ],
       "automerge": false
@@ -137,8 +134,7 @@
         "docker.io/library/mongo"
       ],
       "allowedVersions": "<8.0",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "service:unifi",
         "stateful-data",
@@ -158,11 +154,44 @@
         "pgvector/pgvector",
         "valkey/valkey"
       ],
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "stateful-data",
         "manual-update"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label PostgreSQL pgvector image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "pgvector/pgvector"
+      ],
+      "addLabels": [
+        "container",
+        "service:postgres"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Valkey image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "valkey/valkey"
+      ],
+      "addLabels": [
+        "container",
+        "service:valkey"
       ],
       "automerge": false
     },
@@ -178,8 +207,7 @@
         "technitium/dns-server"
       ],
       "groupName": "technitium dns server image",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "service:dns"
       ],
@@ -197,8 +225,7 @@
         "ghcr.io/goauthentik/server"
       ],
       "groupName": "authentik server image",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "service:authentik"
       ],
@@ -216,8 +243,7 @@
         "hududocker/hudu"
       ],
       "groupName": "hudu image",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "service:hudu"
       ],
@@ -236,8 +262,7 @@
         "ghcr.io/immich-app/immich-machine-learning"
       ],
       "groupName": "immich images",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "service:immich",
         "manual-update"
@@ -256,8 +281,7 @@
         "code.forgejo.org/forgejo/forgejo"
       ],
       "groupName": "forgejo server image",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "service:forgejo"
       ],
@@ -275,10 +299,250 @@
         "code.forgejo.org/forgejo/runner"
       ],
       "groupName": "forgejo runner image",
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "service:forgejo-runner"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Stalwart mail server image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "stalwartlabs/stalwart"
+      ],
+      "groupName": "stalwart mail server image",
+      "addLabels": [
+        "container",
+        "service:stalwart"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Jaeger image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "jaegertracing/all-in-one"
+      ],
+      "addLabels": [
+        "container",
+        "service:jaeger"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Grafana image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "grafana/grafana"
+      ],
+      "addLabels": [
+        "container",
+        "service:grafana"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label OpenTelemetry Collector image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "otel/opentelemetry-collector-contrib"
+      ],
+      "addLabels": [
+        "container",
+        "service:otel"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Prometheus image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "prom/prometheus"
+      ],
+      "addLabels": [
+        "container",
+        "service:prometheus"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label UniFi application image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "lscr.io/linuxserver/unifi-network-application"
+      ],
+      "groupName": "unifi network application image",
+      "addLabels": [
+        "container",
+        "service:unifi"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label pgAdmin image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "dpage/pgadmin4"
+      ],
+      "addLabels": [
+        "container",
+        "service:pgadmin"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Redis Insight image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "redis/redisinsight"
+      ],
+      "addLabels": [
+        "container",
+        "service:redisinsight"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Cinny image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/cinnyapp/cinny"
+      ],
+      "addLabels": [
+        "container",
+        "service:cinny"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label SearXNG image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "searxng/searxng"
+      ],
+      "addLabels": [
+        "container",
+        "service:searxng"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Matrix homeserver image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/matrix-construct/tuwunel"
+      ],
+      "groupName": "tuwunel matrix homeserver image",
+      "addLabels": [
+        "container",
+        "service:matrix"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Paperless-ngx image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/paperless-ngx/paperless-ngx"
+      ],
+      "addLabels": [
+        "container",
+        "service:paperless"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label Pelican Panel image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/pelican-dev/panel"
+      ],
+      "addLabels": [
+        "container",
+        "service:pelican"
+      ],
+      "automerge": false
+    },
+    {
+      "description": "Label ownCloud OCIS image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "owncloud/ocis"
+      ],
+      "addLabels": [
+        "container",
+        "service:ocis"
       ],
       "automerge": false
     },
@@ -296,8 +560,7 @@
         "minor",
         "patch"
       ],
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "infra-auto-merge"
       ],
@@ -314,8 +577,7 @@
       "matchUpdateTypes": [
         "major"
       ],
-      "labels": [
-        "dependencies",
+      "addLabels": [
         "container",
         "manual-update"
       ],
