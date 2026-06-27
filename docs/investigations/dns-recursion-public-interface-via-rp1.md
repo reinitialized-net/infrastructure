@@ -73,17 +73,19 @@ Configure Technitium's recursion ACL on **both cluster nodes** (one.dns and two.
 2. Select **Use Specified Network Access Control List (ACL)**
 3. Set the ACL entries in this exact order (Technitium processes top to bottom, first match wins):
    ```
-   !10.1.12.3/32
+   !10.1.12.3
+   172.16.0.0/24
    10.0.0.0/8
    ```
 4. Save and apply on both DNS cluster nodes
 
 **ACL logic:**
-- `!10.1.12.3/32` — Deny recursion from rp1's proxy-bind IP only. All proxied public DNS traffic uses this source IP due to `proxy_bind 10.1.12.3`.
+- `!10.1.12.3` — Deny recursion from rp1's proxy-bind IP only. All proxied public DNS traffic uses this source IP due to `proxy_bind 10.1.12.3`.
+- `172.16.0.0/24` — Allow recursion for the OPNsense `wgAdmin` full-tunnel WireGuard client pool.
 - `10.0.0.0/8` — Allow recursion for all other private 10.x clients, including rp1's own system resolver (source `10.1.12.2`), internal hosts, and Docker containers.
 - Default policy (no match) — Deny all except loopback. This blocks recursion for any other non-private source.
 
-**Important:** The deny entry (`!`) MUST be listed BEFORE the allow entry. Technitium processes the ACL in listed order and uses the first match. If `10.0.0.0/8` appears first, it would match and allow recursion for 10.1.12.3 before the deny rule is ever checked.
+**Important:** The deny entry (`!`) MUST be listed BEFORE the allow entries. Technitium processes the ACL in listed order and uses the first match. If `10.0.0.0/8` appears first, it would match and allow recursion for 10.1.12.3 before the deny rule is ever checked.
 
 ## Follow-up: rp1 System Resolver Denied Recursion
 
@@ -107,3 +109,30 @@ This separates the two traffic sources:
 ## Key Insight
 
 Rather than changing the DNS routing path (which introduced cluster sync issues), the fix keeps the proven physical IP routing and uses Technitium's network ACL to deny recursion from the specific source address that rp1's proxy produces. The `proxy_bind` directive uses rp1's **secondary** IP (`10.1.12.3`) rather than the primary (`10.1.12.2`), which allows the ACL to distinguish proxied public traffic from rp1's own legitimate system DNS queries. The narrow `/32` deny rule targets only the proxy-bind IP, so rp1's system resolver (using the primary IP `10.1.12.2`) gets recursion while proxied WAN queries do not.
+
+## Follow-up: OPNsense Full-Tunnel WireGuard Clients Denied Recursion
+
+### Problem
+
+OPNsense `wgAdmin` clients route all traffic through the WireGuard tunnel and use the Technitium VLAN resolvers. The WireGuard server tunnel is `172.16.0.1/24`, with client addresses in `172.16.0.0/24`.
+
+Firewall logs showed DNS traffic from a live client (`172.16.0.4`) passing from WireGuard to `10.1.11.2:53` and `10.1.11.3:53`, so the router path was not the primary blocker. Technitium recursion was configured as:
+
+```text
+!10.1.12.3
+10.0.0.0/8
+```
+
+That allowed internal `10.x` VLAN hosts and denied public-proxy recursion, but it did not allow the VPN client pool. Authoritative responses for hosted zones could still work, while external recursive lookups from full-tunnel clients failed or timed out.
+
+### Fix
+
+Added the narrow WireGuard client pool to both Technitium nodes:
+
+```text
+!10.1.12.3
+172.16.0.0/24
+10.0.0.0/8
+```
+
+This keeps the public DNS ingress guard intact, avoids broad `172.16.0.0/12` recursion access, and gives only the assigned OPNsense WireGuard pool recursive DNS service.

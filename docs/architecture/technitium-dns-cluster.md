@@ -1,7 +1,7 @@
 # Technitium DNS Cluster Architecture
 
 **Status:** Current deployment notes
-**Verified against source:** May 26, 2026
+**Verified against source and live resolver state:** June 27, 2026
 
 ## Overview
 
@@ -89,6 +89,20 @@ HTTPS on shared port 443 uses SNI routing:
 
 The HTTP virtual hosts for `one.dns.reinitialized.net` and `two.dns.reinitialized.net` only redirect to HTTPS and restrict access with the `internalOnly` nginx allow/deny block.
 
+## Recursion ACL
+
+Both Technitium nodes should use `UseSpecifiedNetworkACL` for recursion with this ordered ACL:
+
+```text
+!10.1.12.3
+172.16.0.0/24
+10.0.0.0/8
+```
+
+Ordering matters. `10.1.12.3` is `rp1`'s DNS stream `proxy_bind` source for public DNS ingress and must remain denied before broader private-network allows. `172.16.0.0/24` is the OPNsense `wgAdmin` full-tunnel WireGuard client pool. `10.0.0.0/8` covers the internal VLAN hosts and `rp1`'s own resolver path.
+
+Do not replace the narrow VPN entry with `172.16.0.0/12`; only the assigned WireGuard pool needs recursive resolver access.
+
 ## Secrets
 
 Both DNS hosts require `secrets.acmeDns.file`.
@@ -115,6 +129,15 @@ Check DNS directly:
 ```bash
 dig @10.1.11.2 reinitialized.net +short
 dig @10.1.11.3 reinitialized.net +short
+dig @10.1.11.2 example.com +short
+dig @10.1.11.3 example.com +short
+```
+
+From an OPNsense `wgAdmin` client, recursive lookups should also work against both Technitium VLAN addresses:
+
+```bash
+dig @10.1.11.2 example.com +short
+dig @10.1.11.3 example.com +short
 ```
 
 Check mesh admin endpoints:
@@ -156,3 +179,4 @@ docker ps --filter name=dnsTwo
 - [Mesh Network Module](../modules/meshNetwork.md)
 - [Mesh Network Port Reference](../mesh-network-ports.md)
 - [DNS Recursion Public Interface Investigation](../investigations/dns-recursion-public-interface-via-rp1.md)
+- [OPNsense WireGuard Full-Tunnel DNS Failure](../investigations/opnsense-wireguard-full-tunnel-dns.md)
