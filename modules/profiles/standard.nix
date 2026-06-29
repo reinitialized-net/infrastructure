@@ -1,4 +1,5 @@
 {
+  config,
   lib,
   pkgs,
   ...
@@ -185,6 +186,35 @@
     ];
     trusted-users = lib.mkForce [ "rnetadmin" ];
   };
+
+  # Bound root-disk growth from accumulating NixOS generations. autoUpgrade runs
+  # daily, so without pruning the system profile grows unbounded and eventually
+  # fills the root disk — this is what took rp1 offline during the 26.05 jump:
+  # once /nix could no longer be written, nix-copy-closure failed with the
+  # nix-daemon dropping the connection ("Connection reset by peer").
+  #
+  # Keep only the last 5 generations. nix-collect-garbage has no count-based
+  # flag (only --delete-old / --delete-older-than), so prune the system profile
+  # to the last 5 generations before each GC run, then collect the now-orphaned
+  # store paths.
+  boot.loader.systemd-boot.configurationLimit = lib.mkDefault 5;
+
+  nix.gc = {
+    automatic = lib.mkDefault true;
+    dates = lib.mkDefault "daily";
+    randomizedDelaySec = lib.mkDefault "30min";
+  };
+
+  systemd.services.nix-gc.serviceConfig.ExecStartPre = [
+    "${config.nix.package}/bin/nix-env -p /nix/var/nix/profiles/system --delete-generations +5"
+  ];
+
+  # Cap the systemd journal so archived logs can never fill the root disk again
+  # (it had grown to 1.8 GB on rp1).
+  services.journald.extraConfig = lib.mkDefault ''
+    SystemMaxUse=500M
+    SystemKeepFree=1G
+  '';
 
   system.autoUpgrade = {
     enable = lib.mkForce true;

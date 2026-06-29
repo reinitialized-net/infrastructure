@@ -14,6 +14,7 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Fixed
 
+- Bound root-disk growth fleet-wide in the standard profile: automatic daily `nix.gc` prunes the system profile to the last 5 generations (`nix-env --delete-generations +5`), `boot.loader.systemd-boot.configurationLimit = 5`, and `journald` caps (`SystemMaxUse=500M`, `SystemKeepFree=1G`). The daily `autoUpgrade` had let generations and journals accumulate until rp1's 20 GB root filled during the 26.05 jump, breaking remote deploys (`nix-copy-closure` failing with the nix-daemon dropping the connection on a full `/nix`).
 - Seed Infratainer's external live-secret overlay and runtime Forgejo token during `devenv` activation when local gitignored secrets are available.
 - Allow automatic update validation, deploy, and fallback `nixos-upgrade` builds from clean `indev` checkouts by importing live host secret modules from `INFRA_SECRETS_DIR`.
 - Report a clear mesh private-key secret error when clean flake evaluations are missing the external live secret overlay.
