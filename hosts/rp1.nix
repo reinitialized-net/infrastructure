@@ -10,6 +10,24 @@ let
     allow 192.168.0.0/16;
     deny all;
   '';
+
+  # Shared tuning for vhosts that move large request/response bodies (file
+  # uploads, Git pushes, OCI registry blobs). Disables Angie's body spooling so
+  # data streams straight to the upstream instead of buffering to a temp file on
+  # rp1 — buffering a large chunked upload (no upfront Content-Length) surfaces
+  # as an Angie-branded 500. The argument is the per-direction *inactivity*
+  # timeout (time between successive reads/writes, not total transfer time);
+  # size it to the slowest stall the upstream may introduce, e.g. finalizing a
+  # multi-gigabyte upload.
+  largeTransfer = timeout: ''
+    client_max_body_size 0;
+    proxy_request_buffering off;
+    proxy_buffering off;
+    client_body_buffer_size 1024k;
+    proxy_read_timeout ${timeout};
+    proxy_send_timeout ${timeout};
+    send_timeout ${timeout};
+  '';
 in
 {
   # Networking Configuration
@@ -656,11 +674,11 @@ in
           "10.1.12.4"
         ];
 
+        # Git smart-HTTP (git-receive-pack), Git LFS, and the built-in OCI
+        # registry (/v2/.../blobs/uploads/) push large chunked bodies.
         locations."/" = {
           proxyPass = "http://10.255.0.3:1037";
-          extraConfig = ''
-            client_max_body_size 512M;
-          '';
+          extraConfig = largeTransfer "600s";
         };
       };
 
@@ -724,18 +742,7 @@ in
         locations."/" = {
           proxyPass = "http://10.255.0.5:1001";
           proxyWebsockets = true;
-          extraConfig = ''
-            # allow large file uploads (0 = no limit)
-            client_max_body_size 0;
-            # disable buffering to prevent OOM and make uploads ~2x faster
-            proxy_request_buffering off;
-            # increase body buffer to avoid limiting upload speed (default 8k/16k)
-            client_body_buffer_size 1024k;
-            # set timeouts for large uploads
-            proxy_read_timeout 600s;
-            proxy_send_timeout 600s;
-            send_timeout 600s;
-          '';
+          extraConfig = largeTransfer "600s";
         };
       };
       # Cinny Matrix Web Client (on apps2)
@@ -863,15 +870,7 @@ in
         locations."/" = {
           proxyPass = "http://10.255.0.5:1026";
           proxyWebsockets = true;
-          extraConfig = ''
-            # Allow large document uploads
-            client_max_body_size 0;
-            proxy_request_buffering off;
-            client_body_buffer_size 1024k;
-            proxy_read_timeout 300s;
-            proxy_send_timeout 300s;
-            send_timeout 300s;
-          '';
+          extraConfig = largeTransfer "300s";
         };
       };
 
@@ -937,24 +936,9 @@ in
         locations."/" = {
           proxyPass = "http://ocis_backend";
           proxyWebsockets = true;
-          extraConfig = ''
-            # Performance optimizations for OCIS (ownCloud Infinite Scale)
-            # Allow unlimited upload sizes
-            client_max_body_size 0;
-            # Disable buffering for both requests and responses for direct streaming
-            # This is critical for DAV performance and large file transfers
-            proxy_request_buffering off;
-            proxy_buffering off;
-            client_body_buffer_size 1024k;
-
-            # Instruct proxy and browser to disable buffering
-            add_header X-Accel-Buffering no;
-
-            # Extended timeouts for large/slow file synchronization
-            proxy_read_timeout 1200s;
-            proxy_send_timeout 1200s;
-            send_timeout 1200s;
-          '';
+          # 3600s inactivity timeout: OCIS can stall while finalizing very large
+          # uploads (e.g. an 8GB ISO) before sending its response.
+          extraConfig = largeTransfer "3600s";
         };
       };
 
