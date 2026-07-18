@@ -110,7 +110,7 @@
     tuwunel = {
       autoStart = true;
       hostname = "tuwunel";
-      image = "ghcr.io/matrix-construct/tuwunel:v1.8.1";
+      image = "ghcr.io/matrix-construct/tuwunel:v1.8.2";
       environment = config.secrets.tuwunel.keys;
       networks = [
         "backend"
