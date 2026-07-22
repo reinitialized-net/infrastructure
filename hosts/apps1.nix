@@ -180,7 +180,7 @@
     forgejo = {
       autoStart = true;
       hostname = "forgejo";
-      image = "code.forgejo.org/forgejo/forgejo:15";
+      image = "code.forgejo.org/forgejo/forgejo:16";
       environment = config.secrets.forgejo.keys;
       networks = [
         "backend"
