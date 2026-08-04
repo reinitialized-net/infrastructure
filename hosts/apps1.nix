@@ -234,7 +234,7 @@
     authentik-server = {
       autoStart = true;
       hostname = "authentik-server";
-      image = "ghcr.io/goauthentik/server:2026.5";
+      image = "ghcr.io/goauthentik/server:2026.8";
       cmd = [ "server" ];
       environment = config.secrets.authentik.keys;
       networks = [
@@ -253,7 +253,7 @@
     authentik-worker = {
       autoStart = true;
       hostname = "authentik-worker";
-      image = "ghcr.io/goauthentik/server:2026.5";
+      image = "ghcr.io/goauthentik/server:2026.8";
       cmd = [ "worker" ];
       environment = config.secrets.authentik.keys;
       networks = [
