@@ -83,7 +83,7 @@
     hudu1 = {
       autoStart = true;
       hostname = "hudu1";
-      image = "hududocker/hudu:2.44.2";
+      image = "hududocker/hudu:2.44.3";
       environment = config.secrets.hudu.keys;
       networks = [
         "backend"
@@ -100,7 +100,7 @@
     hudu2 = {
       autoStart = true;
       hostname = "hudu2";
-      image = "hududocker/hudu:2.44.2";
+      image = "hududocker/hudu:2.44.3";
       environment = config.secrets.hudu.keys;
       cmd = [
         "bundle"
