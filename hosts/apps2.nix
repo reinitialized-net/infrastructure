@@ -190,7 +190,7 @@
     forgejoRunner = {
       autoStart = true;
       hostname = "forgejoRunner";
-      image = "code.forgejo.org/forgejo/runner:12";
+      image = "code.forgejo.org/forgejo/runner:13";
       cmd = [
         "bash"
         "-c"
