@@ -4,7 +4,10 @@ The source and live audit found security weaknesses and several failing services
 Following authorization, repairs were activated on all six reachable production
 hosts: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, and `db1`. Application health,
 credential rotation, certificates, and migration compatibility were checked live.
-Final source publication and automation restoration are being verified.
+The implementation was published as `8d6df0ff1e7439fa21b6c856ca362e0a2773e884`
+on `indev`; the managed deployment checkout was fast-forwarded to it. Every host
+then built that published source using its own persistent secret overlay, and
+all saved update/maintenance timer states were restored.
 
 The rollout used an isolated checkout based on production `origin/indev`
 `527e5ef41986da4f5c6f58c5c1e527877de661b2`. The original working tree contains
@@ -44,7 +47,13 @@ activation; no upstream VPN or OPNsense configuration was changed.
 Scheduled updates, promotion, deployment, Docker refresh/prune, and Nix garbage
 collection were held during the rollout. Runtime masks alone did not override
 NixOS's unit links, so an explicit systemd maintenance condition was added and
-verified to skip execution. Original timer states were saved per host.
+verified to skip execution. Original timer states were saved per host and restored at approximately 20:35
+CDT on September 5. All temporary maintenance conditions and masks were removed.
+The next devenv runs were Renovate at 01:05, promotion at 01:45, deployment at
+02:35, and fallback upgrade at 05:08 CDT on September 6. The shared workflow lock
+serializes Renovate, promotion, and deployment. No pending manual PR was approved
+or merged; runner PR #88 remains unchanged on runner v13 while production stays
+on v12.
 
 The initial credential provisioning had an error: a text replacement associated
 ACME with a WireGuard key file. This caused ACME failures and systemd logged rp1's
@@ -89,8 +98,16 @@ disks were retained. Existing generation and journal limits remain enabled.
   Forgejo, mail, Immich, and Search return HTTPS 200; Paperless redirects normally.
 - Both DNS admin certificates match their current PEM files and expire September
   12, 2026, consistent with the configured short-lived certificate profile.
-  Both VLAN resolvers answer recursive queries.
-- Final fallback source evaluation and timer restoration: pending final verification.
+  Both VLAN resolvers answer recursive queries. A failed PFX export preserves
+  the existing file and removes its temporary output.
+- Every host successfully built the published Git revision with its persistent
+  secret overlay and the tools from its actual `nixos-upgrade` service. An initial
+  manual rp1 probe lacked Git on its interactive PATH; rerunning with the service
+  PATH passed. These were builds, not another system activation.
+- All original timers are enabled and active with future scheduled runs. Audit
+  masks/conditions are gone. The bot can read the repository, the webhook's
+  persistent/runtime secret copies match, and the service user can read its
+  credentials. Manual issue creation was not used as a reporter test.
 
 The finalized source security scan records eight findings (one high, five medium,
 two low) from 112 reviewed files. Live operational findings are additional.
@@ -128,6 +145,13 @@ runtime credential paths. Do not blindly activate the old generation.
   Encryption/signing keys can require data migration and must not be reset
   casually. Historical stores, images, caches, clones, and backups retain old
   values; deleting every generation is not a substitute for rotation.
+- Remote reporters currently reuse the existing automation credential. Provision
+  narrowly scoped issue-reporting tokens separately from the promotion/deployment
+  token as part of the remaining credential work.
+- The standalone `bleuagent-local` development container on devenv is outside
+  this flake. It has a pre-existing restart loop (over 14,000 restarts) because
+  its image rejects `BLEUAGENT_TOKEN` and requires `BLEUAGENT_TOKEN_FILE` with a
+  mounted secret. It was left for a separate development-container repair.
 - `gs1` was unreachable and had no recent mesh handshakes. Update its peer
   configuration and secret provisioning before bringing it online. `ai1` is
   pending separate installation work and was not deployed.
