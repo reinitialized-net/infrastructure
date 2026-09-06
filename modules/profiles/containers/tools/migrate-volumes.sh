@@ -9,6 +9,12 @@
 
 set -euo pipefail
 
+# Use the local daemon and immutable CLI configuration, including when invoked
+# as docker, whose home is writable through the migration SFTP service.
+export DOCKER_CONFIG=@dockerConfig@
+export DOCKER_HOST=unix:///var/run/docker.sock
+unset DOCKER_CONTEXT DOCKER_CERT_PATH DOCKER_TLS_VERIFY
+
 # Color output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -17,11 +23,12 @@ BLUE='\033[0;34m'
 NC='\033[0m'
 
 # Script version
-VERSION="3.0.0"
+VERSION="3.1.0"
 
 # Default values
 BACKUP_DIR="/var/lib/docker/volumes/.migration-staging"
 COMPRESS="gzip"
+COMPRESS_EXPLICIT=false
 VERIFY_CHECKSUM=true
 STOP_CONTAINERS=true
 AUTO_RESTART=true
@@ -35,8 +42,15 @@ MODE=""
 BACKUP_FILE=""
 
 # SSH key for docker user volume migration
-SSH_KEY="/home/docker/.ssh/volume-migration-key"
+SSH_KEY="/var/lib/docker-volume-migration/identity"
 REMOTE_USER="docker"
+
+# EXIT cleanup only resumes consumers that were running when selected for stopping.
+stopped_containers=""
+remote_stopped_containers=""
+destination_touched=false
+migration_succeeded=false
+export_temp_file=""
 
 # Function to print colored output
 print_info() {
@@ -66,7 +80,7 @@ check_docker_access() {
 
 # Function to verify SSH key exists for remote operations
 check_ssh_key() {
-    if [ ! -f "$SSH_KEY" ] && ! /run/wrappers/bin/sudo -u "$REMOTE_USER" test -f "$SSH_KEY" 2>/dev/null; then
+    if [ ! -f "$SSH_KEY" ] && ! /run/wrappers/bin/sudo -u "$REMOTE_USER" @coreutils@/bin/test -f "$SSH_KEY" 2>/dev/null; then
         print_error "SSH key not found at $SSH_KEY"
         print_error "Ensure the volumeMigration secret is configured and the deploy-docker-migration-key service has run."
         exit 1
@@ -75,7 +89,7 @@ check_ssh_key() {
 
 # Function to run SSH command on remote host (as docker user)
 remote_ssh() {
-    /run/wrappers/bin/sudo -u "$REMOTE_USER" @openssh@/bin/ssh -p "$SSH_PORT" "${REMOTE_USER}@${REMOTE_HOST}" "$@"
+    /run/wrappers/bin/sudo -u "$REMOTE_USER" @openssh@/bin/ssh -F @migrationSshConfig@ -p "$SSH_PORT" "${REMOTE_USER}@${REMOTE_HOST}" "$@"
 }
 
 # Function to show usage
@@ -151,11 +165,20 @@ get_running_containers_using_volume() {
     @docker@/bin/docker ps --filter volume="$volume" --format '{{.Names}}' | @coreutils@/bin/tr '\n' ' '
 }
 
+# Include running declarative dependents that systemd will stop with a consumer.
+get_local_migration_plan() {
+    if [ -n "$CONTAINER_NAME" ]; then
+        @migrationCommand@/bin/docker-migration-command docker migration-plan "$1" "$CONTAINER_NAME"
+    else
+        @migrationCommand@/bin/docker-migration-command docker migration-plan "$1"
+    fi
+}
+
 # Function to stop container
 stop_container() {
     local container=$1
     print_info "Stopping container: $container"
-    if @docker@/bin/docker stop "$container" &>/dev/null; then
+    if @migrationCommand@/bin/docker-migration-command docker stop "$container"; then
         print_success "Container stopped: $container"
         return 0
     else
@@ -168,7 +191,7 @@ stop_container() {
 start_container() {
     local container=$1
     print_info "Starting container: $container"
-    if @docker@/bin/docker start "$container" &>/dev/null; then
+    if @migrationCommand@/bin/docker-migration-command docker start "$container"; then
         print_success "Container started: $container"
         return 0
     else
@@ -260,10 +283,12 @@ export_volume() {
     local compress_cmd
     compress_cmd=$(get_compress_cmd)
 
-    backup_file="${backup_file}${compress_ext}"
+    local final_backup_file="${backup_file}${compress_ext}"
+    export_temp_file=$(@coreutils@/bin/mktemp "$(@coreutils@/bin/dirname "$backup_file")/.migration-backup.XXXXXX")
+    backup_file="$export_temp_file"
 
     print_info "Exporting volume: $volume"
-    print_info "Backup location: $backup_file"
+    print_info "Backup location: $final_backup_file"
 
     # Use a Docker container to tar the volume and write it to the staging dir.
     # The staging dir is inside /var/lib/docker/volumes so Docker can bind-mount it.
@@ -283,13 +308,13 @@ export_volume() {
             -v "$volume:/volume:ro" \
             -v "${staging_dir}:/staging" \
             alpine \
-            sh -c "apk add --no-cache xz > /dev/null 2>&1 && tar cf - -C /volume . | ${compress_cmd} > /staging/${backup_name}"
+            sh -eu -o pipefail -c "apk add --no-cache xz > /dev/null 2>&1 && tar cf - -C /volume . | ${compress_cmd} > \"\$1\"" sh "/staging/${backup_name}"
     else
         @docker@/bin/docker run --rm \
             -v "$volume:/volume:ro" \
             -v "${staging_dir}:/staging" \
             alpine \
-            sh -c "tar cf - -C /volume . | ${compress_cmd} > /staging/${backup_name}"
+            sh -eu -o pipefail -c "tar cf - -C /volume . | ${compress_cmd} > \"\$1\"" sh "/staging/${backup_name}"
     fi
 
     if [ $? -eq 0 ]; then
@@ -299,8 +324,16 @@ export_volume() {
         if [ "$VERIFY_CHECKSUM" = true ]; then
             local checksum
             checksum=$(calculate_checksum "$backup_file")
-            @coreutils@/bin/echo "$checksum" > "${backup_file}.sha256"
             print_info "Checksum: $checksum"
+        fi
+
+        @coreutils@/bin/mv -f "$backup_file" "$final_backup_file"
+        export_temp_file=""
+        backup_file="$final_backup_file"
+        if [ "$VERIFY_CHECKSUM" = true ]; then
+            @coreutils@/bin/echo "$checksum" > "${backup_file}.sha256"
+        else
+            @coreutils@/bin/rm -f "${backup_file}.sha256"
         fi
 
         # Show backup file info
@@ -315,16 +348,9 @@ export_volume() {
     fi
 }
 
-# Function to import volume from a backup file
-import_volume() {
-    local volume=$1
-    local backup_file=$2
-    local decompress_cmd
-    decompress_cmd=$(get_decompress_cmd)
-
-    print_info "Importing volume: $volume"
-    print_info "Source backup: $backup_file"
-
+# Validate a backup before stopping any consumers or changing the destination.
+verify_backup() {
+    local backup_file=$1
     # Verify checksum if available
     if [ "$VERIFY_CHECKSUM" = true ] && [ -f "${backup_file}.sha256" ]; then
         print_info "Verifying checksum..."
@@ -342,6 +368,34 @@ import_volume() {
         print_success "Checksum verified"
     fi
 
+    local backup_dir backup_name decompress_cmd xz_install=""
+    backup_dir=$(@coreutils@/bin/dirname "$backup_file")
+    backup_name=$(@coreutils@/bin/basename "$backup_file")
+    # Import compression follows the archive suffix, including .bz2 with no -z.
+    if [ "$COMPRESS_EXPLICIT" != true ]; then
+        case "$backup_file" in
+            *.gz) COMPRESS=gzip ;;
+            *.bz2) COMPRESS=bzip2 ;;
+            *.xz) COMPRESS=xz ;;
+            *) COMPRESS=none ;;
+        esac
+    fi
+    decompress_cmd=$(get_decompress_cmd)
+    [ "$COMPRESS" != "xz" ] || xz_install="apk add --no-cache xz > /dev/null 2>&1 && "
+    @docker@/bin/docker run --rm -v "${backup_dir}:/backup:ro" alpine \
+        sh -eu -o pipefail -c "${xz_install}${decompress_cmd} < \"\$1\" | tar tf - > /dev/null" sh "/backup/${backup_name}"
+}
+
+# Function to import volume from a backup file
+import_volume() {
+    local volume=$1
+    local backup_file=$2
+    local decompress_cmd
+    decompress_cmd=$(get_decompress_cmd)
+
+    print_info "Importing volume: $volume"
+    print_info "Source backup: $backup_file"
+
     # Create volume if it doesn't exist
     if ! check_volume_exists "$volume"; then
         print_info "Creating volume: $volume"
@@ -354,25 +408,27 @@ import_volume() {
     local backup_name
     backup_name=$(@coreutils@/bin/basename "$backup_file")
 
-    if [ "$COMPRESS" = "none" ] || [[ "$backup_file" != *.gz && "$backup_file" != *.bz2 && "$backup_file" != *.xz ]]; then
+    destination_touched=true
+
+    if [ "$COMPRESS" = "none" ]; then
         # Uncompressed tar
         @docker@/bin/docker run --rm \
             -v "$volume:/volume" \
             -v "${backup_dir}:/backup:ro" \
             alpine \
             tar xf "/backup/${backup_name}" -C /volume
-    elif [[ "$backup_file" == *.xz ]]; then
+    elif [ "$COMPRESS" = "xz" ]; then
         @docker@/bin/docker run --rm \
             -v "$volume:/volume" \
             -v "${backup_dir}:/backup:ro" \
             alpine \
-            sh -c "apk add --no-cache xz > /dev/null 2>&1 && unxz < /backup/${backup_name} | tar xf - -C /volume"
+            sh -eu -o pipefail -c 'apk add --no-cache xz > /dev/null 2>&1 && unxz < "$1" | tar xf - -C /volume' sh "/backup/${backup_name}"
     else
         @docker@/bin/docker run --rm \
             -v "$volume:/volume" \
             -v "${backup_dir}:/backup:ro" \
             alpine \
-            sh -c "${decompress_cmd} < /backup/${backup_name} | tar xf - -C /volume"
+            sh -eu -o pipefail -c "${decompress_cmd} < \"\$1\" | tar xf - -C /volume" sh "/backup/${backup_name}"
     fi
 
     if [ $? -eq 0 ]; then
@@ -389,149 +445,94 @@ import_volume() {
 transfer_volume() {
     local volume=$1
     local dest_volume="${DEST_VOLUME_NAME:-$volume}"
-    local compress_cmd
+    local compress_cmd decompress_cmd
     compress_cmd=$(get_compress_cmd)
-    local decompress_cmd
     decompress_cmd=$(get_decompress_cmd)
 
     print_info "Transferring volume: $volume → ${dest_volume} on ${REMOTE_HOST}"
 
-    # ----- Stop local containers -----
-    local local_containers_to_stop=""
-    local local_stopped_containers=""
-
+    # Prove SSH/Docker access and discover the destination before any downtime.
+    remote_ssh "docker image inspect alpine" > /dev/null 2>&1 || remote_ssh "docker pull alpine"
+    if ! remote_ssh "docker volume inspect ${dest_volume}" > /dev/null 2>&1; then
+        remote_ssh "docker volume create ${dest_volume}" > /dev/null
+    fi
+    local remote_running local_running local_plan remote_plan
     if [ "$STOP_CONTAINERS" = true ]; then
-        if [ -n "$CONTAINER_NAME" ]; then
-            local_containers_to_stop="$CONTAINER_NAME"
-        else
-            local_containers_to_stop=$(get_running_containers_using_volume "$volume")
-        fi
-
-        if [ -n "$local_containers_to_stop" ]; then
-            print_info "Local containers using volume: $local_containers_to_stop"
-            for container in $local_containers_to_stop; do
-                if stop_container "$container"; then
-                    local_stopped_containers="$local_stopped_containers $container"
-                fi
-            done
+        local_plan=$(get_local_migration_plan "$volume")
+        remote_plan=$(remote_ssh "docker migration-plan ${dest_volume}${REMOTE_CONTAINER_NAME:+ $REMOTE_CONTAINER_NAME}")
+        stopped_containers="$local_plan"
+        for container in $stopped_containers; do
+            stop_container "$container"
+        done
+        remote_stopped_containers="$remote_plan"
+        for container in $remote_stopped_containers; do
+            remote_stop_container "$container"
+        done
+        # Fail closed if an explicit -c/-C omitted another writer or a service restarted.
+        local_running=$(get_running_containers_using_volume "$volume")
+        remote_running=$(remote_ssh "docker ps --filter volume=${dest_volume} --format '{{.Names}}'")
+        if [ -n "$local_running" ] || [ -n "$remote_running" ]; then
+            print_error "A container is still using the source or destination volume"
+            return 1
         fi
     else
         print_warning "Transferring without stopping containers - data may be inconsistent"
     fi
 
-    # ----- Stop remote containers -----
-    local remote_stopped_containers=""
-
-    if [ "$STOP_CONTAINERS" = true ]; then
-        local remote_containers_to_stop=""
-        if [ -n "$REMOTE_CONTAINER_NAME" ]; then
-            remote_containers_to_stop="$REMOTE_CONTAINER_NAME"
-        else
-            # Auto-discover running containers using the dest volume on remote
-            remote_containers_to_stop=$(remote_ssh "docker ps --filter volume=${dest_volume} --format '{{.Names}}'" 2>/dev/null | @coreutils@/bin/tr '\n' ' ' || true)
-        fi
-
-        if [ -n "$remote_containers_to_stop" ]; then
-            print_info "Remote containers using destination volume: $remote_containers_to_stop"
-            for container in $remote_containers_to_stop; do
-                if remote_stop_container "$container"; then
-                    remote_stopped_containers="$remote_stopped_containers $container"
-                fi
-            done
-        fi
-    fi
-
-    # ----- Ensure destination volume exists on remote -----
-    if ! remote_ssh "docker volume inspect ${dest_volume}" &>/dev/null; then
-        print_info "Creating destination volume on remote: $dest_volume"
-        remote_ssh "docker volume create ${dest_volume}" &>/dev/null || {
-            print_error "Failed to create remote volume: $dest_volume"
-            restart_local_containers "$local_stopped_containers"
-            return 1
-        }
-    fi
-
-    # ----- Stream tar-over-SSH -----
-    # Local: docker run → tar the volume → compress → stdout
-    # Pipe over SSH to remote: docker run → decompress stdin → untar into dest volume
-    print_info "Streaming volume data to remote host..."
-
     local xz_install=""
     if [ "$COMPRESS" = "xz" ]; then
         xz_install="apk add --no-cache xz > /dev/null 2>&1 && "
     fi
+    local remote_cmd="docker run --rm -i -v ${dest_volume}:/volume alpine sh -eu -o pipefail -c '${xz_install}${decompress_cmd} | tar xf - -C /volume'"
 
-    local remote_xz_install=""
-    if [ "$COMPRESS" = "xz" ]; then
-        remote_xz_install="apk add --no-cache xz > /dev/null 2>&1 && "
-    fi
-
-    # Remote: receive compressed tar on stdin, decompress, extract into volume
-    local remote_cmd="docker run --rm -i -v ${dest_volume}:/volume alpine sh -c '${remote_xz_install}${decompress_cmd} | tar xf - -C /volume'"
-
-    # Local: tar the volume, compress, stream to remote
+    print_info "Streaming volume data to remote host..."
+    destination_touched=true
     if [ "$COMPRESS" = "none" ]; then
-        @docker@/bin/docker run --rm \
-            -v "$volume:/volume:ro" \
-            alpine \
-            tar cf - -C /volume . \
-        | /run/wrappers/bin/sudo -u "$REMOTE_USER" @openssh@/bin/ssh -p "$SSH_PORT" "${REMOTE_USER}@${REMOTE_HOST}" "$remote_cmd"
+        @docker@/bin/docker run --rm -v "$volume:/volume:ro" alpine tar cf - -C /volume . \
+            | remote_ssh "$remote_cmd"
     else
-        @docker@/bin/docker run --rm \
-            -v "$volume:/volume:ro" \
-            alpine \
-            sh -c "${xz_install}tar cf - -C /volume . | ${compress_cmd}" \
-        | /run/wrappers/bin/sudo -u "$REMOTE_USER" @openssh@/bin/ssh -p "$SSH_PORT" "${REMOTE_USER}@${REMOTE_HOST}" "$remote_cmd"
+        @docker@/bin/docker run --rm -v "$volume:/volume:ro" alpine \
+            sh -eu -o pipefail -c "${xz_install}tar cf - -C /volume . | ${compress_cmd}" \
+            | remote_ssh "$remote_cmd"
     fi
 
-    local transfer_result=$?
-
-    if [ $transfer_result -eq 0 ]; then
-        print_success "Volume data transferred successfully"
-
-        # Verify transfer by comparing file counts
-        print_info "Verifying transfer..."
-        local local_count
-        local_count=$(@docker@/bin/docker run --rm -v "$volume:/volume:ro" alpine sh -c "find /volume -type f | wc -l" 2>/dev/null || echo "?")
-        local remote_count
-        remote_count=$(remote_ssh "docker run --rm -v ${dest_volume}:/volume:ro alpine sh -c 'find /volume -type f | wc -l'" 2>/dev/null || echo "?")
-
-        if [ "$local_count" = "$remote_count" ] && [ "$local_count" != "?" ]; then
-            print_success "Verification passed: $local_count files on both hosts"
-        elif [ "$local_count" != "?" ] && [ "$remote_count" != "?" ]; then
-            print_warning "File count mismatch: local=$local_count remote=$remote_count"
-        else
-            print_warning "Could not verify file counts"
-        fi
-    else
-        print_error "Failed to transfer volume data"
+    # A failed verification must not activate the destination.
+    print_info "Verifying transfer..."
+    local local_count remote_count
+    local_count=$(@docker@/bin/docker run --rm -v "$volume:/volume:ro" alpine sh -eu -o pipefail -c 'find /volume -type f | wc -l')
+    remote_count=$(remote_ssh "docker run --rm -v ${dest_volume}:/volume:ro alpine sh -eu -o pipefail -c 'find /volume -type f | wc -l'")
+    if [ "$local_count" != "$remote_count" ]; then
+        print_error "File count mismatch: local=$local_count remote=$remote_count"
+        return 1
     fi
-
-    # ----- Restart remote containers (local containers are NOT restarted — volume has moved) -----
-    if [ "$AUTO_RESTART" = true ] && [ -n "$remote_stopped_containers" ]; then
-        print_info "Starting containers on remote host..."
-        for container in $remote_stopped_containers; do
-            remote_start_container "$container"
-        done
-    fi
-
-    if [ $transfer_result -eq 0 ] && [ -n "$local_stopped_containers" ]; then
-        print_warning "Local containers were stopped and NOT restarted (volume has been migrated to ${REMOTE_HOST})"
-        print_info "Stopped local containers:$local_stopped_containers"
-    fi
-
-    return $transfer_result
+    print_success "Volume transferred and verified: $local_count files on both hosts"
 }
 
-# Helper: restart local containers on failure
-restart_local_containers() {
-    local containers=$1
-    if [ "$AUTO_RESTART" = true ] && [ -n "$containers" ]; then
-        print_info "Restarting local containers after failure..."
-        for container in $containers; do
-            start_container "$container"
-        done
+# Keep cleanup outside the operation functions so errexit and signals cannot skip it.
+cleanup() {
+    local status=$?
+    trap - EXIT
+    set +e
+    [ -z "$export_temp_file" ] || @coreutils@/bin/rm -f "$export_temp_file"
+    if [ "$AUTO_RESTART" = true ]; then
+        if [ "$MODE" = "import" ] && [ "$destination_touched" = true ] && [ "$migration_succeeded" != true ]; then
+            print_warning "Restore failed after writing the destination; its containers remain stopped. Restore a verified backup before starting them."
+        elif [ "$MODE" != "transfer" ] || [ "$migration_succeeded" != true ]; then
+            for container in $stopped_containers; do
+                start_container "$container" || status=1
+            done
+        elif [ -n "$stopped_containers" ]; then
+            print_warning "Local containers remain stopped after migration:$stopped_containers"
+        fi
+        if [ "$destination_touched" != true ] || [ "$migration_succeeded" = true ]; then
+            for container in $remote_stopped_containers; do
+                remote_start_container "$container" || status=1
+            done
+        elif [ -n "$remote_stopped_containers" ]; then
+            print_warning "Transfer failed after writing the destination; remote containers remain stopped. The source volume is intact."
+        fi
     fi
+    exit "$status"
 }
 
 # Parse command line arguments
@@ -559,7 +560,7 @@ while getopts "v:V:c:C:d:r:f:p:z:nkh" opt; do
         r) REMOTE_HOST="$OPTARG" ;;
         f) BACKUP_FILE="$OPTARG" ;;
         p) SSH_PORT="$OPTARG" ;;
-        z) COMPRESS="$OPTARG" ;;
+        z) COMPRESS="$OPTARG"; COMPRESS_EXPLICIT=true ;;
         n) STOP_CONTAINERS=false ;;
         k) VERIFY_CHECKSUM=false ;;
         h) show_usage; exit 0 ;;
@@ -593,148 +594,81 @@ if [ "$MODE" = "import" ] && [ -z "$BACKUP_FILE" ]; then
     exit 1
 fi
 
-# Main execution
+# Reject option/shell syntax in names before constructing remote command strings.
+for name in "$VOLUME_NAME" "${DEST_VOLUME_NAME:-$VOLUME_NAME}" "${CONTAINER_NAME:-unused}" "${REMOTE_CONTAINER_NAME:-unused}"; do
+    if [[ ! "$name" =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]*$ ]]; then
+        print_error "Invalid Docker volume or container name: $name"
+        exit 1
+    fi
+done
+if [[ ! "$COMPRESS" =~ ^(gzip|bzip2|xz|none)$ ]]; then
+    print_error "Unsupported compression: $COMPRESS"
+    exit 1
+fi
+if [[ ! "$SSH_PORT" =~ ^[0-9]{1,5}$ ]] || ((10#$SSH_PORT < 1 || 10#$SSH_PORT > 65535)); then
+    print_error "SSH port must be between 1 and 65535"
+    exit 1
+fi
+
+# Main execution. All failure paths and signals pass through the same cleanup.
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 check_docker_access
 print_info "=== Docker Volume Migration Tool v${VERSION} ==="
 print_info "Mode: $MODE"
 print_info "Volume: $VOLUME_NAME"
-if [ -n "$DEST_VOLUME_NAME" ]; then
-    print_info "Destination Volume: $DEST_VOLUME_NAME"
-fi
+@docker@/bin/docker image inspect alpine > /dev/null 2>&1 || @docker@/bin/docker pull alpine
 
 case $MODE in
-    export)
-        # Check if volume exists
-        if ! check_volume_exists "$VOLUME_NAME"; then
-            print_error "Volume does not exist: $VOLUME_NAME"
-            exit 1
-        fi
-
-        # Show volume info
-        mountpoint=$(get_volume_mountpoint "$VOLUME_NAME")
-        size=$(get_volume_size "$mountpoint")
-        print_info "Volume size: $size"
-
-        # Get containers using volume
-        containers=$(get_containers_using_volume "$VOLUME_NAME")
-        if [ -n "$containers" ]; then
-            print_info "Containers using this volume: $containers"
-        fi
-
-        # Determine container to stop
-        if [ -n "$CONTAINER_NAME" ]; then
-            containers_to_stop="$CONTAINER_NAME"
-        elif [ "$STOP_CONTAINERS" = true ] && [ -n "$containers" ]; then
-            containers_to_stop="$containers"
-        else
-            containers_to_stop=""
-        fi
-
-        # Stop containers if needed
-        stopped_containers=""
-        if [ -n "$containers_to_stop" ] && [ "$STOP_CONTAINERS" = true ]; then
-            for container in $containers_to_stop; do
-                if @docker@/bin/docker ps --format '{{.Names}}' | @gnugrep@/bin/grep -q "^${container}$"; then
-                    if stop_container "$container"; then
-                        stopped_containers="$stopped_containers $container"
-                    fi
-                fi
-            done
-        else
-            print_warning "Backing up volume without stopping containers - data may be inconsistent"
-        fi
-
-        # Create staging directory inside Docker's data dir
-        @coreutils@/bin/mkdir -p "$BACKUP_DIR"
-
-        # Export volume
-        backup_file="${BACKUP_DIR}/${VOLUME_NAME}.tar"
-        export_volume "$VOLUME_NAME" "$backup_file"
-        result=$?
-
-        # Restart containers
-        if [ -n "$stopped_containers" ] && [ "$AUTO_RESTART" = true ]; then
-            for container in $stopped_containers; do
-                start_container "$container"
-            done
-        fi
-
-        exit $result
-        ;;
-
-    import)
-        # Check if backup file exists
-        if [ ! -f "$BACKUP_FILE" ]; then
-            print_error "Backup file does not exist: $BACKUP_FILE"
-            exit 1
-        fi
-
-        # Use destination volume name if specified, otherwise use source
-        import_volume_name="${DEST_VOLUME_NAME:-$VOLUME_NAME}"
-
-        # Get containers using volume if it exists
-        containers=""
-        if check_volume_exists "$import_volume_name"; then
-            containers=$(get_containers_using_volume "$import_volume_name")
-            if [ -n "$containers" ]; then
-                print_warning "The following containers use this volume: $containers"
+    export|import)
+        if [ "$MODE" = "export" ]; then
+            operation_volume="$VOLUME_NAME"
+            if ! check_volume_exists "$operation_volume"; then
+                print_error "Volume does not exist: $operation_volume"
+                exit 1
             fi
-        fi
-
-        # Determine container to stop
-        if [ -n "$CONTAINER_NAME" ]; then
-            containers_to_stop="$CONTAINER_NAME"
-        elif [ "$STOP_CONTAINERS" = true ] && [ -n "$containers" ]; then
-            containers_to_stop="$containers"
+            # Check staging access before any containers are stopped.
+            @coreutils@/bin/mkdir -p "$BACKUP_DIR"
+            BACKUP_DIR=$(@coreutils@/bin/realpath -e "$BACKUP_DIR")
         else
-            containers_to_stop=""
+            operation_volume="${DEST_VOLUME_NAME:-$VOLUME_NAME}"
+            if [ ! -f "$BACKUP_FILE" ]; then
+                print_error "Backup file does not exist: $BACKUP_FILE"
+                exit 1
+            fi
+            BACKUP_FILE=$(@coreutils@/bin/realpath -e "$BACKUP_FILE")
+            verify_backup "$BACKUP_FILE"
         fi
 
-        # Stop containers if needed
-        stopped_containers=""
-        if [ -n "$containers_to_stop" ] && [ "$STOP_CONTAINERS" = true ]; then
-            for container in $containers_to_stop; do
-                if @docker@/bin/docker ps --format '{{.Names}}' | @gnugrep@/bin/grep -q "^${container}$"; then
-                    if stop_container "$container"; then
-                        stopped_containers="$stopped_containers $container"
-                    fi
-                fi
-            done
-        fi
-
-        # Import volume
-        import_volume "$import_volume_name" "$BACKUP_FILE"
-        result=$?
-
-        # Restart containers
-        if [ -n "$stopped_containers" ] && [ "$AUTO_RESTART" = true ]; then
+        if [ "$STOP_CONTAINERS" = true ]; then
+            stopped_containers=$(get_local_migration_plan "$operation_volume")
             for container in $stopped_containers; do
-                start_container "$container"
+                stop_container "$container"
             done
+            running_containers=$(get_running_containers_using_volume "$operation_volume")
+            if [ -n "$running_containers" ]; then
+                print_error "A container is still using the volume: $running_containers"
+                exit 1
+            fi
+        else
+            print_warning "Copying without stopping containers - data may be inconsistent"
         fi
 
-        exit $result
+        if [ "$MODE" = "export" ]; then
+            export_volume "$operation_volume" "${BACKUP_DIR}/${VOLUME_NAME}.tar"
+        else
+            import_volume "$operation_volume" "$BACKUP_FILE"
+        fi
+        migration_succeeded=true
         ;;
-
     transfer)
-        # Verify SSH key exists for remote operations
         check_ssh_key
-
-        # Check if volume exists
         if ! check_volume_exists "$VOLUME_NAME"; then
             print_error "Volume does not exist: $VOLUME_NAME"
             exit 1
         fi
-
-        # Show volume info
-        mountpoint=$(get_volume_mountpoint "$VOLUME_NAME")
-        size=$(get_volume_size "$mountpoint")
-        print_info "Volume size: $size"
-
-        # Transfer volume (handles container stop/start internally)
         transfer_volume "$VOLUME_NAME"
-        result=$?
-
-        exit $result
+        migration_succeeded=true
         ;;
 esac

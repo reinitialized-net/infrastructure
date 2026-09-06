@@ -35,15 +35,17 @@ These examples match the current repository patterns. They are written for chang
   secrets = {
     meshNetwork = {
       description = "MeshNetwork WireGuard private key";
-      file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
+      file = lib.mkDefault "/run/secrets/mesh-privatekey";
     };
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
-      file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+      file = lib.mkDefault "/run/secrets/volume-migration-key";
     };
   };
 }
 ```
+
+Provision those files separately on the target before starting their consumers, with permissions limited to the required services. These quoted strings are runtime references; do not put live keys in `builtins.toFile`, Nix path literals, or the repository. The secrets module does not create or decrypt files.
 
 3. Add the public key and endpoint to `modules/profiles/meshNetwork/meshTopology.nix`.
 

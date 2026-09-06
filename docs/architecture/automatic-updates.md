@@ -8,14 +8,16 @@
    It runs Renovate against Forgejo using `RENOVATE_PLATFORM=forgejo`, opens update PRs against `indev`, and stores logs in `/var/log/infratainer`.
    Dependency Dashboard checkbox clicks are also handled by `infra-renovate-dashboard-webhook.service`. Forgejo persists the checkbox as an issue-body edit; the webhook starts `infra-renovate.service` so Renovate consumes the checked box immediately instead of waiting for the next daily timer.
 2. `infra-promote.timer` runs daily at `01:45`.
-   It inspects open Renovate PRs whose branch starts with `renovate/`.
+   It inspects open PRs authored by the configured automation account, from this
+   repository, targeting `indev`, whose branch starts with `renovate/`.
 3. PRs labeled `infra-auto-merge` are validated locally. PRs labeled `manual-update`
-   are left open until they have a current approving PR review from someone other
-   than the Infratainer automation account, then they use the same validation path:
+   are left open until they have a current approving PR review from a repository
+   writer other than the Infratainer automation account, then they use the same validation path:
 
    ```bash
    INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix flake show path:. --no-write-lock-file --impure
-   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix build --impure --no-link \
+   jq empty renovate.json
+   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix build --impure --no-write-lock-file --no-link \
      path:.#nixosConfigurations.devenv.config.system.build.toplevel \
      path:.#nixosConfigurations.rp1.config.system.build.toplevel \
      path:.#nixosConfigurations.apps1.config.system.build.toplevel \
@@ -23,9 +25,13 @@
      path:.#nixosConfigurations.apps3.config.system.build.toplevel \
      path:.#nixosConfigurations.db1.config.system.build.toplevel
    bash -n hosts/devenv/tools/update-network-firewall-rules.sh
+   bash -n hosts/devenv/tools/release-infra.sh
    ```
 
-4. Passing PRs are merged into `indev` through the Forgejo API. Failing PRs receive a comment and create or update a Forgejo issue.
+4. Every failed prerequisite stops validation. The fetched commit must match the
+   recorded PR head, and the merge request includes Forgejo's `head_commit_id`
+   guard. A head change leaves the PR open. Manual approval is checked again
+   after validation. Failing PRs receive a comment and create or update a Forgejo issue.
 5. `infra-deploy.timer` runs daily at `02:30`, refreshes the managed checkout to `origin/indev`, and runs:
 
    ```bash
@@ -36,6 +42,14 @@
    ```
 
 `infra-deploy` intentionally skips `devenv` so the service does not replace its own running unit during the fleet deploy. Host-local `nixos-upgrade.timer` remains enabled as the fallback path for `devenv` and for any host missed by the coordinated deploy. It runs later from the Forgejo flake URL with `?ref=indev`, passes `--impure` and `INFRA_SECRETS_DIR=/var/lib/infratainer/secrets`, and suppresses live DBus reloads during switches so DBus implementation changes take effect after reboot instead of failing activation.
+
+Renovate, promotion, and deployment hold the same `flock` lock at
+`/run/infratainer/workflow.lock` for their entire run. This protects the shared
+checkout and Git authentication helper when timers or manual starts overlap.
+The webhook queues Renovate with `systemctl --no-block`; it does not keep an HTTP
+request open until the Renovate job finishes. Connections have a ten-second
+socket timeout and an absolute ten-second request deadline, and are handled
+without spawning unbounded threads.
 
 ## Secrets
 
@@ -73,6 +87,20 @@ sudo install -o root -g rnetadmin -m 0640 /path/to/github-com-token /run/secrets
 
 The directory must include any helper files imported by host secret modules, such as `infraAutomation.nix`.
 
+This bootstrap runs on **devenv only**. Each remote host's fallback update also
+needs its own `<host>.nix` and required helper modules under
+`/var/lib/infratainer/secrets`, provisioned as root with directory mode `0700` and
+file mode `0600`. Do not copy other hosts' modules to that machine. `ai1` currently
+sets `includeSecrets = false` and does not need this overlay.
+
+Remote failure reporting separately needs a protected Forgejo token. Persist it
+outside `/run`, configure the remote host's `secrets.infraAutomation.file` to that
+persistent runtime path, and provision it before rebuilding that host. A token
+copied only into `/run/secrets` will be lost at reboot. The namespace itself does
+not provision these files. Keep secret files outside a `path:` flake source and
+follow the staged migration in [the production audit](../production-audit-2026-09-04.md)
+before changing active credentials.
+
 `infra-renovate-dashboard-webhook-ensure.service` maintains this Forgejo repository webhook for Dependency Dashboard checkboxes:
 
 ```text
@@ -92,7 +120,11 @@ The URL is intentionally mesh-local. Do not expose this listener through the pub
 
 Major container updates are labeled `manual-update`. They stay open until a human approves the PR in Forgejo. After approval, `infra-promote` validates the PR against the same flake and host build checks, then merges it through the Forgejo API if validation passes.
 
-Manual approvals are evaluated against the current PR head when Forgejo exposes the review commit SHA, so a Renovate rebase or update requires a fresh approval.
+Manual approvals require an exact, nonempty review commit SHA matching the PR
+head and current write/admin/owner permission. Missing commit metadata, dismissed
+or stale approvals, and outstanding change requests do not qualify. A later
+comment preserves an earlier approval; a later change request supersedes it.
+All review pages are checked; failed or malformed API responses leave the PR open.
 
 Container updates are split by service or risk rather than one broad container PR. Every image family used by an exported host has a `service:*` label so the Dependency Dashboard and PR list show the affected service. Paired images that should move together, such as Technitium DNS replicas, Authentik server/worker, Hudu web/worker, and Immich server/machine-learning, remain grouped. Hudu is pinned to published version tags instead of `latest` so Renovate can monitor and update it. Stateful datastore images are labeled `stateful-data` and `manual-update`. The UniFi MongoDB image is constrained below MongoDB 8 until the UniFi container compatibility policy is changed.
 

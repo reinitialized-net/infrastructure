@@ -4,9 +4,11 @@
   ...
 }: {
   secrets = {
+    # Provision private-key files separately before services start on every boot.
+    # Keep these persistent paths root-owned and inaccessible to other users.
     meshNetwork = {
       description = "MeshNetwork secrets";
-      file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
+      file = lib.mkDefault "/var/lib/wireguard/wg-mesh.key";
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
@@ -19,18 +21,18 @@
       };
     };
     acmeDns = {
-      description = "Technitium DNS API token for ACME DNS-01 challenges";
-      file = lib.mkDefault (builtins.toFile "acme-dns-token" ''
-        TECHNITIUM_API_TOKEN=${config.secrets.acmeDns.keys.apiToken}
-        TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
-      '');
-      keys = {
-        apiToken = "PLACE API TOKEN HERE";
-      };
+      description = "Technitium DNS credentials for ACME";
+      # Provision this root-owned file (0600) separately. It must contain:
+      # TECHNITIUM_API_TOKEN=<token>
+      # TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
+      file = lib.mkDefault "/var/lib/service-secrets/acme-dns.env";
     };
     
     hudu = {
       description = "Hudu secrets";
+      # Prefer a separately provisioned persistent environment file in production.
+      # file = "/var/lib/service-secrets/hudu.env";
+      # Set keys = {} when the environment file contains all Hudu settings.
       keys = {
         SECRET_KEY_BASE = "783471e6e7f1e100e19f4c9898e679ea308d017efbf3f5eff69ffca663dfdff043d90d066dddcf584cee537bd6cbcc6957e1373567f8ebf1450b35c361074575";
         PASSWORD_KEY = "640f83885bbbb4b376b2fcd6f5ddc1cc";
@@ -77,7 +79,7 @@
 
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
-      file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+      file = lib.mkDefault "/var/lib/service-secrets/docker-volume-migration.key";
     };
 
     jaeger = {

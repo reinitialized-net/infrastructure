@@ -49,8 +49,6 @@
       environmentFile = config.secrets.acmeDns.file;
       dnsResolver = "10.255.0.3:1028";
       extraLegoFlags = [
-        "--pfx"
-        "--pfx.pass="
         "--dns.resolvers=10.255.0.4:1026"
         "--dns.propagation-wait=10s"
         "--dns-timeout=120"
@@ -58,19 +56,23 @@
     };
     certs."two.dns.reinitialized.net" = {
       postRun = ''
-        # Copy PKCS#12 file from lego internal directory to output directory
-        PFX_SRC=$(find /var/lib/acme/.lego/two.dns.reinitialized.net -name "*.pfx" -type f | head -1)
-        if [[ -n "$PFX_SRC" ]]; then
-          cp "$PFX_SRC" /var/lib/acme/two.dns.reinitialized.net/cert.pfx
-          chmod 640 /var/lib/acme/two.dns.reinitialized.net/cert.pfx
-          chown acme:acme /var/lib/acme/two.dns.reinitialized.net/cert.pfx
-          echo "Copied PKCS#12 certificate to /var/lib/acme/two.dns.reinitialized.net/cert.pfx"
-        else
-          echo "Warning: No .pfx file found in lego directory"
-        fi
+        # Publish the installed certificate atomically; lego's internal layout can change.
+        (
+          set -euo pipefail
+          umask 077
+          cert_dir=/var/lib/acme/two.dns.reinitialized.net
+          pfx_tmp=$(mktemp "$cert_dir/.cert.pfx.XXXXXX")
+          trap 'rm -f "$pfx_tmp"' EXIT
+          ${pkgs.openssl}/bin/openssl pkcs12 -export \
+            -inkey "$cert_dir/key.pem" -in "$cert_dir/fullchain.pem" \
+            -out "$pfx_tmp" -passout pass:
+          chmod 640 "$pfx_tmp"
+          chown acme:acme "$pfx_tmp"
+          mv -f "$pfx_tmp" "$cert_dir/cert.pfx"
+        )
       '';
       reloadServices = [
-        "dnsTwo"
+        "docker-dnsTwo.service"
       ];
     };
   };

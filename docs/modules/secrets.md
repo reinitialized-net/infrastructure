@@ -18,7 +18,7 @@ secrets.<name> = {
   keys = {
     # arbitrary Nix values
   };
-  file = /path/to/secret-file;
+  file = "/run/secrets/secret-file";
 };
 ```
 
@@ -61,12 +61,14 @@ The mesh module reads only `secrets.meshNetwork.file`:
 }: {
   secrets.meshNetwork = {
     description = "MeshNetwork WireGuard private key";
-    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
+    file = lib.mkDefault "/run/secrets/mesh-privatekey";
   };
 }
 ```
 
 Public keys belong in `modules/profiles/meshNetwork/meshTopology.nix`.
+
+Provision private-key files separately with restrictive ownership and permissions before their services start on every boot. `/run` is volatile: use boot-time secret provisioning or a protected persistent path. Keep the path quoted; embedding private keys with `builtins.toFile` or Nix path literals can copy them into readable Nix artifacts.
 
 ### ACME DNS-01 Credentials
 
@@ -94,11 +96,11 @@ Container hosts expect:
 ```nix
 secrets.volumeMigration = {
   description = "SSH private key for docker volume migration between hosts";
-  file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+  file = lib.mkDefault "/run/secrets/volume-migration-key";
 };
 ```
 
-The containers profile writes this key to `/home/docker/.ssh/volume-migration-key`.
+Provision the source file before the key-deployment unit starts. The containers profile copies it to `/var/lib/docker-volume-migration/identity` inside a root-owned directory, with mode `0600` and ownership `docker:docker`.
 
 ### OPNsense Firewall Tool
 
@@ -107,7 +109,7 @@ The containers profile writes this key to `/home/docker/.ssh/volume-migration-ke
 ```nix
 secrets.opnsenseFirewall = {
   description = "OPNsense firewall API credentials";
-  file = lib.mkDefault /run/secrets/opnsense-api-secret;
+  file = lib.mkDefault "/run/secrets/opnsense-api-secret";
   keys = {
     host = "OPNSENSE_HOST_OR_IP";
     port = "443";

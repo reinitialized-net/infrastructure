@@ -8,6 +8,8 @@
 
 Simple profile for mounting and managing a secondary data disk, typically used for storing application data, Docker volumes, or databases. Designed for VMs with multiple disks where the second disk (scsi1) is dedicated to data storage.
 
+The profile enables automatic formatting. For a new VM, attach a deliberately provisioned blank data disk. Before applying it to an existing VM, verify the disk identity, filesystem, and recoverable backups. Never attach an arbitrary or recovery disk as `scsi1` and assume it is safe to initialize.
+
 ## Features
 
 - Automatic mounting of second disk
@@ -42,11 +44,7 @@ Expects the data disk to be the second SCSI disk:
 
 ### Automatic Formatting
 
-If the disk is unformatted on first boot, it will be automatically formatted with ext4:
-
-```
-mkfs.ext4 /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
-```
+`autoFormat = true` asks NixOS to initialize an unformatted disk with ext4. This is provisioning behavior. A failed mount or filesystem probe on an existing disk requires investigation before any formatting; formatting destroys the previous contents.
 
 ### Automatic Resizing
 
@@ -181,6 +179,8 @@ mount | grep /mnt/data
 
 ### Resize Disk
 
+Confirm that this is the intended ext4 filesystem and retain a verified backup before changing disk size. Expansion does not provide a way to shrink the filesystem or recover corruption.
+
 1. Resize the disk in Proxmox UI
 2. Reboot the VM
 3. The filesystem will auto-expand
@@ -196,9 +196,11 @@ resize2fs /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
 
 #### Snapshot in Proxmox
 
-Use Proxmox backup features to snapshot the entire VM.
+Use Proxmox backup features to snapshot the entire VM, with application quiescing or a database-aware backup plan. Verify restoration; a snapshot of a running database alone does not establish application consistency.
 
 #### Manual Backup
+
+Stop application writers or use a consistent read-only snapshot before copying data. The following file copies are not hot database backups. Preserve application ownership and verify a restore before relying on them for a migration.
 
 ```bash
 # Tar backup
@@ -239,43 +241,40 @@ scsi-0QEMU_QEMU_HARDDISK_drive-scsi1 -> ../../sdb
 
 ### Formatting Failed
 
-Manually format:
+On an existing production disk, preserve the contents and diagnose the failure:
 
 ```bash
-sudo mkfs.ext4 -L data /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+lsblk -o NAME,PATH,SIZE,FSTYPE,LABEL,UUID,MOUNTPOINTS
+sudo blkid -p /dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1
+journalctl -b -u mnt-data.mount
 ```
 
-Then mount:
-
-```bash
-sudo mount /mnt/data
-```
+Confirm the Proxmox disk assignment and inspect filesystem errors. If the disk contains data or its history is uncertain, take a recovery image or snapshot and use a filesystem-specific recovery plan. Do not run `mkfs` as a mount repair. Initializing a replacement disk is a separate destructive provisioning operation requiring an identified blank target and a recovery plan for the old disk.
 
 ### Permission Issues
 
-Set ownership:
+Inspect ownership and verify the backing filesystem is mounted:
 
 ```bash
-sudo chown -R user:group /mnt/data
+mountpoint /mnt/data
+ls -ldn /mnt/data /mnt/data/docker
 ```
 
-Or for Docker:
-
-```bash
-sudo chown -R docker:docker /mnt/data/docker
-```
+Use the affected service's declared UID/GID and tmpfiles rules to correct only its intended paths. Do not recursively change ownership across `/mnt/data` or Docker volumes: different services, especially databases, require different owners. See [Using makeUser](../examples/makeUser.md#troubleshooting) for managed user directories.
 
 ### Disk Full
 
-Clean up space:
+Identify the space consumer first:
 
 ```bash
 # Find large directories
 du -sh /mnt/data/* | sort -h
 
-# Clean up Docker (if using containers profile)
-docker system prune -a --volumes
+# Inspect Docker usage without deleting data
+docker system df -v
 ```
+
+Remove only identified disposable data after checking its owner and recovery needs. Do not prune volumes during an incident or migration: unused or anonymous volumes may contain a disconnected database. For stale CI containers, inspect the stopped jobs before targeted cleanup; see the [runner disk-space investigation](../investigations/forgejo-runner-disk-space-stale-containers.md).
 
 ## Dependencies
 
@@ -287,15 +286,17 @@ docker system prune -a --volumes
 
 ## Alternative Configurations
 
+These examples are separate profiles, not overrides of `mountData`'s forced `/mnt/data` definition. They require an already prepared filesystem on a verified target and disable automatic formatting. Changing the declared filesystem type does not convert existing data; plan a backed-up migration first.
+
 ### Different Mount Point
 
 ```nix
 {
-  # Override the mount point
+    # Use an already prepared data filesystem at a different mount point
   fileSystems."/data" = {
     device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
     fsType = "ext4";
-    autoFormat = true;
+    autoFormat = false;
     autoResize = true;
   };
 }
@@ -309,7 +310,7 @@ docker system prune -a --volumes
     device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
     fsType = "xfs";
     options = [ "defaults" "noatime" ];
-    autoFormat = true;
+    autoFormat = false;
   };
 }
 ```

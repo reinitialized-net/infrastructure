@@ -28,7 +28,7 @@ Split the database connection parameters in `/modules/secrets/apps1.nix`:
 ```nix
 DB_HOST = "10.255.0.11:1024";
 DB_USERNAME = "hudu";
-DB_PASSWORD = "SNoAk9yLi5BdV6vPumMEOUKHG6JxkHq3";
+DB_PASSWORD = "[REDACTED: verify and rotate the exposed database password]";
 DB_NAME = "hudu_production";
 ```
 
@@ -37,7 +37,7 @@ DB_NAME = "hudu_production";
 DB_HOST = "10.255.0.11";
 DB_PORT = "1024";
 DB_USERNAME = "hudu";
-DB_PASSWORD = "SNoAk9yLi5BdV6vPumMEOUKHG6JxkHq3";
+DB_PASSWORD = "[REDACTED: verify and rotate the exposed database password]";
 DB_NAME = "hudu_production";
 ```
 

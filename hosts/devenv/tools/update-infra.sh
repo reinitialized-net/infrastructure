@@ -90,7 +90,7 @@ for host in $VALID_HOSTS; do
         --sudo; then
       SUCCESS_HOSTS+=("$host")
       echo "✓ $host updated successfully"
-    elif ssh "$SSH_USER@$TARGET_IP" 'sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null && \
+    elif ssh "$SSH_USER@$TARGET_IP" 'if sudo busctl --system list --no-pager | grep -q org.freedesktop.systemd1; then exit 1; fi; sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null && \
          nixos-rebuild switch "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$host" \
            --target-host "$SSH_USER@$TARGET_IP" \
            --sudo; then

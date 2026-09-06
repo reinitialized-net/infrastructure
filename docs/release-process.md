@@ -59,3 +59,8 @@ bash -n hosts/devenv/tools/release-infra.sh
 ```
 
 The build covers every host exported by the flake and present in the mesh topology.
+
+Automatic PR promotion applies the same lockfile-preserving build policy. It
+stops at the first validation failure and binds the Forgejo merge to the commit
+that was validated. Manual-update PRs also require an approving repository writer
+on that commit; see [Automatic Updates](architecture/automatic-updates.md).

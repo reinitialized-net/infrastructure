@@ -260,3 +260,47 @@ in {
 - **Version Control**: Clearer diffs when scripts change
 - **Reusability**: Scripts can be tested independently
 - **Maintainability**: Easier to update and refactor scripts
+
+## OPNsense rule generation and apply safety
+
+Start with `updateNetworkFirewallRules --dry-run`. The tool reads the retained
+traffic log buffer; `--days` is advisory and does not request a historical date
+range. Generated allow rules aggregate IPv4 sources to `/24` networks, so review
+their scope before applying. The tool adds allow rules and an inbound IPv4 deny
+rule for each observed interface alongside existing rules. It does not delete
+existing rules or create a global default deny rule. Review ordering and
+duplicates before running it again.
+
+TLS certificate and hostname verification are enabled by default, including in
+dry-run mode. For a management certificate issued by a private CA, install that
+CA in the host trust store or set `CURL_CA_BUNDLE=/path/to/trusted-ca-bundle.pem`.
+Use a management hostname covered by the certificate. The existing explicit
+`OPNSENSE_VERIFY_TLS=false` override remains available, but it disables server
+authentication and exposes API credentials to endpoint impersonation.
+
+Applying requires the OPNsense savepoint, revert, and timed rollback APIs. The
+tool stops before adding rules if it cannot obtain a valid savepoint or its
+backup retention cannot cover all planned rule additions. Increase configuration
+backup retention or reduce `--top-flows` if necessary. Releases that remove these
+APIs, as described in the upstream [savepoint removal issue](https://github.com/opnsense/core/issues/10235),
+support this tool's dry-run mode only. Use a separately planned change with
+console access for those releases; the tool does not fall back to an unprotected
+apply.
+
+Have console access and avoid concurrent firewall configuration edits. Type
+`yes` after reviewing the proposed rules to stage and apply them. All rule
+creations and the reload must succeed before the tool offers the second prompt.
+Check required connectivity, then type `keep` within the remaining confirmation
+window to cancel the 60-second rollback timer. The window ends 45 seconds after
+apply starts, leaving time for the cancellation request. A missing or negative
+confirmation, API failure, or interrupted command attempts to restore the
+savepoint and leaves the automatic rollback timer uncancelled. If restoration
+cannot be confirmed, check the firewall from its console. The displayed rule
+preview file is temporary and is removed when the command exits.
+
+The offline regression test substitutes a local fake curl implementation; it
+never contacts an OPNsense endpoint:
+
+```bash
+python3 tests/test_firewall_rules.py
+```

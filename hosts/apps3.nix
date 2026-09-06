@@ -1,7 +1,8 @@
 {
   config,
   ...
-}:{
+}:
+{
   # Networking Configuration
   networking = {
     hostName = "apps3";
@@ -27,7 +28,7 @@
   };
   # Configure MeshNetwork
   services.meshNetwork = {
-      enable = true;
+    enable = true;
   };
   services.containerAutoUpdate.skipContainers = [
     "immich-server"
@@ -82,7 +83,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.5:1001:2283/tcp"  # Immich web UI and API
+        "10.255.0.5:1001:2283/tcp" # Immich web UI and API
       ];
       volumes = [
         "immich_upload:/usr/src/app/upload"
@@ -116,7 +117,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.5:1025:8008/tcp"  # Matrix client/server API
+        "10.255.0.5:1025:8008/tcp" # Matrix client/server API
       ];
       volumes = [
         "tuwunel_data:/var/lib/tuwunel"
@@ -133,7 +134,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.5:1026:8000/tcp"  # Paperless-ngx web UI and API
+        "10.255.0.5:1026:8000/tcp" # Paperless-ngx web UI and API
       ];
       volumes = [
         "paperless_data:/usr/src/paperless/data"
@@ -148,16 +149,22 @@
       autoStart = true;
       hostname = "pelican-panel";
       image = "ghcr.io/pelican-dev/panel:latest";
-      environment = config.secrets.pelican.keys;
+      environment = config.secrets.pelican.keys // {
+        # rp1 terminates HTTPS; the container serves HTTP on its mesh port.
+        BEHIND_PROXY = "true";
+        TRUSTED_PROXIES = "10.255.0.2";
+      };
       networks = [
         "backend"
       ];
       ports = [
-        "10.255.0.5:1027:80/tcp"  # Pelican Panel web UI
+        "10.255.0.5:1027:80/tcp" # Pelican Panel web UI
       ];
       volumes = [
-        "pelican_panel_var:/app/var"
-        "pelican_panel_logs:/app/storage/logs"
+        # Preserve the old anonymous /pelican-data before first activation;
+        # see docs/production-audit-2026-09-04.md for the migration prerequisite.
+        "pelican_panel_var:/pelican-data"
+        "pelican_panel_logs:/var/www/html/storage/logs"
       ];
     };
 
@@ -167,13 +174,16 @@
       hostname = "ocis";
       image = "owncloud/ocis:latest";
       entrypoint = "/bin/sh";
-      cmd = [ "-c" "ocis init || true; ocis server" ];
+      cmd = [
+        "-c"
+        "ocis init || true; ocis server"
+      ];
       environment = config.secrets.ocis.keys;
       networks = [
         "backend"
       ];
       ports = [
-        "10.255.0.5:1028:9200/tcp"  # OCIS HTTP web UI + WebDAV
+        "10.255.0.5:1028:9200/tcp" # OCIS HTTP web UI + WebDAV
       ];
       volumes = [
         "ocis_config:/etc/ocis"
@@ -192,7 +202,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.5:1029:8080/tcp"  # SearXNG web UI
+        "10.255.0.5:1029:8080/tcp" # SearXNG web UI
       ];
       volumes = [
         "searxng_config:/etc/searxng"

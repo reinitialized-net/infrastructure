@@ -128,7 +128,7 @@ The profile creates a system user and group named `docker`:
 ```nix
 users.users.docker = {
   isSystemUser = true;
-  shell = pkgs.bashInteractive;
+  shell = pkgs.dash;
   home = "/home/docker";
   createHome = true;
   group = "docker";
@@ -136,7 +136,7 @@ users.users.docker = {
 };
 ```
 
-The user has a fixed authorized key named `docker-volume-migration`. SSH access for this user is restricted by `ForceCommand` to Docker commands, SCP, and SFTP server commands needed by volume migration.
+The user has a fixed authorized key named `docker-volume-migration`. Its SSH `ForceCommand` parses arguments and allows only the volume migration command forms, legacy SCP server modes, and SFTP. Migration containers use the fixed Alpine image and named volumes; arbitrary Docker commands, host bind mounts, and shell commands are rejected. The login shell does not load writable shell startup files, and forwarding, user SSH startup scripts, and PTYs are disabled.
 
 The private key for outbound migration is written by `deploy-docker-migration-key` from:
 
@@ -144,9 +144,9 @@ The private key for outbound migration is written by `deploy-docker-migration-ke
 config.secrets.volumeMigration.file
 ```
 
-The service writes `/home/docker/.ssh/volume-migration-key` with mode `0600` and configures SSH to use it.
+The service atomically writes `/var/lib/docker-volume-migration/identity` with mode `0600` in a root-owned directory. Outbound migration uses an immutable SSH configuration rather than the docker user's writable home configuration. Known host keys are stored in `/var/lib/docker-volume-migration/known_hosts`.
 
-The profile also grants members of the `docker` group passwordless sudo-rs access to run `ssh` and `test` as the `docker` user. This is used by `migrate-volumes`.
+The profile also grants members of the `docker` group passwordless sudo-rs access to run `ssh` and `test` as the `docker` user, plus exact `systemctl stop/start` commands for declared container units. Migration uses those units because NixOS removes declarative containers when they stop. Unmanaged containers still use Docker stop/start; unmanaged containers configured with automatic removal are rejected before stopping.
 
 ## `migrate-volumes`
 
@@ -184,6 +184,18 @@ migrate-volumes transfer -v postgres1_data -r 10.1.11.3 -V imported_postgres1_da
 
 Transfer mode streams data over SSH and does not leave intermediate backup files on either host.
 
+Backup checksums and archive readability are checked before import stops consumers. Failed discovery or container stops abort the operation. The stop plan includes running OCI containers that depend on a volume consumer, because systemd also stops those dependents. Cleanup resumes only containers that were running before the operation; a failed transfer resumes the source, while a destination that may have been partially written remains stopped. Successful transfers leave the source stopped and resume the destination. Export writes to a temporary file so a failed export preserves the previous backup.
+
+Update both migration hosts to the current tool before using automatic stop/recovery. A destination without the migration planning command is rejected before containers are stopped.
+
+Imports and transfers extract into the selected destination volume. Use a fresh destination volume or take a recoverable snapshot/backup before replacing existing data; interrupted extraction does not automatically roll back volume contents. `-n` explicitly permits copying with running writers and can produce inconsistent data.
+
+Run the offline command-boundary and recovery regression check with:
+
+```bash
+python3 modules/profiles/containers/tests/check_migration.py
+```
+
 ## Mesh Network Integration
 
 Because this profile imports `meshNetwork`, a host can enable mesh networking with:
@@ -202,6 +214,8 @@ virtualisation.oci-containers.containers.my-service = {
 ```
 
 Current host files use the `networks` option rather than Docker `extraOptions = [ "--network=backend" ]`.
+
+Declared containers attached to `backend` start after `docker-meshNetwork.service` creates it. Their units also follow the mesh network service's stop/restart lifecycle.
 
 ## Troubleshooting
 
@@ -226,7 +240,7 @@ Check migration key deployment:
 
 ```bash
 systemctl status deploy-docker-migration-key.service
-sudo -u docker test -f /home/docker/.ssh/volume-migration-key
+sudo -u docker test -f /var/lib/docker-volume-migration/identity
 ```
 
 Check Docker mesh network:

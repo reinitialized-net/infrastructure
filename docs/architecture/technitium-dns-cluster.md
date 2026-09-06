@@ -1,7 +1,7 @@
 # Technitium DNS Cluster Architecture
 
 **Status:** Current deployment notes
-**Verified against source and live resolver state:** June 27, 2026
+**Last audited:** September 5, 2026
 
 ## Overview
 
@@ -20,7 +20,7 @@ There is no implemented centralized certificate distribution service in the curr
 |------|-------------|---------|-----------|
 | `apps1` | `10.1.11.2` | `10.255.0.3` | `dnsOne` |
 | `apps2` | `10.1.11.3` | `10.255.0.4` | `dnsTwo` |
-| `rp1` | `10.1.12.2`, `10.1.12.3`, `10.1.12.4` | `10.255.0.2` | nginx/Angie reverse and stream proxy |
+| `rp1` | `10.1.12.2`, `10.1.12.3`, `10.1.12.4` | `10.255.0.2` | NGINX reverse and stream proxy |
 
 ## Container Port Mappings
 
@@ -50,10 +50,22 @@ Each host defines one certificate:
 
 | Host | Certificate name | Reload service |
 |------|------------------|----------------|
-| `apps1` | `one.dns.reinitialized.net` | `dnsOne` |
-| `apps2` | `two.dns.reinitialized.net` | `dnsTwo` |
+| `apps1` | `one.dns.reinitialized.net` | `docker-dnsOne.service` |
+| `apps2` | `two.dns.reinitialized.net` | `docker-dnsTwo.service` |
 
-The ACME `postRun` hook finds the generated `.pfx` file under `/var/lib/acme/.lego/<name>/`, copies it to `/var/lib/acme/<name>/cert.pfx`, sets mode `640`, and owns it as `acme:acme`.
+The ACME `postRun` hook exports the installed `fullchain.pem` and `key.pem`
+with [OpenSSL PKCS#12](https://docs.openssl.org/3.6/man1/openssl-pkcs12/), then
+atomically replaces `/var/lib/acme/<name>/cert.pfx` with mode `640` and owner
+`acme:acme`. The empty PFX password preserves the existing Technitium setting;
+filesystem permissions and the read-only container mount protect the private key.
+The hook fails if export fails, leaving the previous PFX intact. It does not
+search Lego's internal directory: that previously retained an expired PFX even
+when the installed PEM certificate had renewed successfully.
+
+When repairing an already stale PFX, run the evaluated `postRun` hook once as
+`acme` after backing up the old file. A renewal with an unchanged leaf certificate
+may skip the hook. Verify the served certificate matches the installed PEM on
+one DNS node before touching the other node.
 
 The DNS containers mount those directories read-only:
 
@@ -64,7 +76,10 @@ The DNS containers mount those directories read-only:
 
 ## rp1 Ingress
 
-`rp1` uses Angie/nginx with stream support.
+`rp1` uses the pinned stable NGINX package with stream support. The configuration
+uses standard NGINX features, including TLS SNI routing and HTTP/3. The former
+Angie package is marked insecure by the pinned Nixpkgs input because its security
+updates are delayed.
 
 ### DNS Service
 
@@ -87,7 +102,28 @@ HTTPS on shared port 443 uses SNI routing:
 - `one.dns.reinitialized.net -> dnsOneUI`
 - `two.dns.reinitialized.net -> dnsTwoUI`
 
-The HTTP virtual hosts for `one.dns.reinitialized.net` and `two.dns.reinitialized.net` only redirect to HTTPS and restrict access with the `internalOnly` nginx allow/deny block.
+The port 443 stream routes permit DNS administration only from RFC1918 source
+addresses (`10.0.0.0/8`, `172.16.0.0/12`, and `192.168.0.0/16`). Connections from
+other sources close without reaching either DNS backend, including unknown or
+missing SNI. Private clients retain the existing DNS UI fallback. Public
+`mail.reinitialized.net` SNI on `10.1.12.2:443` still reaches Stalwart.
+
+The HTTP virtual hosts for `one.dns.reinitialized.net` and `two.dns.reinitialized.net`
+only redirect to HTTPS and include the `internalOnly` nginx allow/deny block.
+That HTTP configuration does not protect TLS passthrough; the stream source check
+enforces the DNS administration boundary independently. The source address seen
+by `rp1` must preserve the external client's address through upstream NAT.
+
+An offline routing regression check runs these stream maps in the configured
+NGINX binary with loopback test backends. It covers each private-network range,
+public sources, unknown/missing SNI, and public mail routing:
+
+```bash
+nix eval --offline --raw --impure --expr \
+  '(import ./hosts/rp1.nix { config = {}; pkgs = {}; }).services.nginx.streamConfig' \
+  > /tmp/rp1-stream.conf
+python3 docs/checks/rp1-dns-admin.py /path/to/nginx /tmp/rp1-stream.conf
+```
 
 ## Recursion ACL
 
@@ -112,15 +148,15 @@ Template shape:
 ```nix
 secrets.acmeDns = {
   description = "Technitium DNS API token for ACME DNS-01 challenges";
-  file = lib.mkDefault (builtins.toFile "acme-dns-token" ''
-    TECHNITIUM_API_TOKEN=PLACE API TOKEN HERE
-    TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
-  '');
-  keys = {
-    apiToken = "PLACE API TOKEN HERE";
-  };
+  # Provision root-owned mode 0600 before activation. Keep values out of Nix.
+  file = lib.mkDefault "/var/lib/service-secrets/acme-dns.env";
+  keys = {};
 };
 ```
+
+The runtime file contains `TECHNITIUM_API_TOKEN` and
+`TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/`. Provision only the
+credentials required by that host.
 
 ## Operational Checks
 
@@ -143,8 +179,8 @@ dig @10.1.11.3 example.com +short
 Check mesh admin endpoints:
 
 ```bash
-curl -k https://10.255.0.3:1027/
-curl -k https://10.255.0.4:1025/
+curl --resolve one.dns.reinitialized.net:1027:10.255.0.3 https://one.dns.reinitialized.net:1027/
+curl --resolve two.dns.reinitialized.net:1025:10.255.0.4 https://two.dns.reinitialized.net:1025/
 ```
 
 Check generated PFX files on each DNS host:

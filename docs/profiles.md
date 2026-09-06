@@ -57,11 +57,11 @@ Defines `secrets.<name>.keys`, `secrets.<name>.file`, and `secrets.<name>.descri
 ```nix
 secrets.meshNetwork = {
   description = "MeshNetwork WireGuard private key";
-  file = /run/secrets/mesh-privatekey;
+  file = "/run/secrets/mesh-privatekey";
 };
 ```
 
-The module defines options only; it does not decrypt files or manage permissions.
+The module defines options only; it does not decrypt files or manage permissions. Provision the referenced file on the target before its consumer starts. Use a quoted runtime path for live credentials; `builtins.toFile` and Nix path literals can copy secret contents into the Nix store.
 
 ## Mesh Network
 
@@ -106,15 +106,10 @@ services.meshNetwork.enable = true;
 Mounts the QEMU second SCSI disk at `/mnt/data`:
 
 ```nix
-fileSystems."/mnt/data" = {
-  fsType = "ext4";
-  device = "/dev/disk/by-id/scsi-0QEMU_QEMU_HARDDISK_drive-scsi1";
-  autoFormat = true;
-  autoResize = true;
-};
+imports = [ "${self}/modules/profiles/mountData.nix" ];
 ```
 
-Only use it on hosts where `scsi1` is intended to be the data disk.
+The profile enables first-boot formatting and resizing. Only use it where `scsi1` is the intended data disk; provision a blank disk for a new VM and verify existing disks before activation. A mount failure on a production disk is a recovery problem, not permission to format it. See the [storage troubleshooting precautions](modules/mountData.md#troubleshooting).
 
 ## Current Host Composition
 

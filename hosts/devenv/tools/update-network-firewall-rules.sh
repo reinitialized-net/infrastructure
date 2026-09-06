@@ -43,7 +43,7 @@ OPNSENSE_HOST="${OPNSENSE_HOST:-$SECRETS_HOST}"
 OPNSENSE_API_KEY="${OPNSENSE_API_KEY:-$SECRETS_API_KEY}"
 OPNSENSE_API_SECRET="${OPNSENSE_API_SECRET:-$SECRETS_API_SECRET}"
 OPNSENSE_PORT="${OPNSENSE_PORT:-$SECRETS_PORT}"
-OPNSENSE_VERIFY_TLS="${OPNSENSE_VERIFY_TLS:-false}"
+OPNSENSE_VERIFY_TLS="${OPNSENSE_VERIFY_TLS:-true}"
 LOG_DAYS="${LOG_DAYS:-30}"
 
 # How many unique src→dst:port flows to consider for rule generation
@@ -59,8 +59,8 @@ BOLD='\033[1m'
 NC='\033[0m' # No Color
 
 # ── Temp files ─────────────────────────────────────────────────────────────────
-TMPDIR=$($MKTEMP -d)
-trap '$RM -rf "$TMPDIR"' EXIT
+RULES_TMPDIR=$($MKTEMP -d)
+trap '$RM -rf "$RULES_TMPDIR"' EXIT
 
 # ── Helper functions ───────────────────────────────────────────────────────────
 
@@ -89,7 +89,7 @@ usage() {
   echo "  -p, --port PORT         Management port (default: 443)"
   echo "  -d, --days DAYS         Days of logs to analyze (default: 30)"
   echo "  -t, --top-flows N       Top N flows to consider (default: 200)"
-  echo "      --verify-tls        Verify TLS certificates (default: false)"
+  echo "      --verify-tls        Verify TLS certificates (default: true)"
   echo "      --dry-run           Generate rules but skip apply step"
   echo "  -h, --help              Show this help message"
   echo ""
@@ -98,7 +98,8 @@ usage() {
   echo "  OPNSENSE_API_KEY        API key"
   echo "  OPNSENSE_API_SECRET     API secret"
   echo "  OPNSENSE_PORT           Management port"
-  echo "  OPNSENSE_VERIFY_TLS     Verify TLS (default: false)"
+  echo "  OPNSENSE_VERIFY_TLS     Verify TLS (default: true; explicit false disables)"
+  echo "  CURL_CA_BUNDLE          Trusted CA bundle for a private management CA"
   echo "  LOG_DAYS                Days of logs (default: 30)"
   echo "  TOP_FLOWS               Top flows to analyze (default: 200)"
   exit 0
@@ -109,19 +110,19 @@ api_call() {
   local method="$1"
   local endpoint="$2"
   local data="${3:-}"
-  local tls_flag=""
+  local -a tls_flags=()
   local timeout_connect="${API_CONNECT_TIMEOUT:-5}"
   local timeout_max="${API_MAX_TIMEOUT:-30}"
 
-  if [[ "$OPNSENSE_VERIFY_TLS" != "true" ]]; then
-    tls_flag="--insecure"
+  if [[ "$OPNSENSE_VERIFY_TLS" == "false" ]]; then
+    tls_flags=(--insecure)
   fi
 
   local url="https://${OPNSENSE_HOST}:${OPNSENSE_PORT}${endpoint}"
 
   if [[ -n "$data" ]]; then
     # POST/PUT with body: include Content-Type header
-    $CURL -s $tls_flag \
+    $CURL --fail-with-body --silent --show-error "${tls_flags[@]}" \
       --connect-timeout "$timeout_connect" \
       --max-time "$timeout_max" \
       -X "$method" \
@@ -131,7 +132,7 @@ api_call() {
       "$url"
   else
     # GET or POST without body: omit Content-Type to avoid "Invalid JSON syntax" errors
-    $CURL -s $tls_flag \
+    $CURL --fail-with-body --silent --show-error "${tls_flags[@]}" \
       --connect-timeout "$timeout_connect" \
       --max-time "$timeout_max" \
       -X "$method" \
@@ -139,6 +140,38 @@ api_call() {
       "$url"
   fi
 }
+
+# The configd endpoints return either "ok" or "OK\n" on success.
+api_status_ok() {
+  $JQ -e '(.status | ascii_downcase | gsub("^\\s+|\\s+$"; "")) == "ok"' >/dev/null 2>&1
+}
+
+# Restore staged changes as well as the running policy on every unconfirmed exit.
+# Do not cancel the automatic rollback timer on a failure, even if revert fails.
+SAVEPOINT_REV=""
+CHANGES_STARTED="false"
+CHANGES_CONFIRMED="false"
+cleanup() {
+  local exit_status=$?
+  local rollback_result
+  trap - EXIT
+  if [[ "$CHANGES_STARTED" == "true" && "$CHANGES_CONFIRMED" != "true" ]]; then
+    log_warn "Restoring firewall savepoint ${SAVEPOINT_REV}..."
+    if rollback_result=$(api_call POST "/api/firewall/filter/revert/${SAVEPOINT_REV}" "{}") &&
+      api_status_ok <<< "$rollback_result"; then
+      log_ok "Previous firewall configuration restored"
+    else
+      log_error "Could not restore savepoint. Check the firewall from its console."
+      log_error "The automatic rollback timer, if started, has not been cancelled."
+      exit_status=1
+    fi
+  fi
+  $RM -rf "$RULES_TMPDIR"
+  exit "$exit_status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 # ── Parse arguments ────────────────────────────────────────────────────────────
 
@@ -160,6 +193,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ── Validate required config ──────────────────────────────────────────────────
+
+case "$OPNSENSE_VERIFY_TLS" in
+  true) ;;
+  false) log_warn "TLS verification is explicitly disabled; API credentials are not protected against impersonation." ;;
+  *) log_error "OPNSENSE_VERIFY_TLS must be true or false"; exit 1 ;;
+esac
+if [[ ! "$TOP_FLOWS" =~ ^[1-9][0-9]*$ ]]; then
+  log_error "TOP_FLOWS must be a positive integer"
+  exit 1
+fi
 
 if [[ -z "$OPNSENSE_HOST" ]]; then
   read -rp "OPNsense host/IP: " OPNSENSE_HOST
@@ -229,8 +272,8 @@ if [[ $CURL_EXIT -ne 0 ]]; then
     6)  log_error "Could not resolve host '${OPNSENSE_HOST}'" ;;
     7)  log_error "Connection refused — is the API service running?" ;;
     28) log_error "Connection timed out — port ${OPNSENSE_PORT} may be filtered/blocked from this network" ;;
-    35) log_error "TLS handshake failed — try --verify-tls or check certificate" ;;
-    60) log_error "Certificate verification failed — try without --verify-tls or fix the certificate" ;;
+    35) log_error "TLS handshake failed — check the management endpoint and certificate" ;;
+    60) log_error "Certificate verification failed — fix its hostname/chain or set CURL_CA_BUNDLE to the trusted private CA bundle" ;;
     *)  log_error "curl exit code: $CURL_EXIT" ;;
   esac
   log_error "Verify: network access, host/port, and that the OPNsense API is enabled"
@@ -273,39 +316,45 @@ if echo "$INTERFACES_JSON" | $JQ -e '.status' >/dev/null 2>&1; then
   API_ERR_STATUS=$(echo "$INTERFACES_JSON" | $JQ -r '.status // empty')
   API_ERR_MSG=$(echo "$INTERFACES_JSON" | $JQ -r '.message // empty')
   if [[ -n "$API_ERR_STATUS" && "$API_ERR_STATUS" != "ok" && "$API_ERR_STATUS" != "OK" ]]; then
-    log_warn "Interface names endpoint returned error: ${API_ERR_MSG:-status $API_ERR_STATUS}"
-    INTERFACES_JSON="{}"
+    log_error "Interface names endpoint returned error: ${API_ERR_MSG:-status $API_ERR_STATUS}"
+    exit 1
   fi
 fi
 
 # Build device-name → friendly-name mapping (e.g. vlan0.12:dmz, igb0:Frontier)
-INTERFACE_LIST=$($JQ -r 'to_entries[] | "\(.key):\(.value)"' <<< "$INTERFACES_JSON" 2>/dev/null || true)
+if ! $JQ -e 'type == "object" and length > 0 and all(.[]; type == "string" and length > 0)' \
+  <<< "$INTERFACES_JSON" >/dev/null; then
+  log_error "Invalid interface discovery response"
+  exit 1
+fi
+INTERFACE_LIST=$($JQ -r 'to_entries[] | "\(.key):\(.value)"' <<< "$INTERFACES_JSON")
 
 # Also fetch the firewall filter interface list for device→OPNsense ID mapping
 # The filter API uses internal names (opt4, wan, lan) while logs use device names (vlan0.12, igb0)
 FILTER_IFACE_JSON=$(api_call GET "/api/firewall/filter/getInterfaceList")
+if ! $JQ -e '.interfaces.items | type == "array" and length > 0 and all(.[];
+  (.value | type == "string" and length > 0) and (.label | type == "string" and length > 0))' \
+  <<< "$FILTER_IFACE_JSON" >/dev/null; then
+  log_error "Invalid firewall interface mapping response"
+  exit 1
+fi
 
 # Build a mapping: OPNsense-ID → label (e.g. opt4=dmz, wan=Frontier)
-IFACE_MAP_FILE="$TMPDIR/iface_map.tsv"
+IFACE_MAP_FILE="$RULES_TMPDIR/iface_map.tsv"
 echo "$FILTER_IFACE_JSON" | $JQ -r '
   .interfaces.items[]? | "\(.value)\t\(.label)"
-' > "$IFACE_MAP_FILE" 2>/dev/null || true
+' > "$IFACE_MAP_FILE"
 
 # Build reverse mapping: label → OPNsense-ID (for rule creation later)
-IFACE_LABEL_TO_ID_FILE="$TMPDIR/iface_label_to_id.tsv"
+IFACE_LABEL_TO_ID_FILE="$RULES_TMPDIR/iface_label_to_id.tsv"
 echo "$FILTER_IFACE_JSON" | $JQ -r '
   .interfaces.items[]? | "\(.label)\t\(.value)"
-' > "$IFACE_LABEL_TO_ID_FILE" 2>/dev/null || true
+' > "$IFACE_LABEL_TO_ID_FILE"
 
 # Build device-name → label mapping from getInterfaceNames
 # and device-name → OPNsense-ID by cross-referencing
-DEVICE_TO_LABEL_FILE="$TMPDIR/device_to_label.tsv"
-echo "$INTERFACES_JSON" | $JQ -r 'to_entries[] | "\(.key)\t\(.value)"' > "$DEVICE_TO_LABEL_FILE" 2>/dev/null || true
-
-if [[ -z "$INTERFACE_LIST" ]]; then
-  log_warn "Could not auto-discover interfaces, falling back to common names"
-  INTERFACE_LIST="wan:WAN lan:LAN opt1:OPT1 opt2:OPT2"
-fi
+DEVICE_TO_LABEL_FILE="$RULES_TMPDIR/device_to_label.tsv"
+echo "$INTERFACES_JSON" | $JQ -r 'to_entries[] | "\(.key)\t\(.value)"' > "$DEVICE_TO_LABEL_FILE"
 
 echo -e "  Found interfaces:"
 echo "$INTERFACE_LIST" | while IFS=: read -r iface desc; do
@@ -330,7 +379,7 @@ log_info "This may take a moment depending on log volume..."
 # log rotation/retention settings, not a user-supplied date parameter.
 # We fetch a large batch filtered to "pass" actions only (since we're building ALLOW rules).
 
-LOG_FILE="$TMPDIR/firewall_logs.json"
+LOG_FILE="$RULES_TMPDIR/firewall_logs.json"
 TOTAL_ROWS=0
 
 # Fetch "pass" logs first (primary for rule generation)
@@ -370,12 +419,12 @@ fi
 TOTAL_ROWS=$(echo "$PASS_RESPONSE" | $JQ 'length')
 
 # Write each entry as a separate JSON line (NDJSON format for later jq processing)
-echo "$PASS_RESPONSE" | $JQ -c '.[]' > "$LOG_FILE" 2>/dev/null || true
+echo "$PASS_RESPONSE" | $JQ -c '.[]' > "$LOG_FILE"
 
 log_ok "Fetched ${TOTAL_ROWS} 'pass' log entries"
 
 # Also fetch a smaller sample of "block" entries for informational purposes
-BLOCK_FILE="$TMPDIR/firewall_blocked.json"
+BLOCK_FILE="$RULES_TMPDIR/firewall_blocked.json"
 set +e
 BLOCK_RESPONSE=$(api_call GET "/api/diagnostics/firewall/log?limit=5000&action=block" 2>&1)
 BLOCK_EXIT=$?
@@ -411,31 +460,34 @@ fi
 
 log_info "Analyzing traffic patterns..."
 
-RULES_FILE="$TMPDIR/proposed_rules.txt"
-RULES_JSON="$TMPDIR/proposed_rules.json"
-echo "[]" > "$RULES_JSON"
+RULES_FILE="$RULES_TMPDIR/proposed_rules.txt"
+RULES_JSON="$RULES_TMPDIR/proposed_rules.ndjson"
 
 # Extract unique traffic patterns from NDJSON log file
 # Fields from OPNsense API: interface, action, dir, protoname, src, dst, dstport
 # Note: already filtered to action=pass via API query params
-$JQ -r '[.interface // "unknown", .dir // "in", .protoname // "tcp", .src // "any", .dst // "any", .dstport // "any"] | @tsv' \
+if ! $JQ -se 'all(.[];
+  ([.interface, .protoname, .src, .dst] | all(.[]; type == "string" and test("^[^[:space:]]+$"))) and
+  (.dir == "in" or .dir == "out") and
+  (if (.protoname | ascii_downcase) == "tcp" or (.protoname | ascii_downcase) == "udp" or
+      (.protoname | ascii_downcase) == "sctp" then
+    (.dstport | tostring | test("^[0-9]+$") and (tonumber >= 0 and tonumber <= 65535))
+   else true end))
+' "$LOG_FILE" >/dev/null; then
+  log_error "Incomplete or unsupported traffic log fields; refusing to infer broader allow rules"
+  exit 1
+fi
+$JQ -r '[.interface, .dir, .protoname, .src, .dst, (if .dstport == null or .dstport == "" then "any" else .dstport end)] | @tsv' \
   "$LOG_FILE" 2>/dev/null | \
-  $SORT | $UNIQ -c | $SORT -rn | $HEAD -n "$TOP_FLOWS" \
-  > "$TMPDIR/traffic_summary.tsv" || true
+  $SORT | $UNIQ -c | $SORT -rn | $AWK -v limit="$TOP_FLOWS" 'NR <= limit' \
+  > "$RULES_TMPDIR/traffic_summary.tsv"
 
 # Collect unique interfaces from the logs
-LOG_INTERFACES=$($AWK '{print $2}' "$TMPDIR/traffic_summary.tsv" | $SORT -u)
+LOG_INTERFACES=$($AWK '{print $2}' "$RULES_TMPDIR/traffic_summary.tsv" | $SORT -u)
 
 if [[ -z "$LOG_INTERFACES" ]]; then
-  log_warn "No passed traffic found in filtered results. Attempting broader analysis..."
-  
-  # Try without action filter (use all entries in log file)
-  $JQ -r '[.interface // "unknown", .dir // "in", .protoname // "tcp", .src // "any", .dst // "any", .dstport // "any", .action // "unknown"] | @tsv' \
-    "$LOG_FILE" 2>/dev/null | \
-    $SORT | $UNIQ -c | $SORT -rn | $HEAD -n "$TOP_FLOWS" \
-    > "$TMPDIR/traffic_summary_all.tsv" || true
-  
-  LOG_INTERFACES=$($AWK '{print $2}' "$TMPDIR/traffic_summary_all.tsv" | $SORT -u)
+  log_error "No usable passed traffic found; no rules will be applied"
+  exit 1
 fi
 
 # ── Step 5: Generate rules per interface ───────────────────────────────────────
@@ -497,9 +549,9 @@ TOTAL_ALLOW_RULES=0
             dirs[k], protos[k], srcs[k], dsts[k], ports[k], hits[k]
         }
       }
-    ' "$TMPDIR/traffic_summary.tsv"
+    ' "$RULES_TMPDIR/traffic_summary.tsv"
 
-    IFACE_RULES=$($AWK -v iface="$iface" '$2 == iface' "$TMPDIR/traffic_summary.tsv" | $WC -l)
+    IFACE_RULES=$($AWK -v iface="$iface" '$2 == iface' "$RULES_TMPDIR/traffic_summary.tsv" | $WC -l)
     TOTAL_ALLOW_RULES=$((TOTAL_ALLOW_RULES + IFACE_RULES))
 
     echo ""
@@ -508,11 +560,6 @@ TOTAL_ALLOW_RULES=0
     echo ""
   done
 
-  echo "# ═══════════════════════════════════════════════════════════════"
-  echo "# FINAL: Global Default Deny"
-  echo "# ═══════════════════════════════════════════════════════════════"
-  echo "DENY   ALL  any    any                  → any                  port any       (global default)"
-  echo ""
   echo "# Total ALLOW rules: ${TOTAL_ALLOW_RULES}"
   echo "# Total interfaces:  $(echo "$LOG_INTERFACES" | $WC -w)"
 
@@ -542,9 +589,9 @@ echo ""
 echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
 # Also save a clean copy
-SAVE_PATH="$TMPDIR/firewall-rules-$($DATE '+%Y%m%d-%H%M%S').txt"
+SAVE_PATH="$RULES_TMPDIR/firewall-rules-$($DATE '+%Y%m%d-%H%M%S').txt"
 $CAT "$RULES_FILE" > "$SAVE_PATH"
-log_info "Rules saved to: ${SAVE_PATH}"
+log_info "Temporary rule preview: ${SAVE_PATH} (removed when this command exits)"
 
 # ── Step 7: Confirmation and apply ─────────────────────────────────────────────
 
@@ -557,7 +604,7 @@ fi
 
 echo ""
 echo -e "${YELLOW}${BOLD}⚠  WARNING: Applying these rules will modify your OPNsense firewall.${NC}"
-echo -e "${YELLOW}   Existing rules on the affected interfaces will be replaced.${NC}"
+echo -e "${YELLOW}   Generated rules will be added alongside the existing rules.${NC}"
 echo -e "${YELLOW}   Ensure you have console access in case of lockout.${NC}"
 echo ""
 
@@ -566,97 +613,52 @@ read -rp "Do you want to apply these rules? Type 'yes' to confirm: " CONFIRM
 
 if [[ "$CONFIRM" != "yes" ]]; then
   log_warn "Aborted - no rules were applied"
-  echo "The proposed rules have been saved to: ${SAVE_PATH}"
   exit 0
 fi
 
 echo ""
-log_info "Applying firewall rules to OPNsense..."
+log_info "Preparing complete rule set before changing the firewall..."
 
-# Create a savepoint for automatic rollback (60s timeout)
-log_info "Creating savepoint for safe rollback..."
-set +e
-SAVEPOINT_RESULT=$(api_call POST "/api/firewall/filter/savepoint" "{}" 2>&1)
-SAVEPOINT_EXIT=$?
-set -e
-
-SAVEPOINT_REV=""
-if [[ $SAVEPOINT_EXIT -eq 0 ]]; then
-  SAVEPOINT_REV=$(echo "$SAVEPOINT_RESULT" | $JQ -r '.revision // empty' 2>/dev/null || true)
-  if [[ -n "$SAVEPOINT_REV" ]]; then
-    log_ok "Savepoint created (revision: ${SAVEPOINT_REV})"
-    log_warn "Rules will auto-rollback in 60 seconds unless confirmed!"
-  else
-    log_warn "Could not create savepoint — proceeding without rollback protection"
-  fi
-else
-  log_warn "Savepoint creation failed — proceeding without rollback protection"
-fi
-
-# Convert proposed rules to OPNsense API format and apply
-APPLY_ERRORS=0
-
+# Prepare every payload first: a missing interface or unsupported protocol must
+# not leave a partial rule set in the firewall configuration.
+: > "$RULES_JSON"
+TOTAL_ALLOW_RULES=0
 for iface in $LOG_INTERFACES; do
-  log_info "Processing interface: ${iface}"
-
-  # Map device name (e.g. vlan0.12) → friendly label (e.g. dmz) → OPNsense filter ID (e.g. opt4)
-  IFACE_LABEL=$($AWK -F'\t' -v dev="$iface" '$1 == dev {print $2}' "$DEVICE_TO_LABEL_FILE" 2>/dev/null || true)
+  IFACE_LABEL=$($AWK -F'\t' -v dev="$iface" '$1 == dev {print $2}' "$DEVICE_TO_LABEL_FILE")
   FILTER_IFACE_ID=""
   if [[ -n "$IFACE_LABEL" ]]; then
-    FILTER_IFACE_ID=$($AWK -F'\t' -v label="$IFACE_LABEL" '$1 == label {print $2}' "$IFACE_LABEL_TO_ID_FILE" 2>/dev/null || true)
+    FILTER_IFACE_ID=$($AWK -F'\t' -v label="$IFACE_LABEL" '$1 == label {print $2}' "$IFACE_LABEL_TO_ID_FILE")
+  fi
+  if [[ -z "$FILTER_IFACE_ID" || "$FILTER_IFACE_ID" == *$'\n'* ]]; then
+    log_error "Cannot uniquely map device '${iface}' to an OPNsense filter interface"
+    exit 1
   fi
 
-  if [[ -z "$FILTER_IFACE_ID" ]]; then
-    log_warn "  Cannot map device '${iface}' to OPNsense filter interface — skipping"
-    log_warn "  (Known mappings: $($CAT "$DEVICE_TO_LABEL_FILE" 2>/dev/null | $TR '\t' '=' | $TR '\n' ' '))"
-    continue
-  fi
-
-  log_info "  Mapped: ${iface} → ${IFACE_LABEL} → ${FILTER_IFACE_ID}"
-
-  # Build and apply rules for this interface
   RULE_SEQ=1
-
   $AWK -v iface="$iface" '
     $2 == iface {
-      dir   = $3
-      proto = $4
-      src   = $5
-      dst   = $6
-      port  = $7
-
-      # Aggregate source to /24
-      n = split(src, octets, ".")
-      if (n == 4) {
-        src_net = octets[1] "." octets[2] "." octets[3] ".0/24"
-      } else {
-        src_net = src
+      src = $5
+      if (split(src, octets, ".") == 4) {
+        src = octets[1] "." octets[2] "." octets[3] ".0/24"
       }
-
-      printf "%s|%s|%s|%s|%s\n", dir, proto, src_net, dst, port
+      printf "%s|%s|%s|%s|%s\n", $3, $4, src, $6, $7
     }
-  ' "$TMPDIR/traffic_summary.tsv" | $SORT -u | while IFS='|' read -r dir proto src dst port; do
+  ' "$RULES_TMPDIR/traffic_summary.tsv" | $SORT -u > "$RULES_TMPDIR/interface_flows"
 
-    # Map direction to OPNsense format
-    if [[ "$dir" == "in" ]]; then
-      DIRECTION="in"
-    else
-      DIRECTION="out"
+  while IFS='|' read -r dir proto src dst port; do
+    PROTO_UPPER=$(echo "$proto" | $TR '[:lower:]' '[:upper:]')
+    case "$PROTO_UPPER" in
+      TCP|UDP|ICMP|GRE|ESP|AH|SCTP|CARP|TCP/UDP) ;;
+      *) log_error "Unsupported protocol '${proto}'; no rules have been changed"; exit 1 ;;
+    esac
+    # This generator and its default deny rules currently support IPv4 only.
+    if [[ "$src" == *:* || "$dst" == *:* ]]; then
+      log_error "IPv6 traffic requires a separate reviewed policy; no rules have been changed"
+      exit 1
     fi
 
-    # Protocol must match OPNsense's expected format (uppercase for TCP, UDP, etc.)
-    PROTO_UPPER=$(echo "$proto" | $TR '[:lower:]' '[:upper:]')
-    # Map common names
-    case "$PROTO_UPPER" in
-      TCP|UDP|ICMP|GRE|ESP|AH|SCTP|CARP) ;; # known protocols
-      TCP/UDP) ;; # also valid
-      *) PROTO_UPPER="any" ;; # fallback for unknown
-    esac
-
-    # Create the rule via API
-    RULE_DATA=$($JQ -n \
-      --arg action "pass" \
-      --arg direction "$DIRECTION" \
+    $JQ -cn \
+      --arg direction "$dir" \
       --arg interface "$FILTER_IFACE_ID" \
       --arg protocol "$PROTO_UPPER" \
       --arg source_net "$src" \
@@ -664,121 +666,103 @@ for iface in $LOG_INTERFACES; do
       --arg destination_port "$port" \
       --arg description "Auto-generated from traffic analysis ($($DATE '+%Y-%m-%d'))" \
       --arg sequence "$RULE_SEQ" \
-      '{
-        "rule": {
-          "action": $action,
-          "direction": $direction,
-          "interface": $interface,
-          "ipprotocol": "inet",
-          "protocol": $protocol,
-          "source_net": $source_net,
-          "destination_net": $destination_net,
-          "destination_port": $destination_port,
-          "description": $description,
-          "sequence": $sequence,
-          "enabled": "1",
-          "quick": "1"
-        }
-      }')
-
-    RESULT=$(api_call POST "/api/firewall/filter/addRule" "$RULE_DATA" 2>&1) || true
-
-    if echo "$RESULT" | $JQ -e '.uuid' >/dev/null 2>&1; then
-      RULE_UUID=$(echo "$RESULT" | $JQ -r '.uuid')
-      log_ok "  Rule created: ${proto} ${src} → ${dst}:${port} (UUID: ${RULE_UUID})"
-    else
-      log_error "  Failed to create rule: ${proto} ${src} → ${dst}:${port}"
-      log_error "  Response: $(echo "$RESULT" | $HEAD -c 200)"
-      APPLY_ERRORS=$((APPLY_ERRORS + 1))
-    fi
-
+      '{"rule": {
+        "action": "pass", "direction": $direction, "interface": $interface,
+        "ipprotocol": "inet", "protocol": $protocol, "source_net": $source_net,
+        "destination_net": $destination_net, "destination_port": $destination_port,
+        "description": $description, "sequence": $sequence, "enabled": "1", "quick": "1"
+      }}' >> "$RULES_JSON"
     RULE_SEQ=$((RULE_SEQ + 1))
-  done
+    TOTAL_ALLOW_RULES=$((TOTAL_ALLOW_RULES + 1))
+  done < "$RULES_TMPDIR/interface_flows"
 
-  # Add DENY ALL rule for this interface
-  DENY_DATA=$($JQ -n \
+  $JQ -cn \
     --arg interface "$FILTER_IFACE_ID" \
     --arg description "Default DENY ALL - Auto-generated ($($DATE '+%Y-%m-%d'))" \
-    '{
-      "rule": {
-        "action": "block",
-        "direction": "in",
-        "interface": $interface,
-        "ipprotocol": "inet",
-        "protocol": "any",
-        "source_net": "any",
-        "destination_net": "any",
-        "description": $description,
-        "sequence": "99999",
-        "enabled": "1",
-        "quick": "1",
-        "log": "1"
-      }
-    }')
-
-  DENY_RESULT=$(api_call POST "/api/firewall/filter/addRule" "$DENY_DATA" 2>&1) || true
-
-  if echo "$DENY_RESULT" | $JQ -e '.uuid' >/dev/null 2>&1; then
-    log_ok "  DENY ALL rule created for ${iface}"
-  else
-    log_error "  Failed to create DENY ALL rule for ${iface}"
-    APPLY_ERRORS=$((APPLY_ERRORS + 1))
-  fi
+    '{"rule": {
+      "action": "block", "direction": "in", "interface": $interface,
+      "ipprotocol": "inet", "protocol": "any", "source_net": "any",
+      "destination_net": "any", "description": $description, "sequence": "99999",
+      "enabled": "1", "quick": "1", "log": "1"
+    }}' >> "$RULES_JSON"
 done
+PLANNED_RULES=$($WC -l < "$RULES_JSON")
 
-# ── Step 8: Apply changes (save & reload) ─────────────────────────────────────
+# OPNsense releases without savepoint/revert support must use --dry-run. Never
+# fall back to applying a policy without rollback protection.
+log_info "Creating savepoint for safe rollback..."
+if ! SAVEPOINT_RESULT=$(api_call POST "/api/firewall/filter/savepoint" "{}") ||
+  ! api_status_ok <<< "$SAVEPOINT_RESULT"; then
+  log_error "Savepoint unavailable; no rules have been changed. Use --dry-run."
+  exit 1
+fi
+SAVEPOINT_REV=$($JQ -r '.revision // empty' <<< "$SAVEPOINT_RESULT")
+if [[ ! "$SAVEPOINT_REV" =~ ^[0-9]+$ ]]; then
+  SAVEPOINT_REV=""
+  log_error "Invalid savepoint revision; no rules have been changed"
+  exit 1
+fi
+
+# Each addRule saves a configuration revision. Keep the original savepoint in
+# the server's history throughout staging, with room for apply bookkeeping.
+SAVEPOINT_RETENTION=$($JQ -r '.retention // empty' <<< "$SAVEPOINT_RESULT")
+if [[ ! "$SAVEPOINT_RETENTION" =~ ^[1-9][0-9]*$ ]] ||
+  (( PLANNED_RULES + 2 >= SAVEPOINT_RETENTION )); then
+  log_error "Savepoint retention (${SAVEPOINT_RETENTION:-unknown}) is insufficient for ${PLANNED_RULES} rules."
+  log_error "Reduce --top-flows or increase configuration backup retention before trying again."
+  exit 1
+fi
+log_ok "Savepoint created (revision: ${SAVEPOINT_REV})"
+
+CHANGES_STARTED="true"
+while IFS= read -r RULE_DATA; do
+  if ! RESULT=$(api_call POST "/api/firewall/filter/addRule" "$RULE_DATA") ||
+    ! $JQ -e '.result == "saved" and (.uuid | type == "string" and length > 0)' \
+      <<< "$RESULT" >/dev/null 2>&1; then
+    log_error "Rule creation failed; the incomplete policy will be reverted"
+    exit 1
+  fi
+  log_ok "Rule staged: $($JQ -r '.uuid' <<< "$RESULT")"
+done < "$RULES_JSON"
+
+# ── Step 8: Apply changes, then obtain explicit confirmation ────────────────────
 
 echo ""
-log_info "Saving and applying firewall configuration..."
+log_info "Applying firewall configuration with a 60-second automatic rollback..."
+APPLY_STARTED=$SECONDS
+if ! APPLY_RESULT=$(api_call POST "/api/firewall/filter/apply/${SAVEPOINT_REV}" "{}") ||
+  ! api_status_ok <<< "$APPLY_RESULT"; then
+  log_error "Firewall apply failed; rollback will remain enabled"
+  exit 1
+fi
+log_ok "Firewall rules applied; automatic rollback is still active"
 
-# Apply changes — if savepoint exists, pass the revision for rollback tracking
-if [[ -n "$SAVEPOINT_REV" ]]; then
-  APPLY_RESULT=$(api_call POST "/api/firewall/filter/apply/${SAVEPOINT_REV}" "{}" 2>&1) || true
-else
-  APPLY_RESULT=$(api_call POST "/api/firewall/filter/apply" "{}" 2>&1) || true
+# Leave time for the confirmation request to reach the firewall before its
+# timer expires. Start the budget before apply, whose network call can be slow.
+CONFIRM_TIMEOUT=$((45 - (SECONDS - APPLY_STARTED)))
+log_warn "Verify required connectivity now. Confirm only if the full policy works."
+if (( CONFIRM_TIMEOUT <= 0 )) ||
+  ! read -r -t "$CONFIRM_TIMEOUT" -p "Type 'keep' to keep the applied rules: " KEEP ||
+  [[ "$KEEP" != "keep" ]]; then
+  log_warn "Applied rules were not confirmed; restoring the previous configuration"
+  exit 1
+fi
+if (( SECONDS - APPLY_STARTED >= 45 )); then
+  log_error "Confirmation arrived too late; restoring the previous configuration"
+  exit 1
 fi
 
-if echo "$APPLY_RESULT" | $JQ -e '.status' >/dev/null 2>&1; then
-  APPLY_STATUS=$(echo "$APPLY_RESULT" | $JQ -r '.status // empty')
-  if [[ "$APPLY_STATUS" == *"OK"* || "$APPLY_STATUS" == *"ok"* ]]; then
-    log_ok "Firewall rules applied successfully"
-  else
-    log_warn "Apply returned status: ${APPLY_STATUS}"
-    log_warn "Please verify rules in OPNsense web UI"
-  fi
-else
-  log_warn "Apply returned unexpected response: $(echo "$APPLY_RESULT" | $HEAD -c 200)"
-  log_warn "Please verify rules in OPNsense web UI"
+if ! CANCEL_RESULT=$(API_MAX_TIMEOUT=10 api_call POST "/api/firewall/filter/cancelRollback/${SAVEPOINT_REV}" "{}") ||
+  ! api_status_ok <<< "$CANCEL_RESULT"; then
+  log_error "Could not confirm rollback cancellation; restoring the previous configuration"
+  exit 1
 fi
-
-# If savepoint was created, cancel the rollback timer to keep changes
-if [[ -n "$SAVEPOINT_REV" ]]; then
-  echo ""
-  log_info "Cancelling automatic rollback..."
-  CANCEL_RESULT=$(api_call POST "/api/firewall/filter/cancelRollback/${SAVEPOINT_REV}" "{}" 2>&1) || true
-  if echo "$CANCEL_RESULT" | $JQ -e '.status == "ok"' >/dev/null 2>&1; then
-    log_ok "Rollback cancelled — changes are now permanent"
-  else
-    log_warn "Could not cancel rollback. Changes may revert in 60 seconds!"
-    log_warn "Manually cancel via: POST /api/firewall/filter/cancelRollback/${SAVEPOINT_REV}"
-  fi
-fi
+CHANGES_CONFIRMED="true"
 
 # ── Summary ────────────────────────────────────────────────────────────────────
 
 echo ""
-echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "${BOLD}  APPLY SUMMARY${NC}"
-echo -e "${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-echo -e "  Interfaces processed: $(echo "$LOG_INTERFACES" | $WC -w)"
-echo -e "  ALLOW rules created:  ${TOTAL_ALLOW_RULES}"
-echo -e "  Errors:               ${APPLY_ERRORS}"
-
-if [[ "$APPLY_ERRORS" -gt 0 ]]; then
-  log_warn "Some rules failed to apply. Review the output above and check OPNsense."
-  exit 1
-fi
-
-echo ""
-log_ok "All firewall rules applied successfully!"
-echo "  → Review rules in OPNsense: https://${OPNSENSE_HOST}:${OPNSENSE_PORT}/ui/firewall/automation"
+log_ok "All ${PLANNED_RULES} firewall rules applied and explicitly confirmed"
+echo "  ALLOW rules added: ${TOTAL_ALLOW_RULES}"
+echo "  Existing rules remain in place; review ordering and duplicates in OPNsense."
+echo "  → https://${OPNSENSE_HOST}:${OPNSENSE_PORT}/ui/firewall/automation"

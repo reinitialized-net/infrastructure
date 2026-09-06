@@ -253,7 +253,7 @@ in
   # Nginx Reverse Proxy
   services.nginx = {
     enable = true;
-    package = (pkgs.angie.override { withStream = true; });
+    package = (pkgs.nginx.override { withStream = true; });
     recommendedProxySettings = true;
     recommendedTlsSettings = true;
 
@@ -334,17 +334,35 @@ in
         server 127.0.0.1:8443;
       }
 
+      # DNS admin TLS must enforce the same source policy as internalOnly.
+      # The HTTP redirect ACL does not apply to these stream connections.
+      geo $dns_admin_allowed {
+        default        0;
+        10.0.0.0/8     1;
+        172.16.0.0/12  1;
+        192.168.0.0/16 1;
+      }
+
+      upstream rejectDnsAdmin {
+        server 127.0.0.1:8444;
+      }
+      server {
+        listen 127.0.0.1:8444;
+        return "";
+      }
+
       ## SNI routing maps for HTTPS on shared IPs
-      # 10.1.12.2: one.dns (passthrough) vs mail (via local PROXY protocol relay)
-      map $ssl_preread_server_name $https_backend_12_2 {
-        one.dns.reinitialized.net dnsOneUI;
-        mail.reinitialized.net    mailProxyProtocol;
-        default                   dnsOneUI;
+      # Public mail remains reachable; only private sources get DNS UI fallbacks.
+      map "$dns_admin_allowed:$ssl_preread_server_name" $https_backend_12_2 {
+        default                      rejectDnsAdmin;
+        "0:mail.reinitialized.net"    mailProxyProtocol;
+        "1:mail.reinitialized.net"    mailProxyProtocol;
+        ~^1:                         dnsOneUI;
       }
       # 10.1.12.3: two.dns (passthrough only, no other services currently)
-      map $ssl_preread_server_name $https_backend_12_3 {
-        two.dns.reinitialized.net dnsTwoUI;
-        default                   dnsTwoUI;
+      map $dns_admin_allowed $https_backend_12_3 {
+        default rejectDnsAdmin;
+        1       dnsTwoUI;
       }
 
       ## DNS Service Listeners (Layer 4)

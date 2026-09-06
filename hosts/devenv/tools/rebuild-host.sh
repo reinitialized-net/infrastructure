@@ -115,18 +115,18 @@ else
     :
   elif [[ "$ACTION" == "switch" ]]; then
     echo ""
-    echo "⚠ Switch failed — attempting DBus recovery on $TARGET..."
+    echo "⚠ Switch failed — checking for a DBus disconnect on $TARGET..."
     echo "  (This can happen when daemon-reexec disconnects PID 1 from the system bus)"
     echo ""
 
     # Recover dbus + logind on the remote host
-    if ssh "$SSH_USER@$TARGET_IP" 'sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null; then
+    if ssh "$SSH_USER@$TARGET_IP" 'if sudo busctl --system list --no-pager | grep -q org.freedesktop.systemd1; then exit 1; fi; sudo systemctl restart dbus.service && sleep 2 && sudo systemctl restart systemd-logind.service' 2>/dev/null; then
       echo "→ DBus recovered, retrying switch..."
       nixos-rebuild $ACTION "${NIXOS_REBUILD_FLAGS[@]}" --cores 6 --max-jobs 12 --flake "path:$FLAKE_PATH#$TARGET" \
         --target-host "$SSH_USER@$TARGET_IP" \
         --sudo
     else
-      echo "✗ DBus recovery failed on $TARGET"
+      echo "✗ Rebuild failed; DBus was healthy or recovery was unsuccessful on $TARGET"
       exit 1
     fi
   else

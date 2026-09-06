@@ -32,6 +32,7 @@ Documentation for the Reinitialized Infrastructure NixOS flake.
 
 ### Operations
 
+- [Production Audit — September 4, 2026](production-audit-2026-09-04.md) - Findings, prepared fixes, validation, and rollout prerequisites
 - [Mesh Network Port Reference](mesh-network-ports.md)
 - [Bash Script Tools](bash-script-tools.md)
 - [Automatic Updates](architecture/automatic-updates.md)

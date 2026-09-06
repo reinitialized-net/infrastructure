@@ -5,6 +5,8 @@
 **Database**: PostgreSQL on apps3 (postgres1 container)
 **Stalwart Version**: v0.15.4
 
+This records a historical recovery, not a repair procedure for the current image. The database host and migration schema must be checked against the current deployment. Do not write a schema marker or delete migration locks merely because these symptoms recur.
+
 ## Symptoms
 
 After restarting the `stalwartOne` Docker container on apps1, mail.reinitialized.net became inaccessible with the browser error:
@@ -65,32 +67,21 @@ The lock is released via `remove_lock()` which deletes the key. If the process c
 
 ## Resolution
 
-### Steps Taken
+### Historical Actions
 
-1. **Stopped the container** to end the crash cycle:
-   ```bash
-   docker stop stalwartOne
-   ```
+The operator stopped the crash cycle, inserted schema version `5` into the property table, removed migration-lock rows, and restarted Stalwart. The marker value was `0x00000005`, the big-endian schema value associated with v0.15.4. Listener and HTTPS checks then succeeded.
 
-2. **Inserted the correct schema version** into the property table:
-   ```sql
-   INSERT INTO p (k, v) VALUES (decode('00', 'hex'), decode('00000005', 'hex'));
-   ```
-   The value `0x00000005` is `5u32` in big-endian (DATABASE_SCHEMA_VERSION for v0.15.4).
+The original broad lock deletion and direct marker write are intentionally not provided as runnable SQL. They can remove an active lock or skip unfinished migrations on a different database state. Successful startup alone does not prove that a manually assigned schema version matches the stored data.
 
-3. **Cleaned up the stale migration lock**:
-   ```sql
-   DELETE FROM m WHERE encode(k, 'escape') LIKE '%migrate%';
-   ```
+### Safe Response To Similar Symptoms
 
-4. **Started the container**:
-   ```bash
-   docker start stalwartOne
-   ```
+1. Identify the exact deployed Stalwart image, database endpoint, and migration logs. The host and version above describe the incident only; consult the current [service configuration](../../hosts/apps1.nix) and [database configuration](../../hosts/db1.nix).
+2. Preserve a restorable backup of all application tables and relevant persistent volumes before making changes. Test recovery on a restored copy and retain the original data.
+3. Coordinate maintenance and scheduled updates so only the intended instance can migrate the database. Manage the declared `docker-stalwartOne.service` unit; NixOS containers may be removed on stop, so `docker start` is not a reliable restart path.
+4. Inspect the exact migration state and lock expiry. Follow the recovery procedure for the deployed version, tested on the restored copy. Never infer a completed schema from the image version or remove locks while another instance may hold them.
+5. Restart through the declared unit only after recovery is ready. Verify application data, mail delivery, listeners, and logs, then retain the backup until the recovery is accepted.
 
-5. **Verified** stalwart started successfully with all ports listening (25, 110, 143, 443, 465, 587, 993, 995, 4190, 8080) and mail.reinitialized.net returned HTTP 200 with valid SSL.
-
-### Schema Version Reference
+### Historical Schema Version Reference
 
 | Version | Stalwart Release |
 |---------|-----------------|
@@ -98,12 +89,12 @@ The lock is released via `remove_lock()` which deletes the key. If the process c
 | 2 | v0.12.4 |
 | 3 | v0.13.0 |
 | 4 | v0.14.0 |
-| 5 | v0.15.0+ |
+| 5 | v0.15.4 in this incident |
 
 ## Prevention
 
 - **Database backups**: Ensure PostgreSQL backups include all tables, especially the `p` (property) table which contains critical schema metadata.
-- **Schema version monitoring**: After stalwart upgrades, verify the schema version exists:
+- **Schema version monitoring**: For the historical v0.15.4 layout, the following read-only query checks whether the marker exists. Use the deployed version's schema when checking a current system:
   ```sql
   SELECT encode(k, 'hex') as key, encode(v, 'hex') as value FROM p WHERE k = decode('00', 'hex');
   ```

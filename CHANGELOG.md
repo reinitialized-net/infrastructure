@@ -14,6 +14,13 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Fixed
 
+- Stop Infratainer checkout and validation failures from being masked by Bash conditional calls; serialize shared-checkout workflows, bind promotion to the validated PR SHA, and require current repository-writer approval for manual updates.
+- Queue dashboard-triggered Renovate runs without holding webhook requests open, and bound webhook connection handling.
+- Restrict DNS administration TLS passthrough to private clients while preserving public mail, and replace the insecure-marked Angie package with the pinned maintained NGINX package.
+- Restore compatible OpenTelemetry exporter configuration and Stalwart metrics scraping, prepare Jaeger's existing volume for its non-root image user, atomically publish current DNS PKCS#12 certificates and reload the correct container units, and configure Pelican's proxy mode and persistent mount paths (preserve its anonymous volume before activation).
+- Harden Docker volume migration command validation and failure recovery, and make OPNsense API calls verify TLS and retain rollback until a complete, confirmed apply.
+- Check for an actual DBus disconnect before rebuild tools attempt recovery after a failed deployment.
+- Redact exposed credentials from incident notes and document coordinated rotation, runtime secret provisioning, and production rollout prerequisites.
 - Bound root-disk growth fleet-wide in the standard profile: automatic daily `nix.gc` prunes the system profile to the last 5 generations (`nix-env --delete-generations +5`), `boot.loader.systemd-boot.configurationLimit = 5`, and `journald` caps (`SystemMaxUse=500M`, `SystemKeepFree=1G`). The daily `autoUpgrade` had let generations and journals accumulate until rp1's 20 GB root filled during the 26.05 jump, breaking remote deploys (`nix-copy-closure` failing with the nix-daemon dropping the connection on a full `/nix`).
 - Seed Infratainer's external live-secret overlay and runtime Forgejo token during `devenv` activation when local gitignored secrets are available.
 - Allow automatic update validation, deploy, and fallback `nixos-upgrade` builds from clean `indev` checkouts by importing live host secret modules from `INFRA_SECRETS_DIR`.

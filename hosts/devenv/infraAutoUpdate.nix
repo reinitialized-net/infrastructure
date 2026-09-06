@@ -67,6 +67,9 @@ let
 
           if mkdir -p "$state_dir" "$log_dir" "$run_dir" "''${extra_runtime_dirs[@]}" 2>"$mkdir_error"; then
             rm -f "$mkdir_error"
+            # All three workflows share a checkout and Git authentication helper.
+            exec 9>"$run_dir/workflow.lock" || return 1
+            flock 9 || return 1
             return 0
           fi
 
@@ -97,6 +100,7 @@ let
     import json
     import os
     import re
+    import signal
     import subprocess
     import sys
 
@@ -118,6 +122,10 @@ let
 
     def log(message):
         print(message, flush=True)
+
+
+    def request_deadline(_signum, _frame):
+        raise TimeoutError("webhook request deadline exceeded")
 
 
     def read_secret():
@@ -203,6 +211,19 @@ let
     class Handler(http.server.BaseHTTPRequestHandler):
         server_version = "infra-renovate-dashboard-webhook"
 
+        def handle(self):
+            # An idle socket timeout alone allows an endless slow byte stream.
+            # HTTPServer handles requests in the main thread on this Linux host.
+            signal.alarm(10)
+            try:
+                super().handle()
+            finally:
+                signal.alarm(0)
+
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(10)
+
         def log_message(self, fmt, *args):
             sys.stdout.write("%s - %s\n" % (self.address_string(), fmt % args))
             sys.stdout.flush()
@@ -249,8 +270,12 @@ let
 
             try:
                 payload = json.loads(body.decode("utf-8"))
-            except json.JSONDecodeError:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 self.respond(400, "invalid json")
+                return
+
+            if not isinstance(payload, dict):
+                self.respond(400, "invalid payload")
                 return
 
             should_start, reason = should_start_renovate(self.headers, payload)
@@ -260,9 +285,10 @@ let
                 return
 
             result = subprocess.run(
-                [SYSTEMCTL, "start", SERVICE],
+                [SYSTEMCTL, "--no-block", "start", SERVICE],
                 text=True,
                 capture_output=True,
+                timeout=10,
             )
             if result.returncode != 0:
                 log("failed to start %s: %s" % (SERVICE, result.stderr.strip()))
@@ -274,7 +300,10 @@ let
 
 
     def main():
-        httpd = http.server.ThreadingHTTPServer((BIND_ADDRESS, PORT), Handler)
+        signal.signal(signal.SIGALRM, request_deadline)
+        # Requests only enqueue a systemd job. Bound connection lifetime and
+        # process them serially instead of creating unlimited request threads.
+        httpd = http.server.HTTPServer((BIND_ADDRESS, PORT), Handler)
         log("listening on http://%s:%s/renovate-dashboard" % (BIND_ADDRESS, PORT))
         httpd.serve_forever()
 
@@ -400,6 +429,7 @@ let
       pkgs.coreutils
       pkgs.git
       pkgs.renovate
+      pkgs.util-linux
     ];
     text = ''
       export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
@@ -493,12 +523,12 @@ let
         fi
 
         if [ ! -d "$checkout_dir/.git" ]; then
-          git clone --origin origin "$repo_clone_url" "$checkout_dir"
+          git clone --origin origin "$repo_clone_url" "$checkout_dir" || return 1
         fi
 
-        git -C "$checkout_dir" fetch --prune origin
-        git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch"
-        git -C "$checkout_dir" reset --hard "origin/$default_branch"
+        git -C "$checkout_dir" fetch --prune origin || return 1
+        git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch" || return 1
+        git -C "$checkout_dir" reset --hard "origin/$default_branch" || return 1
         git -C "$checkout_dir" clean -fdx
       }
 
@@ -545,6 +575,7 @@ let
       pkgs.git
       pkgs.jq
       pkgs.nix
+      pkgs.util-linux
     ];
     text = ''
             export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
@@ -653,12 +684,12 @@ let
               fi
 
               if [ ! -d "$checkout_dir/.git" ]; then
-                git clone --origin origin "$repo_clone_url" "$checkout_dir"
+                git clone --origin origin "$repo_clone_url" "$checkout_dir" || return 1
               fi
 
-              git -C "$checkout_dir" fetch --prune origin
-              git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch"
-              git -C "$checkout_dir" reset --hard "origin/$default_branch"
+              git -C "$checkout_dir" fetch --prune origin || return 1
+              git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch" || return 1
+              git -C "$checkout_dir" reset --hard "origin/$default_branch" || return 1
               git -C "$checkout_dir" clean -fdx
             }
 
@@ -671,19 +702,28 @@ let
             has_manual_approval() {
               local number="$1"
               local head_sha="$2"
-              local reviews
+              local reviews="[]" page=1 review_page approvers reviewer permission
 
-              if ! reviews="$(api GET "/repos/$repo_owner/$repo_name/pulls/$number/reviews" 2>/dev/null)"; then
-                echo "Could not read reviews for manual Renovate PR #$number; leaving it open." >&2
-                return 1
-              fi
+              # Later pages can contain a newer approval or a blocking review.
+              # Do not decide until every page has been fetched successfully.
+              while :; do
+                if ! review_page="$(api GET "/repos/$repo_owner/$repo_name/pulls/$number/reviews?page=$page&limit=50" 2>/dev/null)" ||
+                  ! jq -se 'length == 1 and (.[0] | type == "array")' <<< "$review_page" >/dev/null 2>&1; then
+                  echo "Could not read review page $page for manual Renovate PR #$number; leaving it open." >&2
+                  return 1
+                fi
+                if jq -e 'length == 0' <<< "$review_page" >/dev/null; then
+                  break
+                fi
+                reviews="$(printf '%s\n%s\n' "$reviews" "$review_page" | jq -cs 'add')" || return 1
+                page=$((page + 1))
+              done
 
-              jq -e --arg automation "$forgejo_username" --arg head "$head_sha" '
+              approvers="$(jq -r --arg automation "$forgejo_username" --arg head "$head_sha" '
                 def login: (.user.login // .reviewer.login // .poster.login // "");
                 def state: ((.state // .State // "") | ascii_upcase);
                 def active_review: (((.dismissed // false) | not) and ((.stale // false) | not));
-                def commit_matches:
-                  ((has("commit_id") | not) or (.commit_id == null) or (.commit_id == "") or (.commit_id == $head));
+                def commit_matches: ($head != "" and .commit_id == $head);
                 def submitted_at: (.submitted_at // .updated_at // .created_at // "");
                 def latest_review_states:
                   [
@@ -691,6 +731,7 @@ let
                     | select(login != "")
                     | select(active_review)
                     | select(commit_matches)
+                    | select(state == "APPROVED" or state == "REQUEST_CHANGES" or state == "CHANGES_REQUESTED" or state == "REQUESTED_CHANGES")
                     | {
                         login: (login | ascii_downcase),
                         state: state,
@@ -703,9 +744,21 @@ let
 
                 ($automation | ascii_downcase) as $automation_login
                 | latest_review_states as $reviews
-                | (($reviews | map(select(.state == "APPROVED" and .login != $automation_login)) | length) > 0)
-                  and (($reviews | map(select(.state == "REQUEST_CHANGES" or .state == "CHANGES_REQUESTED" or .state == "REQUESTED_CHANGES")) | length) == 0)
-              ' <<< "$reviews" >/dev/null
+                | if any($reviews[]; .state == "REQUEST_CHANGES" or .state == "CHANGES_REQUESTED" or .state == "REQUESTED_CHANGES") then empty
+                  else $reviews[] | select(.state == "APPROVED" and .login != $automation_login) | .login
+                  end
+              ' <<< "$reviews")" || return 1
+
+              # Review creation is allowed more broadly than repository writes.
+              # Check current permissions, including on unprotected branches.
+              while IFS= read -r reviewer; do
+                [ -n "$reviewer" ] || continue
+                permission="$(api GET "/repos/$repo_owner/$repo_name/collaborators/$reviewer/permission")" || return 1
+                if jq -e '.permission == "write" or .permission == "admin" or .permission == "owner"' <<< "$permission" >/dev/null; then
+                  return 0
+                fi
+              done <<< "$approvers"
+              return 1
             }
 
             comment_pr() {
@@ -719,50 +772,48 @@ let
             merge_pr() {
               local number="$1"
               local pr_title="$2"
+              local head_sha="$3"
               local merge_title="Auto-merge Renovate PR #$number"
               local merge_message="Validated by infra-promote before merge.
 
       $pr_title"
               local payload
 
-              payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{Do: "merge", MergeTitleField: $title, MergeMessageField: $message}')"
-              if api POST "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1; then
-                return 0
-              fi
-
-              payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{do: "merge", merge_title_field: $title, merge_message_field: $message}')"
-              if api POST "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1; then
-                return 0
-              fi
-
-              payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" '{Do: "merge", MergeTitleField: $title, MergeMessageField: $message}')"
-              api PUT "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null 2>&1
+              # Forgejo rejects a merge if the branch moved after validation.
+              payload="$(jq -n --arg title "$merge_title" --arg message "$merge_message" --arg head "$head_sha" '{Do: "merge", MergeTitleField: $title, MergeMessageField: $message, head_commit_id: $head}')" || return 1
+              api POST "/repos/$repo_owner/$repo_name/pulls/$number/merge" "$payload" >/dev/null
             }
 
-            validate_pr() {
+            validate_pr() (
               local number="$1"
               local head_ref="$2"
-              local log_file="$3"
+              local head_sha="$3"
+              local log_file="$4"
 
               {
                 echo "Validating PR #$number from $head_ref"
-                git -C "$checkout_dir" fetch origin "$head_ref"
-                git -C "$checkout_dir" checkout --detach FETCH_HEAD
+                # This function is used in an if condition, which disables
+                # Bash errexit even inside the function. Check every step.
+                git -C "$checkout_dir" fetch origin "refs/heads/$head_ref" || return 1
+                test "$(git -C "$checkout_dir" rev-parse FETCH_HEAD)" = "$head_sha" || return 1
+                git -C "$checkout_dir" checkout --detach "$head_sha" || return 1
 
-                cd "$checkout_dir"
-                require_secrets_dir
+                cd "$checkout_dir" || return 1
+                require_secrets_dir || return 1
                 export INFRA_SECRETS_DIR="$secrets_dir"
-                nix flake show path:. --no-write-lock-file --impure
-                nix build --impure --no-link \
+                jq empty renovate.json || return 1
+                nix flake show path:. --no-write-lock-file --impure || return 1
+                nix build --impure --no-write-lock-file --no-link \
                   path:.#nixosConfigurations.devenv.config.system.build.toplevel \
                   path:.#nixosConfigurations.rp1.config.system.build.toplevel \
                   path:.#nixosConfigurations.apps1.config.system.build.toplevel \
                   path:.#nixosConfigurations.apps2.config.system.build.toplevel \
                   path:.#nixosConfigurations.apps3.config.system.build.toplevel \
-                  path:.#nixosConfigurations.db1.config.system.build.toplevel
-                bash -n hosts/devenv/tools/update-network-firewall-rules.sh
+                  path:.#nixosConfigurations.db1.config.system.build.toplevel || return 1
+                bash -n hosts/devenv/tools/update-network-firewall-rules.sh || return 1
+                bash -n hosts/devenv/tools/release-infra.sh
               } > "$log_file" 2>&1
-            }
+            )
 
             token="$(read_token)"
             if [ -z "$token" ]; then
@@ -791,6 +842,15 @@ let
               if [ -z "$head_ref" ] || [[ "$head_ref" != "$renovate_branch_prefix"* ]]; then
                 continue
               fi
+              # Labels and branch prefixes alone do not establish the PR's origin.
+              if ! jq -e --arg repo "${repoSlug}" --arg branch "$default_branch" --arg bot "$forgejo_username" '
+                .base.ref == $branch and .head.repo.full_name == $repo
+                and ((.user.login | ascii_downcase) == ($bot | ascii_downcase))
+                and (.head.sha | test("^[0-9a-f]{40}$"))
+              ' <<< "$pull" >/dev/null; then
+                echo "Skipping PR #$number with an unexpected author, repository, base, or head."
+                continue
+              fi
 
               issue="$(api GET "/repos/$repo_owner/$repo_name/issues/$number")"
 
@@ -811,8 +871,12 @@ let
               fi
 
               log_file="$log_dir/promote-pr-$number-$(date +%Y%m%d%H%M%S).log"
-              if validate_pr "$number" "$head_ref" "$log_file"; then
-                if merge_pr "$number" "$title"; then
+              if validate_pr "$number" "$head_ref" "$head_sha" "$log_file"; then
+                if [ "$approved_manual" = true ] && ! has_manual_approval "$number" "$head_sha"; then
+                  echo "Manual approval changed during validation for PR #$number; leaving it open."
+                  continue
+                fi
+                if merge_pr "$number" "$title" "$head_sha"; then
                   if [ "$approved_manual" = true ]; then
                     comment_pr "$number" "infra-promote found a current approving review, validated this manual-update PR, and merged it automatically. Validation log: $log_file"
                   else
@@ -850,6 +914,7 @@ let
       pkgs.coreutils
       pkgs.git
       pkgs.openssh
+      pkgs.util-linux
     ];
     text = ''
       export PATH="/run/wrappers/bin:/run/current-system/sw/bin:$PATH"
@@ -932,26 +997,26 @@ let
         fi
 
         if [ ! -d "$checkout_dir/.git" ]; then
-          git clone --origin origin "$repo_clone_url" "$checkout_dir"
+          git clone --origin origin "$repo_clone_url" "$checkout_dir" || return 1
         fi
 
-        git -C "$checkout_dir" fetch --prune origin
-        git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch"
-        git -C "$checkout_dir" reset --hard "origin/$default_branch"
+        git -C "$checkout_dir" fetch --prune origin || return 1
+        git -C "$checkout_dir" checkout "$default_branch" 2>/dev/null || git -C "$checkout_dir" checkout -B "$default_branch" "origin/$default_branch" || return 1
+        git -C "$checkout_dir" reset --hard "origin/$default_branch" || return 1
         git -C "$checkout_dir" clean -fdx
       }
 
       seed_known_hosts() {
         local ssh_dir="$HOME/.ssh"
-        mkdir -p "$ssh_dir"
-        chmod 700 "$ssh_dir"
-        touch "$ssh_dir/known_hosts"
-        chmod 600 "$ssh_dir/known_hosts"
+        mkdir -p "$ssh_dir" || return 1
+        chmod 700 "$ssh_dir" || return 1
+        touch "$ssh_dir/known_hosts" || return 1
+        chmod 600 "$ssh_dir/known_hosts" || return 1
 
         local host
         for host in $deploy_host_ips; do
           if ! ssh-keygen -F "$host" -f "$ssh_dir/known_hosts" >/dev/null; then
-            ssh-keyscan -T 10 -H "$host" >> "$ssh_dir/known_hosts" 2>/dev/null
+            ssh-keyscan -T 10 -H "$host" >> "$ssh_dir/known_hosts" 2>/dev/null || return 1
           fi
         done
       }
@@ -1059,7 +1124,9 @@ in
       ''}
       ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$token_file")"
       if [ -r "$persistent_token" ]; then
-        ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_token" "$token_file"
+        if [ "$persistent_token" != "$token_file" ]; then
+          ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_token" "$token_file"
+        fi
       elif [ ! -r "$token_file" ]; then
         echo "warning: Infratainer token is not readable at $token_file or $persistent_token"
       fi

@@ -1,5 +1,7 @@
 {
   config,
+  lib,
+  pkgs,
   ...
 }:
 {
@@ -51,8 +53,6 @@
       environmentFile = config.secrets.acmeDns.file;
       dnsResolver = "10.255.0.3:1028";
       extraLegoFlags = [
-        "--pfx"
-        "--pfx.pass="
         "--dns.resolvers=10.255.0.4:1026"
         "--dns.propagation-wait=10s"
         "--dns-timeout=120"
@@ -60,23 +60,35 @@
     };
     certs."one.dns.reinitialized.net" = {
       postRun = ''
-        # Copy PKCS#12 file from lego internal directory to output directory
-        PFX_SRC=$(find /var/lib/acme/.lego/one.dns.reinitialized.net -name "*.pfx" -type f | head -1)
-        if [[ -n "$PFX_SRC" ]]; then
-          cp "$PFX_SRC" /var/lib/acme/one.dns.reinitialized.net/cert.pfx
-          chmod 640 /var/lib/acme/one.dns.reinitialized.net/cert.pfx
-          chown acme:acme /var/lib/acme/one.dns.reinitialized.net/cert.pfx
-          echo "Copied PKCS#12 certificate to /var/lib/acme/one.dns.reinitialized.net/cert.pfx"
-        else
-          echo "Warning: No .pfx file found in lego directory"
-        fi
+        # Publish the installed certificate atomically; lego's internal layout can change.
+        (
+          set -euo pipefail
+          umask 077
+          cert_dir=/var/lib/acme/one.dns.reinitialized.net
+          pfx_tmp=$(mktemp "$cert_dir/.cert.pfx.XXXXXX")
+          trap 'rm -f "$pfx_tmp"' EXIT
+          ${pkgs.openssl}/bin/openssl pkcs12 -export \
+            -inkey "$cert_dir/key.pem" -in "$cert_dir/fullchain.pem" \
+            -out "$pfx_tmp" -passout pass:
+          chmod 640 "$pfx_tmp"
+          chown acme:acme "$pfx_tmp"
+          mv -f "$pfx_tmp" "$cert_dir/cert.pfx"
+        )
       '';
       reloadServices = [
-        "dnsOne"
+        "docker-dnsOne.service"
       ];
     };
   };
   # Hosted Services
+  # The image runs as UID 10001; a new named volume is owned by root.
+  # Change only the volume root, preserving existing Badger data and ownership.
+  systemd.services.docker-jaeger.preStart = lib.mkBefore ''
+    ${config.virtualisation.docker.package}/bin/docker volume create jaeger_data >/dev/null
+    jaeger_data=$(${config.virtualisation.docker.package}/bin/docker volume inspect --format '{{.Mountpoint}}' jaeger_data)
+    ${pkgs.coreutils}/bin/chown 10001:10001 "$jaeger_data"
+  '';
+
   ## Docker-based Containers
   virtualisation.oci-containers.containers = {
     ### Hudu
@@ -85,6 +97,7 @@
       hostname = "hudu1";
       image = "hududocker/hudu:2.45.1";
       environment = config.secrets.hudu.keys;
+      environmentFiles = lib.optional (config.secrets.hudu.file != null) config.secrets.hudu.file;
       networks = [
         "backend"
       ];
@@ -102,6 +115,7 @@
       hostname = "hudu2";
       image = "hududocker/hudu:2.45.1";
       environment = config.secrets.hudu.keys;
+      environmentFiles = lib.optional (config.secrets.hudu.file != null) config.secrets.hudu.file;
       cmd = [
         "bundle"
         "exec"
@@ -200,6 +214,7 @@
       autoStart = true;
       hostname = "jaeger";
       image = "jaegertracing/all-in-one:latest";
+      user = "10001:10001";
       environment = config.secrets.jaeger.keys;
       networks = [
         "backend"

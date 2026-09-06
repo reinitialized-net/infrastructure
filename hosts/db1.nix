@@ -1,7 +1,8 @@
 {
   config,
   ...
-}:{
+}:
+{
   # Networking Configuration
   networking = {
     hostName = "db1";
@@ -27,7 +28,7 @@
   };
   # Configure MeshNetwork
   services.meshNetwork = {
-      enable = true;
+    enable = true;
   };
   services.containerAutoUpdate.skipContainers = [
     "postgres1"
@@ -63,23 +64,23 @@
         # Export metrics to Prometheus
         prometheus:
           endpoint: "0.0.0.0:8889"
-        logging:
-          loglevel: info
+        debug:
+          verbosity: normal
 
       service:
         pipelines:
           traces:
             receivers: [otlp]
             processors: [memory_limiter, batch]
-            exporters: [otlp/jaeger, logging]
+            exporters: [otlp/jaeger, debug]
           metrics:
             receivers: [otlp]
             processors: [memory_limiter, batch]
-            exporters: [prometheus, logging]
+            exporters: [prometheus, debug]
           logs:
             receivers: [otlp]
             processors: [memory_limiter, batch]
-            exporters: [logging]
+            exporters: [debug]
     '';
     mode = "0644";
   };
@@ -99,6 +100,7 @@
         
         # Scrape Stalwart's Prometheus endpoint (if enabled)
         - job_name: 'stalwart'
+          metrics_path: /metrics/prometheus
           static_configs:
             - targets: ['10.255.0.3:1029']
     '';
@@ -118,9 +120,9 @@
         "backend"
       ];
       ports = [
-        "10.255.0.11:1026:4317/tcp"  # OTLP gRPC
-        "10.255.0.11:1027:4318/tcp"  # OTLP HTTP
-        "10.255.0.11:1028:8889/tcp"  # Prometheus metrics endpoint
+        "10.255.0.11:1026:4317/tcp" # OTLP gRPC
+        "10.255.0.11:1027:4318/tcp" # OTLP HTTP
+        "10.255.0.11:1028:8889/tcp" # Prometheus metrics endpoint
       ];
       volumes = [
         "/etc/otel-collector-config.yaml:/etc/otel-collector-config.yaml:ro"
@@ -142,7 +144,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.11:1029:9090/tcp"  # Prometheus web UI and API
+        "10.255.0.11:1029:9090/tcp" # Prometheus web UI and API
       ];
       volumes = [
         "prometheus_data:/prometheus"

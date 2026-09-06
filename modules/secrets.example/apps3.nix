@@ -5,9 +5,11 @@
 }:
 {
   secrets = {
+    # Provision private-key files separately before services start on every boot.
+    # Keep these persistent paths root-owned and inaccessible to other users.
     meshNetwork = {
       description = "MeshNetwork secrets";
-      file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
+      file = lib.mkDefault "/var/lib/wireguard/wg-mesh.key";
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
@@ -21,7 +23,7 @@
     };
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
-      file = lib.mkDefault (builtins.toFile "volume-migration-key" "PLACE PRIVATE KEY HERE");
+      file = lib.mkDefault "/var/lib/service-secrets/docker-volume-migration.key";
     };
     immich = {
       description = "Immich application configuration";

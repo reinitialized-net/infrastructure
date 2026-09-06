@@ -12,7 +12,7 @@ Two cascading issues were identified:
 
 ### 1. WireGuard Mesh Public Key Mismatch (Primary)
 
-The apps3 public key in `meshTopology.nix` was incorrect. The value `YRxjbTedifIQ6nwZ2nGx4KTKOeXhRUUmpwZn+EWOBUU=` was recorded as the public key, but this was actually the **private key** stored in apps3's secrets. The actual public key (derived from that private key by WireGuard) was `OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=`.
+The apps3 public key in `meshTopology.nix` was incorrect. The value `[REDACTED: rotate the exposed WireGuard private key]` was recorded as the public key, but this was actually the **private key** stored in apps3's secrets. The actual public key (derived from that private key by WireGuard) was `OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=`.
 
 **Evidence:**
 - `sudo wg show` on apps3 showed public key `OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=`
@@ -49,7 +49,7 @@ The `immich` database user lacks superuser privileges and cannot create PostgreS
 
 **File:** `modules/profiles/meshNetwork/meshTopology.nix`
 
-Changed apps3 `publicKey` from `YRxjbTedifIQ6nwZ2nGx4KTKOeXhRUUmpwZn+EWOBUU=` to `OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=`.
+Changed apps3 `publicKey` from `[REDACTED: rotate the exposed WireGuard private key]` to `OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=`.
 
 Deployed to all hosts via `updateInfra` so every peer updated their WireGuard config.
 

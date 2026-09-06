@@ -17,7 +17,7 @@
       nodeId = 2;
       hostname = "rp1";
       endpoint = "10.1.12.2:51820";
-      publicKey = "JOnePxD+oQUZpnHB9thbalLHr4hAuZ/CnMH2Pprgxkw=";
+      publicKey = "ORaj4Td3MN4fqINJYWyym9ks5lMq98b53pzp42LczWk=";
     };
     apps1 = {
       nodeId = 3;
@@ -35,7 +35,7 @@
       nodeId = 5;
       hostname = "apps3";
       endpoint = "10.1.11.4:51820";
-      publicKey = "OZEQjnEW/yhOLbVbBIcaQiiTojkuqTnO7n+oEqRbNDI=";
+      publicKey = "EhL9ohvLnPbTRiId6uGe3RVAxYi2IULzOZUv4xYyxzY=";
     };
 
     gs1 = {

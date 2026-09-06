@@ -10,6 +10,7 @@ let
   containerEntries = lib.mapAttrsToList (name: container: {
     name = name;
     image = container.image;
+    networks = container.networks;
     serviceName = if container ? serviceName then container.serviceName else "docker-${name}";
   }) config.virtualisation.oci-containers.containers;
 
@@ -22,30 +23,22 @@ let
   containerFailureServices = lib.listToAttrs (
     map (
       entry:
+      let
+        usesMeshNetwork =
+          config.services.meshNetwork.enable
+          && config.services.meshNetwork.dockerIntegration
+          && builtins.elem "backend" entry.networks;
+      in
       lib.nameValuePair (lib.removeSuffix ".service" entry.serviceName) {
         unitConfig.OnFailure = lib.mkDefault "infra-update-report@%n.service";
+        after = lib.optional usesMeshNetwork "docker-meshNetwork.service";
+        requires = lib.optional usesMeshNetwork "docker-meshNetwork.service";
+        partOf = lib.optional usesMeshNetwork "docker-meshNetwork.service";
       }
     ) containerEntries
   );
 
-  # Validation script for docker user SSH commands.
-  # Only allows commands needed for volume migration:
-  #   - docker: run, stop, start, ps, volume create/inspect (transfer operations)
-  #   - scp/sftp-server: file transfers (modern scp uses SFTP protocol internally)
-  # This is used as a ForceCommand in sshd_config to restrict the docker user's SSH access.
-  dockerSshValidator = pkgs.writeScript "docker-ssh-validator" ''
-    #!/bin/sh
-    cmd="$SSH_ORIGINAL_COMMAND"
-    case "$cmd" in
-      */bin/docker*|docker*|scp*|*/sftp-server*|sftp-server*)
-        eval "$cmd"
-        ;;
-      *)
-        echo "Access denied: only volume migration commands are permitted" >&2
-        exit 1
-        ;;
-    esac
-  '';
+  dockerSshValidator = "${config.system.build.dockerMigrationCommand}/bin/docker-migration-command";
 in
 {
   imports = [
@@ -267,7 +260,9 @@ in
 
         users.docker = {
           isSystemUser = lib.mkForce true;
-          shell = lib.mkForce pkgs.bashInteractive;
+          # SCP/SFTP can write this user's home. A noninteractive SSH command
+          # must not execute a writable .bashrc before reaching ForceCommand.
+          shell = lib.mkForce pkgs.dash;
           home = lib.mkForce "/home/docker";
           createHome = lib.mkForce true;
           group = lib.mkForce "docker";
@@ -300,13 +295,34 @@ in
           ];
           runAs = "docker";
         }
-      ];
+      ]
+      ++ lib.optional (containerEntries != [ ]) {
+        groups = [ "docker" ];
+        runAs = "root";
+        # OCI containers are removed on stop. Manage their declared units so
+        # migration can stop them cleanly and recreate them after the copy.
+        commands = lib.concatMap (
+          entry:
+          map
+            (action: {
+              command = "${pkgs.systemd}/bin/systemctl ${action} ${lib.removeSuffix ".service" entry.serviceName}.service";
+              options = [ "NOPASSWD" ];
+            })
+            [
+              "stop"
+              "start"
+            ]
+        ) containerEntries;
+      };
 
       # Restrict the docker user's SSH access to only SCP/SFTP file transfers
       # and docker commands needed for volume migration. No interactive shell,
       # no port forwarding, no agent forwarding.
       services.openssh.extraConfig = ''
         Match User docker
+          DisableForwarding yes
+          PermitTTY no
+          PermitUserRC no
           AllowTcpForwarding no
           AllowAgentForwarding no
           X11Forwarding no
@@ -317,6 +333,8 @@ in
       # Deploy the SSH private key for the docker user to use when connecting to other hosts.
       # The key is sourced from config.secrets.volumeMigration.file and written with
       # strict permissions (0600, owned by docker:docker) as required by SSH.
+      # Keep the parent root-owned and replace the file atomically: SFTP must
+      # never be able to redirect a root write via a symlink in docker's home.
       systemd.services.deploy-docker-migration-key = {
         description = "Deploy SSH private key for docker volume migration";
         wantedBy = [ "multi-user.target" ];
@@ -324,25 +342,27 @@ in
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
+          Group = "docker";
+          StateDirectory = "docker-volume-migration";
+          StateDirectoryMode = "0750";
         };
         script = ''
-          mkdir -p /home/docker/.ssh
-          # Write key, stripping leading whitespace from heredoc-style nix strings
-          sed 's/^[[:space:]]*//' "${config.secrets.volumeMigration.file}" > /home/docker/.ssh/volume-migration-key
-          chmod 700 /home/docker/.ssh
-          chmod 600 /home/docker/.ssh/volume-migration-key
-          chown -R docker:docker /home/docker/.ssh
-
-          # Configure SSH client for the docker user to use this key and
-          # accept new host keys automatically (mesh IPs are trusted)
-          cat > /home/docker/.ssh/config << 'EOF'
-          Host *
-            IdentityFile /home/docker/.ssh/volume-migration-key
-            StrictHostKeyChecking accept-new
-            UserKnownHostsFile /home/docker/.ssh/known_hosts
-          EOF
-          chmod 600 /home/docker/.ssh/config
-          chown docker:docker /home/docker/.ssh/config
+          set -euo pipefail
+          state_dir=/var/lib/docker-volume-migration
+          chown root:docker "$state_dir"
+          key_tmp=$(mktemp "$state_dir/.identity.XXXXXX")
+          trap 'rm -f "$key_tmp"' EXIT
+          sed 's/^[[:space:]]*//' "${config.secrets.volumeMigration.file}" > "$key_tmp"
+          chmod 600 "$key_tmp"
+          chown docker:docker "$key_tmp"
+          mv -T "$key_tmp" "$state_dir/identity"
+          if [ ! -e "$state_dir/known_hosts" ]; then
+            install -m 600 -o docker -g docker /dev/null "$state_dir/known_hosts"
+            # Preserve learned host identities. Read the old, user-writable
+            # path without root privileges so a symlink cannot expose secrets.
+            ${pkgs.util-linux}/bin/runuser -u docker -- ${pkgs.coreutils}/bin/cat \
+              /home/docker/.ssh/known_hosts > "$state_dir/known_hosts" 2>/dev/null || true
+          fi
         '';
       };
     }
