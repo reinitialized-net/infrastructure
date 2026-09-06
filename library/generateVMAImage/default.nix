@@ -10,6 +10,7 @@
   memory ? 4096,
   system ? "x86_64-linux",
   hardware ? "qemu",
+  includeSecrets ? true,
   enableProtection ? true,
   disks ? [
     {
@@ -29,7 +30,7 @@ let
   vmaConfiguration = import "${self}/library/makeConfiguration.nix" {
     inherit defaultStateVersion self nixpkgs;
   } host {
-    inherit system hardware;
+    inherit system hardware includeSecrets;
 
     modules = modules ++ [
       "${modulesPath}/image/repart.nix"

@@ -5,7 +5,8 @@
   meshSubnet = "10.255.0.0/24";
   
   # All mesh network nodes
-  # Each node has: nodeId, hostname, endpoint (optional), publicKey
+  # Mesh nodes have: nodeId, hostname, endpoint (optional), publicKey.
+  # Fleet deployment-only nodes set deploymentOnly and do not become peers.
   nodes = {
     devenv = {
       nodeId = 1;
@@ -45,6 +46,13 @@
       publicKey = "PL2fD0SDmoNX7L2ysYa7EbiHrpOmYSoZkSehb6q2qQU=";
     };
 
+    ai1 = {
+      nodeId = 9;
+      hostname = "ai1";
+      endpoint = "10.1.13.10:22";
+      deploymentOnly = true;
+    };
+
     db1 = {
       nodeId = 11;
       hostname = "db1";
@@ -67,7 +75,9 @@ in {
   # Returns list of peers excluding the node itself
   getPeersForNode = nodeId: let
     # Filter out the current node and convert remaining nodes to peer format
-    otherNodes = lib.filterAttrs (name: node: node.nodeId != nodeId) nodes;
+    otherNodes = lib.filterAttrs (
+      name: node: node.nodeId != nodeId && !(node.deploymentOnly or false)
+    ) nodes;
   in lib.mapAttrsToList (name: node: nodeToPeer node) otherNodes;
   
   # Function to get node config by nodeId

@@ -38,6 +38,7 @@ makeDualExport :: host: string -> attrs -> {
 | `system` | `"x86_64-linux"` | Passed to both builders |
 | `hardware` | `"qemu"` | Imports `modules/hardware/<hardware>.nix` |
 | `modules` | `[]` | Extra NixOS modules passed before host/profile defaults |
+| `includeSecrets` | `true` | Import the host's live secret module; set false for secret-free install media |
 | `vmId` | `null` | Required when `exportVMA = true` |
 | `cores` | `2` | Proxmox CPU cores |
 | `memory` | `4096` | RAM in MiB |
@@ -96,6 +97,7 @@ Builds a NixOS configuration for a host.
 | `modules` | `[]` | Extra modules to import first |
 | `system` | `"x86_64-linux"` | NixOS system architecture |
 | `hardware` | `"qemu"` | Hardware profile name under `modules/hardware/` |
+| `includeSecrets` | `true` | Whether to auto-import the host's live secret module |
 
 ### Automatic Imports
 

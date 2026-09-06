@@ -36,6 +36,7 @@ Documentation for the Reinitialized Infrastructure NixOS flake.
 - [Mesh Network Port Reference](mesh-network-ports.md)
 - [Bash Script Tools](bash-script-tools.md)
 - [Automatic Updates](architecture/automatic-updates.md)
+- [ai1 Workstation Installation](ai1-installation.md)
 - [Release Process](release-process.md)
 - [Using makeUser](examples/makeUser.md)
 
@@ -60,6 +61,7 @@ Investigation notes under [docs/investigations/](investigations/) are historical
 | `apps1` | `nixosConfigurations.apps1` | `packages.x86_64-linux.apps1` | `10.255.0.3` |
 | `apps2` | `nixosConfigurations.apps2` | `packages.x86_64-linux.apps2` | `10.255.0.4` |
 | `apps3` | `nixosConfigurations.apps3` | `packages.x86_64-linux.apps3` | `10.255.0.5` |
+| `ai1` | `nixosConfigurations.ai1` | `packages.x86_64-linux.ai1-installer` | Deployment-only endpoint `10.1.13.10` |
 | `db1` | `nixosConfigurations.db1` | `packages.x86_64-linux.db1` | `10.255.0.11` |
 
 `gs1` is defined in topology and host files but is not currently exported from `flake.nix`.
@@ -70,6 +72,7 @@ Investigation notes under [docs/investigations/](investigations/) are historical
 |------|------------|
 | Build one host configuration | `nix build path:.#nixosConfigurations.<host>.config.system.build.toplevel` |
 | Build one Proxmox VMA image | `nix build path:.#packages.x86_64-linux.<host>` |
+| Build the ai1 installer ISO | `nix build path:.#ai1-installer` |
 | Add a host export | [Library Functions](library-functions.md#makedualexport) |
 | Add a Docker host | [Containers Profile](modules/containers.md) and [Mount Data Profile](modules/mountData.md) |
 | Add a mesh node | [Mesh Network](modules/meshNetwork.md#adding-a-node) |

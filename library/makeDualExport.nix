@@ -7,6 +7,7 @@
   system ? "x86_64-linux",
   hardware ? "qemu",
   modules ? [],
+  includeSecrets ? true,
   
   # VMA-specific configuration (optional)
   vmId ? null,
@@ -44,12 +45,12 @@ let
   
   # Common filtered args for makeConfiguration (remove VMA-specific args)
   nixosArgs = {
-    inherit system hardware modules;
+    inherit system hardware modules includeSecrets;
   };
   
   # Full args for VMA generation
   vmaArgs = {
-    inherit system hardware modules vmId cores memory enableProtection disks networking;
+    inherit system hardware modules includeSecrets vmId cores memory enableProtection disks networking;
   };
   
 in {

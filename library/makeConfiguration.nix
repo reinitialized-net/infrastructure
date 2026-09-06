@@ -6,13 +6,14 @@
   modules ? [],
   system ? "x86_64-linux",
   hardware ? "qemu",
+  includeSecrets ? true,
 }:
 let
   inTreeSecrets = "${self}/modules/secrets/${host}.nix";
   externalSecretsDir = builtins.getEnv "INFRA_SECRETS_DIR";
   externalSecrets = "${externalSecretsDir}/${host}.nix";
   secretImports =
-    if host == "standard" then []
+    if host == "standard" || !includeSecrets then []
     else if builtins.pathExists inTreeSecrets then [ inTreeSecrets ]
     else if externalSecretsDir != "" && builtins.pathExists externalSecrets then [ externalSecrets ]
     else if externalSecretsDir != "" then

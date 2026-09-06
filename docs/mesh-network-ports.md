@@ -71,6 +71,10 @@ Next unused port: `1030`.
 
 Next unused port: `1030`.
 
+## ai1 Physical LLM API
+
+`ai1` is not a WireGuard mesh member. llama.cpp's OpenAI-compatible API listens on `10.1.13.10:8080/tcp`, with the host firewall restricting access to RFC1918 private networks.
+
 ## gs1 (`10.255.0.6`)
 
 `gs1` is defined in `hosts/gs1.nix` and `meshTopology.nix`, but is not exported from `flake.nix`.

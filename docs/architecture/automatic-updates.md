@@ -23,6 +23,7 @@
      path:.#nixosConfigurations.apps1.config.system.build.toplevel \
      path:.#nixosConfigurations.apps2.config.system.build.toplevel \
      path:.#nixosConfigurations.apps3.config.system.build.toplevel \
+     path:.#nixosConfigurations.ai1.config.system.build.toplevel \
      path:.#nixosConfigurations.db1.config.system.build.toplevel
    bash -n hosts/devenv/tools/update-network-firewall-rules.sh
    bash -n hosts/devenv/tools/release-infra.sh

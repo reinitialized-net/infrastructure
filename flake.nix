@@ -182,6 +182,13 @@
           ];
         };
 
+        ai1 = library.makeDualExport "ai1" {
+          system = "x86_64-linux";
+          hardware = "xps8930";
+          includeSecrets = false;
+          exportVMA = false;
+        };
+
         db1 = library.makeDualExport "db1" {
           system = "x86_64-linux";
           vmId = 206;
@@ -239,6 +246,15 @@
         #   ];
         # };
       };
+
+      ai1Installer = inputs.nixpkgsStable.lib.nixosSystem {
+        system = "x86_64-linux";
+        specialArgs.targetSystem = dualSystems.ai1.nixosSystem.config.system.build.toplevel;
+        modules = [
+          "${inputs.nixpkgsStable}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
+          "${inputs.self}/hosts/ai1-installer.nix"
+        ];
+      };
     in
     {
       nixosModules.default = {
@@ -261,10 +277,13 @@
         apps2 = dualSystems.apps2.nixosSystem;
         apps3 = dualSystems.apps3.nixosSystem;
 
+        ai1 = dualSystems.ai1.nixosSystem;
+
         db1 = dualSystems.db1.nixosSystem;
         #gs1 = dualSystems.gs1.nixosSystem;
       };
-      packages = library.forAllSystems (system:
+      packages = library.forAllSystems (
+        system:
         {
             # Reference VMA package from dual export
             devenv = dualSystems.devenv.package;
@@ -276,6 +295,9 @@
             apps3 = dualSystems.apps3.package;
 
             db1 = dualSystems.db1.package;
+        }
+        // inputs.nixpkgsStable.lib.optionalAttrs (system == "x86_64-linux") {
+          ai1-installer = ai1Installer.config.system.build.isoImage;
         }
       );
     };

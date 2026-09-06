@@ -809,6 +809,7 @@ let
                   path:.#nixosConfigurations.apps1.config.system.build.toplevel \
                   path:.#nixosConfigurations.apps2.config.system.build.toplevel \
                   path:.#nixosConfigurations.apps3.config.system.build.toplevel \
+                  path:.#nixosConfigurations.ai1.config.system.build.toplevel \
                   path:.#nixosConfigurations.db1.config.system.build.toplevel || return 1
                 bash -n hosts/devenv/tools/update-network-firewall-rules.sh || return 1
                 bash -n hosts/devenv/tools/release-infra.sh

@@ -6,7 +6,7 @@ This file applies to the whole repository. No nested `AGENTS.md` files currently
 
 ## Project Purpose
 
-NixOS infrastructure flake for the Reinitialized fleet. It builds Proxmox VMA images, exports live NixOS configurations for rebuilds, and defines reusable profiles for WireGuard mesh networking, Docker services, secrets wiring, firewall rules, and fleet automation.
+NixOS infrastructure flake for the Reinitialized fleet. It builds Proxmox VMA images and the physical `ai1` installer ISO, exports live NixOS configurations for rebuilds, and defines reusable profiles for WireGuard mesh networking, Docker services, secrets wiring, firewall rules, and fleet automation.
 
 ## High-Value Commands
 
@@ -24,10 +24,14 @@ nix build \
   path:.#nixosConfigurations.apps1.config.system.build.toplevel \
   path:.#nixosConfigurations.apps2.config.system.build.toplevel \
   path:.#nixosConfigurations.apps3.config.system.build.toplevel \
+  path:.#nixosConfigurations.ai1.config.system.build.toplevel \
   path:.#nixosConfigurations.db1.config.system.build.toplevel
 
 # Build one Proxmox VMA image
 nix build path:.#packages.x86_64-linux.<host>
+
+# Build the ai1 USB installer ISO
+nix build path:.#ai1-installer
 
 # Devenv-only deployment tools
 rebuildHost <host>
@@ -39,7 +43,7 @@ releaseInfra vMAJOR.MINOR.PATCH --dry-run
 releaseInfra vMAJOR.MINOR.PATCH
 ```
 
-Exported hosts from `flake.nix`: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `db1`.
+Exported hosts from `flake.nix`: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `ai1`, `db1`.
 
 ## Tech Stack
 
@@ -53,7 +57,7 @@ Exported hosts from `flake.nix`: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `db
 
 ## Directory Map
 
-- `flake.nix` - flake inputs, `makeDualExport` host definitions, `nixosConfigurations`, VMA packages.
+- `flake.nix` - flake inputs, `makeDualExport` host definitions, `nixosConfigurations`, VMA packages, and the `ai1` installer package.
 - `flake.lock` - pinned flake inputs; do not update unless asked or required.
 - `renovate.json` - Renovate config for Nix inputs and Docker image tags.
 - `CHANGELOG.md` - release notes required by `releaseInfra`.
@@ -171,6 +175,7 @@ journalctl -u infra-deploy.service
 - Host-only change: build that host's `config.system.build.toplevel`.
 - Shared library/profile change: build every exported host's toplevel.
 - VMA generation change: build at least one affected `packages.x86_64-linux.<host>` output.
+- `ai1` installer change: evaluate `nixosConfigurations.ai1` and build `packages.x86_64-linux.ai1-installer`.
 - Deployment-tool change: run `bash -n` where raw templates parse and build `devenv` or a relevant host so substitutions evaluate.
 - Secret-key change: update the matching `modules/secrets.example/<host>.nix` and build a host that consumes it.
 - Renovate/release automation change: run `jq empty renovate.json`, relevant script syntax checks, and the narrowest Nix build that exercises the changed module.
