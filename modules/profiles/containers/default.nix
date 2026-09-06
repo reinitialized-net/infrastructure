@@ -94,8 +94,9 @@ in
       type = lib.types.bool;
       default = true;
       description = ''
-        When true, containers are restarted only if the pulled image digest changes.
-        If false, containers are restarted after every successful pull.
+        When true, active containers are restarted only if their running image
+        differs from the pulled image. If false, active containers are restarted
+        after every successful pull. Inactive services remain stopped.
       '';
     };
   };
@@ -169,11 +170,6 @@ in
             return 1
           }
 
-          get_image_id() {
-            local image="$1"
-            docker image inspect --format '{{.Id}}' "$image" 2>/dev/null || echo "__IMAGE_UNKNOWN__"
-          }
-
           if [ -z "$container_entries" ]; then
             echo "No OCI containers are configured under virtualisation.oci-containers.containers."
             exit 0
@@ -188,11 +184,10 @@ in
               continue
             fi
 
-            before_id="$(get_image_id "$container_image")"
-            echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id action=pull"
+            echo "container_update_event container=$container_name image=$container_image service=$container_service action=pull"
             if ! docker pull "$container_image"; then
               echo "Failed to pull image for $container_name ($container_image)"
-              echo "container_update_event container=$container_name image=$container_image service=$container_service before_id=$before_id after_id=__PULL_FAILED__ changed=unknown action=pull_failed"
+              echo "container_update_event container=$container_name image=$container_image service=$container_service action=pull_failed"
               had_failure=1
               continue
             fi
@@ -202,14 +197,32 @@ in
               continue
             fi
 
-            after_id="$(get_image_id "$container_image")"
-            unit_name="$(printf '%s' "$container_service" | sed 's/\\.service$//').service"
-            echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id action=inspect"
+            unit_name="''${container_service%.service}.service"
 
             if ! systemctl cat "$unit_name" > /dev/null 2>&1; then
-              echo "Container service $unit_name not found; skipping."
+              echo "Container service $unit_name not found."
+              had_failure=1
               continue
             fi
+
+            if ! systemctl is-active --quiet "$unit_name"; then
+              echo "container_update_event container=$container_name service=$unit_name action=skip_inactive"
+              continue
+            fi
+
+            # A previous pull (or another container sharing the tag) may already
+            # have updated the cache. Compare against the actual running image.
+            if ! before_id="$(docker container inspect --format '{{.Image}}' "$container_name")" || [ -z "$before_id" ]; then
+              echo "Cannot inspect running image for $container_name."
+              had_failure=1
+              continue
+            fi
+            if ! after_id="$(docker image inspect --format '{{.Id}}' "$container_image")" || [ -z "$after_id" ]; then
+              echo "Cannot inspect pulled image for $container_name."
+              had_failure=1
+              continue
+            fi
+            echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id action=inspect"
 
             if [[ "$restart_changed_only" == "true" && "$before_id" == "$after_id" ]]; then
               echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=false action=skip_restart"
@@ -217,7 +230,7 @@ in
             fi
 
             echo "container_update_event container=$container_name image=$container_image service=$unit_name before_id=$before_id after_id=$after_id changed=true action=restart"
-            if ! systemctl restart "$unit_name"; then
+            if ! systemctl try-restart "$unit_name"; then
               echo "Failed to restart $unit_name"
               exit 1
             fi

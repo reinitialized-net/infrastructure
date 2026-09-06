@@ -37,6 +37,8 @@ let
     coreutils = "${pkgs.coreutils}";
     containerServicesFile = "${containerServicesFile}";
     dockerConfig = "${dockerConfig}";
+    bubblewrap = "${pkgs.bubblewrap}";
+    transferClosure = "${pkgs.closureInfo { rootPaths = [ pkgs.openssh ]; }}/store-paths";
   };
 
   migrationSshConfig = pkgs.writeText "docker-migration-ssh-config" ''

@@ -44,6 +44,14 @@
 
 `infra-deploy` intentionally skips `devenv` so the service does not replace its own running unit during the fleet deploy. Host-local `nixos-upgrade.timer` remains enabled as the fallback path for `devenv` and for any host missed by the coordinated deploy. It runs later from the Forgejo flake URL with `?ref=indev`, passes `--impure` and `INFRA_SECRETS_DIR=/var/lib/infratainer/secrets`, and suppresses live DBus reloads during switches so DBus implementation changes take effect after reboot instead of failing activation.
 
+Topology nodes with `fleetDeployment = false` are excluded from bulk deployment
+and its SSH identity checks. `ai1` has this setting while awaiting installation;
+explicit `rebuildHost ai1` and all build/release validation outputs remain available.
+Every participating remote host must already have a verified identity in
+`/home/rnetadmin/.ssh/known_hosts`. Deployment fails on missing entries instead of
+enrolling keys through `ssh-keyscan`; verify fingerprints through a trusted console
+or another authenticated channel before adding them.
+
 Renovate, promotion, and deployment hold the same `flock` lock at
 `/run/infratainer/workflow.lock` for their entire run. This protects the shared
 checkout and Git authentication helper when timers or manual starts overlap.
@@ -141,7 +149,7 @@ nix flake update nixpkgsStable
 
 The Docker image pull timer remains enabled through `services.containerAutoUpdate`. The containers profile enables the shared `infra-update-report@.service` so Docker auto-update failures and declarative container unit failures can create or update Forgejo issues from the affected host.
 
-High-risk containers are skipped from digest-drift restarts on each host and are instead handled by Renovate PRs. Low-risk containers continue to pull and restart automatically when the image ID changes. The updater logs structured `container_update_event` lines with container name, image, service, old image ID, new image ID, and action.
+High-risk containers are skipped from digest-drift restarts on each host and are instead handled by Renovate PRs. Other active containers restart when their running image differs from the pulled image, including images already cached by a previous pull. Stopped services remain stopped. The updater logs structured `container_update_event` lines with container name, image, service, old image ID, new image ID, and action. Failure issue titles include the hostname so reports from separate machines remain distinct.
 
 Run the Infratainer update flow manually through the systemd units on `devenv`, not by invoking the generated binaries from a normal shell user. The units run as `rnetadmin` and use the managed checkout, logs, and secrets under `/var/lib/infratainer` and `/var/log/infratainer`.
 

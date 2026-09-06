@@ -12,7 +12,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
-      file = lib.mkDefault /run/secrets/infra-automation-token;
+      file = lib.mkDefault "/run/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";
@@ -22,6 +22,8 @@
     };
 
     postgres1 = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/postgres1.env";
       keys = {
         POSTGRES_USER = "rnetadmin";
         POSTGRES_PASSWORD = "rnetadmin";  # Initial setup only

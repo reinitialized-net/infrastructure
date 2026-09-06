@@ -12,7 +12,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
-      file = lib.mkDefault /run/secrets/infra-automation-token;
+      file = lib.mkDefault "/run/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";
@@ -40,6 +40,8 @@
     };
 
     pgAdmin4 = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/pgAdmin4.env";
       description = "pgAdmin4 web interface configuration";
       keys = {
         PGADMIN_DEFAULT_EMAIL = "admin@example.com";
@@ -53,6 +55,8 @@
     };
 
     redisInsight = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/redisInsight.env";
       description = "Redis Insight configuration";
       keys = {
         RI_REDIS_HOST1 = "10.255.0.11";
@@ -61,6 +65,8 @@
       };
     };
     forgejoRunner = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/forgejoRunner.env";
       description = "Forgejo Runner CI/CD configuration";
       keys = {
         FORGEJO_INSTANCE_URL = "PLACE FORGEJO INSTANCE URL HERE";

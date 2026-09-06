@@ -42,6 +42,11 @@ The `secrets` option must still be defined by importing `modules/profiles/secret
 
 Inline values in Nix files can end up readable in the Nix store. This repository uses inline examples because `modules/secrets.example/` is not secret material. For live sensitive values, prefer `file` references that point to files with appropriate runtime permissions, or integrate an external secret manager.
 
+Build from a clean Git checkout with an external secret overlay. `path:.` includes
+gitignored files: using it in a checkout containing `modules/secrets/` copies those
+files into the store even when the secrets themselves use runtime paths. Do not
+copy live secret files into a build snapshot.
+
 Do not commit:
 
 - `modules/secrets/`
@@ -77,17 +82,44 @@ Hosts using Technitium DNS-01 set:
 ```nix
 secrets.acmeDns = {
   description = "Technitium DNS API credentials for ACME DNS-01 challenge";
-  file = lib.mkDefault (builtins.toFile "acme-dns-credentials" ''
-    TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
-    TECHNITIUM_API_TOKEN=PLACE_API_TOKEN_HERE
-  '');
-  keys = {
-    apiToken = "PLACE_API_TOKEN_HERE";
-  };
+  file = lib.mkDefault "/var/lib/service-secrets/acme-dns.env";
 };
 ```
 
 The NixOS ACME module consumes `config.secrets.acmeDns.file`.
+
+Provision that file separately, owned by root with mode `0600`, containing
+`TECHNITIUM_SERVER_BASE_URL` and `TECHNITIUM_API_TOKEN` as environment assignments.
+Do not generate it using `builtins.toFile` or `environment.etc.*.text`.
+
+### Container Environment Files
+
+Hudu, Forgejo, Jaeger, Grafana, Authentik, pgAdmin, Redis Insight, Forgejo Runner,
+Immich, Tuwunel, Paperless, Pelican, OCIS and PostgreSQL accept an optional
+`secrets.<name>.file` with Docker environment assignments:
+
+```nix
+secrets.forgejoRunner = {
+  file = "/var/lib/service-secrets/forgejo-runner.env";
+  keys = {};
+};
+```
+
+Provision each file before activation, with the same values used by the service
+today. Docker's env-file format uses literal `NAME=value` lines, without shell
+quoting, expansion or `export`. Remove any duplicated entries from `keys`, because
+explicit environment variables take precedence over env-file values. Nonsecret
+settings can remain in `keys`. UniFi's MongoDB credential mapping still uses
+inline keys and needs a separate coordinated conversion.
+
+This support does not remove credentials from old generations or rotate them.
+Migrate and verify each service before coordinating token/password rotation.
+Preserve application encryption keys; replacing them blindly can make data
+unreadable. Changing `POSTGRES_PASSWORD` alone does not change an existing
+PostgreSQL role's password. Runner registration still supplies its
+registration credential through the runner CLI's token argument. Its lifetime
+depends on server-side rotation; treat it as exposed to host process observers
+until that registration flow is replaced with a supported private input method.
 
 ### Docker Volume Migration
 

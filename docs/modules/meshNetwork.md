@@ -71,7 +71,7 @@ For a host already present in `meshTopology.nix`, set the hostname and enable th
 }
 ```
 
-Create the private key secret in `modules/secrets/<host>.nix`:
+Reference a separately provisioned private key in the host's secret module:
 
 ```nix
 {
@@ -80,10 +80,23 @@ Create the private key secret in `modules/secrets/<host>.nix`:
 }: {
   secrets.meshNetwork = {
     description = "MeshNetwork WireGuard private key";
-    file = lib.mkDefault (builtins.toFile "mesh-privatekey" "PLACE PRIVATE KEY HERE");
+    file = lib.mkDefault "/var/lib/wireguard/wg-mesh.key";
   };
 }
 ```
+
+Provision that file with root ownership and mode `0600`. Keep the path quoted;
+embedding the key in Nix copies it into readable store artifacts.
+
+Set a topology node's `fleetDeployment = false` while it is intentionally offline.
+Bulk deployments and their SSH checks skip it; explicit host rebuilds, build
+outputs and release validation remain available. This does not alter mesh peers.
+
+The `mesh-ingress` nftables table checks the host's mesh destination address
+before Docker DNAT. Traffic must arrive through `wg-mesh`, loopback, `docker0`
+or a `br-*` Docker bridge. Deliberate services on physical addresses, such as
+DNS, keep their existing rules. Custom Docker bridge names outside these patterns
+need an explicit reviewed rule before rollout.
 
 ## Adding A Node
 
@@ -96,7 +109,7 @@ Create the private key secret in `modules/secrets/<host>.nix`:
    or:
 
    ```bash
-   wg genkey | tee privatekey | wg pubkey > publickey
+   (umask 077; wg genkey | tee privatekey | wg pubkey > publickey)
    ```
 
 2. Add the public key and endpoint to `modules/profiles/meshNetwork/meshTopology.nix`.

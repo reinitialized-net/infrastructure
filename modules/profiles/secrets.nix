@@ -50,7 +50,7 @@ in
       {
         mesh-network = {
           description = "Wireguard mesh network credentials";
-          file = /run/secrets/mesh-privatekey;
+          file = "/run/secrets/mesh-privatekey";
           keys = {
             nodeId = 1;
             listenPort = 51820;

@@ -51,6 +51,8 @@
       hostname = "ai1";
       endpoint = "10.1.13.10:22";
       deploymentOnly = true;
+      # Awaiting physical installation; explicit rebuildHost remains available.
+      fleetDeployment = false;
     };
 
     db1 = {

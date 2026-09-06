@@ -28,7 +28,10 @@ let
       let
         node = meshTopology.nodes.${host} or { };
       in
-      if host != "devenv" && node ? endpoint then lib.head (lib.splitString ":" node.endpoint) else null
+      if host != "devenv" && (node.fleetDeployment or true) && node ? endpoint then
+        lib.head (lib.splitString ":" node.endpoint)
+      else
+        null
     ) exportedHosts
   );
   deployHostIpsString = lib.concatStringsSep " " deployHostIps;
@@ -366,14 +369,14 @@ let
         if [ -n "$payload_file" ]; then
           curl --fail-with-body -sS \
             -X "$method" \
-            -H "Authorization: token $token" \
+            --header @<(printf 'Authorization: token %s\n' "$token") \
             -H "Content-Type: application/json" \
             --data-binary "@$payload_file" \
             "$api_root$path"
         else
           curl --fail-with-body -sS \
             -X "$method" \
-            -H "Authorization: token $token" \
+            --header @<(printf 'Authorization: token %s\n' "$token") \
             -H "Content-Type: application/json" \
             "$api_root$path"
         fi
@@ -638,14 +641,14 @@ let
               if [ -n "$data" ]; then
                 curl --fail-with-body -sS \
                   -X "$method" \
-                  -H "Authorization: token $token" \
+                  --header @<(printf 'Authorization: token %s\n' "$token") \
                   -H "Content-Type: application/json" \
                   --data "$data" \
                   "$api_root$path"
               else
                 curl --fail-with-body -sS \
                   -X "$method" \
-                  -H "Authorization: token $token" \
+                  --header @<(printf 'Authorization: token %s\n' "$token") \
                   -H "Content-Type: application/json" \
                   "$api_root$path"
               fi
@@ -1007,7 +1010,7 @@ let
         git -C "$checkout_dir" clean -fdx
       }
 
-      seed_known_hosts() {
+      require_known_hosts() {
         local ssh_dir="$HOME/.ssh"
         mkdir -p "$ssh_dir" || return 1
         chmod 700 "$ssh_dir" || return 1
@@ -1017,7 +1020,8 @@ let
         local host
         for host in $deploy_host_ips; do
           if ! ssh-keygen -F "$host" -f "$ssh_dir/known_hosts" >/dev/null; then
-            ssh-keyscan -T 10 -H "$host" >> "$ssh_dir/known_hosts" 2>/dev/null || return 1
+            echo "No verified SSH host key for $host in $ssh_dir/known_hosts. Provision its key through a trusted administrative channel before deployment." >&2
+            return 1
           fi
         done
       }
@@ -1041,8 +1045,8 @@ let
         exit 1
       fi
 
-      if ! seed_known_hosts >> "$log_file" 2>&1; then
-        report_failure "Failed to seed SSH known_hosts for fleet deployment."
+      if ! require_known_hosts >> "$log_file" 2>&1; then
+        report_failure "Missing verified SSH host keys for fleet deployment."
         exit 1
       fi
 

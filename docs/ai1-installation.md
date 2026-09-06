@@ -126,7 +126,13 @@ rebuildHost devenv
 rebuildHost ai1
 ```
 
-Subsequent fleet runs include `ai1` automatically:
+While installation is pending, the topology sets `ai1.fleetDeployment = false`.
+This excludes it from `updateInfra` and unattended SSH identity checks while
+retaining its build outputs and explicit `rebuildHost ai1` command. After verifying
+the installed machine and its SSH fingerprint through the physical console,
+provision its known-host entry and set `fleetDeployment = true` in
+`modules/profiles/meshNetwork/meshTopology.nix`. Rebuild `devenv` to include `ai1`
+in subsequent fleet runs:
 
 ```bash
 updateInfra

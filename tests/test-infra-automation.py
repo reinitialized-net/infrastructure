@@ -34,6 +34,19 @@ with tempfile.TemporaryDirectory() as temporary:
     (checkout / ".git").mkdir(parents=True)
     trace = work / "trace"
     log = work / "validation.log"
+    # Unattended deploys may use only previously verified host identities.
+    known_hosts = functions("require_known_hosts")[0].replace('$HOME', '$test_home')
+    trust_setup = f"""
+test_home={shlex.quote(str(work / 'ssh-test'))}
+deploy_host_ips='192.0.2.2 192.0.2.3'
+ssh-keygen() {{ [[ "$2" != "$UNTRUSTED_HOST" ]]; }}
+ssh-keyscan() {{ echo 'unverified key enrollment attempted'; exit 98; }}
+"""
+    run(trust_setup + known_hosts + '\nrequire_known_hosts', work, UNTRUSTED_HOST="none")
+    for untrusted in ("192.0.2.2", "192.0.2.3"):
+        run(trust_setup + known_hosts + '\nif require_known_hosts; then exit 98; fi',
+            work, UNTRUSTED_HOST=untrusted)
+    assert (work / 'ssh-test/.ssh/known_hosts').read_text() == ''
     setup = f"""set -euo pipefail
 checkout_dir={shlex.quote(str(checkout))}
 trace={shlex.quote(str(trace))}

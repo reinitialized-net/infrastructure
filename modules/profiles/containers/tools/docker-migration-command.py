@@ -19,6 +19,27 @@ ENV = {
     "DOCKER_HOST": "unix:///var/run/docker.sock",
     "LANG": "C.UTF-8",
 }
+TRANSFER_DIRECTORIES = ("/home/docker", "/var/lib/docker/volumes/.migration-staging")
+
+
+def transfer_argv(command):
+    """Confine SCP/SFTP, including protocol paths and symlinks, to transfer data.
+
+    Bind only OpenSSH's runtime closure, never the whole store or host root.
+    A missing/inaccessible staging directory stays unavailable; no permission
+    changes are made to Docker's data tree. Sandbox setup failures deny access.
+    """
+    sandbox = ["@bubblewrap@/bin/bwrap", "--unshare-all", "--die-with-parent",
+               "--new-session", "--cap-drop", "ALL", "--dev", "/dev"]
+    with open("@transferClosure@", encoding="utf-8") as closure:
+        for path in closure.read().splitlines():
+            sandbox += ["--ro-bind", path, path]
+    for path in ("/etc/passwd", "/etc/group"):
+        sandbox += ["--ro-bind", path, path]
+    for path in TRANSFER_DIRECTORIES:
+        if os.path.isdir(path):
+            sandbox += ["--bind", path, path]
+    return [*sandbox, "--chdir", TRANSFER_DIRECTORIES[0], "--", *command]
 
 
 def named(value):
@@ -121,6 +142,8 @@ def main():
     try:
         args = sys.argv[1:] or shlex.split(os.environ.get("SSH_ORIGINAL_COMMAND", ""))
         command = command_argv(args)
+        if command[0] in ("@openssh@/bin/scp", "@openssh@/libexec/sftp-server"):
+            command = transfer_argv(command)
         if command[0] == DOCKER and command[1] == "migration-plan":
             migration_plan(*command[2:])
             return 0

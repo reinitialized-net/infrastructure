@@ -19,6 +19,13 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Fixed
 
+- Reject physical ingress to mesh-addressed services before Docker DNAT, preserving WireGuard, local Docker clients and deliberate physical DNS listeners.
+- Preserve original mail HTTPS client addresses while stripping PROXY protocol only on the DNS branch; retain DNS administration source restrictions.
+- Confine migration SCP/SFTP to approved transfer directories and a minimal read-only OpenSSH runtime, without changing streamed volume migration.
+- Keep Forgejo API bearer tokens out of curl arguments and add compatible runtime environment-file support for application containers and the runner.
+- Preserve exact observed source addresses in OPNsense rule recommendations; stop silently expanding a host's access to its entire `/24`.
+- Require previously verified deployment SSH host keys, compare container updates with running images, preserve stopped services, and distinguish failure issues by hostname.
+- Exclude intentionally offline `ai1` from bulk deployments and SSH identity checks until installation is complete, while retaining explicit rebuilds and build validation.
 - Stop Infratainer checkout and validation failures from being masked by Bash conditional calls; serialize shared-checkout workflows, bind promotion to the validated PR SHA, and require current repository-writer approval for manual updates.
 - Queue dashboard-triggered Renovate runs without holding webhook requests open, and bound webhook connection handling.
 - Restrict DNS administration TLS passthrough to private clients while preserving public mail, and replace the insecure-marked Angie package with the pinned maintained NGINX package.

@@ -11,7 +11,7 @@
     };
     opnsenseFirewall = {
       description = "OPNsense firewall API credentials";
-      file = lib.mkDefault /run/secrets/opnsense-api-secret;
+      file = lib.mkDefault "/run/secrets/opnsense-api-secret";
       keys = {
         host = "OPNSENSE_HOST_OR_IP";
         port = "443";
@@ -21,7 +21,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure updates";
-      file = lib.mkDefault /run/secrets/infra-automation-token;
+      file = lib.mkDefault "/run/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";

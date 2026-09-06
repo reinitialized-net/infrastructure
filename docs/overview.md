@@ -104,7 +104,7 @@ See [ai1 Workstation Installation](ai1-installation.md).
 The `devenv` host installs generated fleet tools:
 
 - `rebuildHost` - rebuild one target from the repository checkout on `devenv`
-- `updateInfra` - rebuild every exported host that also has mesh topology
+- `updateInfra` - rebuild exported topology hosts with fleet deployment enabled; `ai1` is excluded while awaiting installation
 - `updateNetworkFirewallRules` - generate and optionally apply OPNsense firewall recommendations from traffic logs
 
 Remote deploys use SSH as `rnetadmin` with `--sudo` on the target. Do not run remote deploy tools with `sudo`.

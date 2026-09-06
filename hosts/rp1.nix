@@ -327,10 +327,9 @@ in
         server 10.255.0.3:1036;
       }
 
-      # Local intermediate for mail HTTPS: adds PROXY protocol before
-      # forwarding to Stalwart's HTTPS listener. Needed because the SNI routing
-      # server block also handles DNS UI traffic which must NOT receive PROXY protocol.
-      upstream mailProxyProtocol {
+      # The shared HTTPS listener emits the original client address. Strip its
+      # PROXY header on the DNS branch, whose backend expects plain TLS.
+      upstream dnsOneUIProxyProtocol {
         server 127.0.0.1:8443;
       }
 
@@ -355,9 +354,9 @@ in
       # Public mail remains reachable; only private sources get DNS UI fallbacks.
       map "$dns_admin_allowed:$ssl_preread_server_name" $https_backend_12_2 {
         default                      rejectDnsAdmin;
-        "0:mail.reinitialized.net"    mailProxyProtocol;
-        "1:mail.reinitialized.net"    mailProxyProtocol;
-        ~^1:                         dnsOneUI;
+        "0:mail.reinitialized.net"    stalwartOneHttps;
+        "1:mail.reinitialized.net"    stalwartOneHttps;
+        ~^1:                         dnsOneUIProxyProtocol;
       }
       # 10.1.12.3: two.dns (passthrough only, no other services currently)
       map $dns_admin_allowed $https_backend_12_3 {
@@ -397,24 +396,22 @@ in
 
       ## HTTPS with SNI routing (Layer 4)
       # Routes based on hostname:
-      # - DNS UI: passthrough to backend (backend handles cert)
-      # - Mail: routed to local relay that adds PROXY protocol, then to Stalwart
+      # - DNS UI: local relay removes PROXY protocol before passing through TLS
+      # - Mail: original client PROXY header and TLS sent directly to Stalwart
       server {
         listen 10.1.12.2:443;
         ssl_preread on;
         proxy_pass $https_backend_12_2;
+        proxy_protocol on;
         proxy_connect_timeout 10s;
       }
 
-      ## Mail HTTPS - PROXY protocol relay
-      # Receives mail HTTPS from SNI routing above, adds PROXY protocol header,
-      # then forwards TCP stream to Stalwart's HTTPS listener (port 443 in container).
-      # PROXY protocol is REQUIRED because Stalwart's trusted-networks includes
-      # rp1's mesh IP (10.255.0.2/32) and expects PROXY headers to preserve client IPs.
+      ## DNS HTTPS - accept PROXY headers only from the loopback relay.
+      # The public listener does not accept client-supplied PROXY headers.
       server {
-        listen 127.0.0.1:8443;
-        proxy_pass stalwartOneHttps;
-        proxy_protocol on;
+        listen 127.0.0.1:8443 proxy_protocol;
+        set_real_ip_from 127.0.0.1;
+        proxy_pass dnsOneUI;
       }
 
       ## Mail HTTP - PROXY protocol relay for ACME challenges

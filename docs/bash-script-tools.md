@@ -265,8 +265,8 @@ in {
 
 Start with `updateNetworkFirewallRules --dry-run`. The tool reads the retained
 traffic log buffer; `--days` is advisory and does not request a historical date
-range. Generated allow rules aggregate IPv4 sources to `/24` networks, so review
-their scope before applying. The tool adds allow rules and an inbound IPv4 deny
+range. Generated allow rules preserve the exact observed source addresses;
+review their scope before applying. The tool adds allow rules and an inbound IPv4 deny
 rule for each observed interface alongside existing rules. It does not delete
 existing rules or create a global default deny rule. Review ordering and
 duplicates before running it again.

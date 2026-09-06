@@ -92,14 +92,14 @@ pkgs.writeShellApplication {
       if [ -n "$data" ]; then
         curl --fail-with-body -sS \
           -X "$method" \
-          -H "Authorization: token $token" \
+          --header @<(printf 'Authorization: token %s\n' "$token") \
           -H "Content-Type: application/json" \
           --data "$data" \
           "$api_root$path"
       else
         curl --fail-with-body -sS \
           -X "$method" \
-          -H "Authorization: token $token" \
+          --header @<(printf 'Authorization: token %s\n' "$token") \
           -H "Content-Type: application/json" \
           "$api_root$path"
       fi
@@ -114,7 +114,7 @@ pkgs.writeShellApplication {
 
     host="$(cat /etc/hostname 2>/dev/null || echo unknown)"
     now="$(date -Is)"
-    title="[infra-auto-update] $source: $status"
+    title="[infra-auto-update] $host / $source: $status"
     body="Status: $status
 Host: $host
 Source: $source

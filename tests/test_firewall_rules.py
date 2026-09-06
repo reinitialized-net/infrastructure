@@ -49,6 +49,8 @@ def mock_curl():
             del response[0]["dst"]
         elif scenario == "unknown_protocol":
             response[0]["protoname"] = "unexpected"
+        elif scenario == "neighboring_source":
+            response.append({**response[0], "src": "192.0.2.3"})
     elif endpoint.endswith("&action=block"):
         response = []
     elif endpoint == "/api/firewall/filter/savepoint":
@@ -131,8 +133,16 @@ def run_tests():
         assert all(call["http_errors"] and not call["insecure"] for call in calls)
         rules = [call["rule"] for call in calls if call["rule"]]
         assert len(rules) == 3 and [rule["action"] for rule in rules].count("pass") == 2
+        assert {rule["source_net"] for rule in rules if rule["action"] == "pass"} == {"192.0.2.2"}
+        assert "192.0.2.2" in result.stdout and "192.0.2.0/24" not in result.stdout
         assert endpoints(calls)[-1] == "/api/firewall/filter/cancelRollback/123"
         assert "/api/firewall/filter/revert/123" not in endpoints(calls)
+
+        result, calls = run("neighboring_source")
+        assert result.returncode == 0, result.stdout + result.stderr
+        passes = [call["rule"] for call in calls if call["rule"] and call["rule"]["action"] == "pass"]
+        assert len(passes) == 3
+        assert {rule["source_net"] for rule in passes} == {"192.0.2.2", "192.0.2.3"}
 
         for verify in (None, "false"):
             result, calls = run(dry_run=True, verify=verify)

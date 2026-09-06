@@ -117,7 +117,7 @@ Important behavior:
 - `rebuildHost <remote>` and `updateInfra` use SSH as `rnetadmin` and pass `--sudo` to the remote rebuild.
 - Do not run remote deploys with `sudo`; the scripts reject root because root breaks the SSH key flow.
 - `rebuildHost devenv` is local and uses `sudo nixos-rebuild` internally.
-- `updateInfra` uses the intersection of flake-exported hosts and `modules/profiles/meshNetwork/meshTopology.nix` entries.
+- `updateInfra` uses exported topology hosts except those with `fleetDeployment = false`. `ai1` is excluded while awaiting installation; explicit `rebuildHost ai1` remains available.
 
 Generate OPNsense firewall rule recommendations from traffic logs:
 

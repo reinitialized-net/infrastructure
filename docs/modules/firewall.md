@@ -149,6 +149,7 @@ Allow SSH only from trusted networks:
 
 ```nix
 {
+  services.openssh.openFirewall = false;
   networking.firewall.allowlist = [
     {
       port = 22;
@@ -162,6 +163,10 @@ Allow SSH only from trusted networks:
   ];
 }
 ```
+
+The standard profile otherwise opens port 22 through `services.openssh.openFirewall`.
+An allowlist entry does not remove that independent permit. Audit other port
+permits and trusted interfaces as well before treating an allowlist as exclusive.
 
 ### Database - Private Network Only
 
@@ -518,14 +523,14 @@ Plus:
 
 ## Best Practices
 
-### 1. Use CIDR Notation for Subnets
+### 1. Preserve The Intended Source Scope
 
-Instead of:
+For individually authorized hosts, list those hosts:
 ```nix
-source = [ "192.168.1.1" "192.168.1.2" "192.168.1.3" ... ];
+source = [ "192.168.1.1" "192.168.1.2" "192.168.1.3" ];
 ```
 
-Use:
+Use a subnet only when every address in it is authorized:
 ```nix
 source = [ "192.168.1.0/24" ];
 ```
@@ -536,6 +541,7 @@ Always restrict administrative ports:
 
 ```nix
 {
+  services.openssh.openFirewall = false;
   networking.firewall.allowlist = [
     # Never allow SSH from everywhere
     {

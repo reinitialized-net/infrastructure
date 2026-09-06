@@ -20,6 +20,9 @@
   exportedHosts = builtins.attrNames self.nixosConfigurations;
   validHosts = lib.filter (name: builtins.hasAttr name meshTopology.nodes) exportedHosts;
   validHostsStr = lib.concatStringsSep " " validHosts;
+  fleetHostsStr = lib.concatStringsSep " " (
+    lib.filter (name: meshTopology.nodes.${name}.fleetDeployment or true) validHosts
+  );
   validNodes = lib.genAttrs validHosts (name: meshTopology.nodes.${name});
 
   # Create a lookup table of hostname -> IP address (extracted from endpoint)
@@ -60,7 +63,7 @@
     })
 
     (makeToolScript "updateInfra" ./tools/update-infra.sh {
-      validHosts = validHostsStr;
+      validHosts = fleetHostsStr;
       hostIpCases = hostIpCases;
     })
 

@@ -13,7 +13,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
-      file = lib.mkDefault /run/secrets/infra-automation-token;
+      file = lib.mkDefault "/run/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";
@@ -26,6 +26,8 @@
       file = lib.mkDefault "/var/lib/service-secrets/docker-volume-migration.key";
     };
     immich = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/immich.env";
       description = "Immich application configuration";
       keys = {
         DB_HOSTNAME = "10.255.0.11";
@@ -49,6 +51,8 @@
       };
     };
     tuwunel = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/tuwunel.env";
       description = "Tuwunel Matrix homeserver configuration";
       keys = {
         CONDUWUIT_SERVER_NAME = "reinitialized.me";
@@ -64,6 +68,8 @@
       };
     };
     paperless = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/paperless.env";
       description = "Paperless-ngx document management configuration";
       keys = {
         PAPERLESS_DBENGINE = "postgresql";
@@ -83,6 +89,8 @@
       };
     };
     pelican = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/pelican.env";
       description = "Pelican Panel game server management configuration";
       keys = {
         APP_ENV = "production";
@@ -104,6 +112,8 @@
     };
 
     ocis = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/ocis.env";
       description = "ownCloud Infinite Scale cloud storage configuration (OIDC via Authentik)";
       keys = {
         # Core settings

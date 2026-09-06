@@ -4,6 +4,9 @@
 **Status:** Implemented  
 **Scope:** rp1 (reverse proxy), apps1 (Stalwart host)
 
+The HTTPS routing details below include the correction prepared on September 6,
+2026; see [the production audit](../production-audit-2026-09-06.md) for rollout status.
+
 ## Context
 
 Stalwart Mail Server on apps1 serves all mail protocols (SMTP, IMAP, SMTPS, IMAPS, POP3S, Submission, Sieve) and a web management UI, all exposed through rp1's nginx reverse proxy.
@@ -61,8 +64,7 @@ to add the PROXY protocol header before forwarding to Stalwart.
 ```
 Client → mail.reinitialized.net:443 (HTTPS)
       → rp1 (10.1.12.2:443, stream SNI routing)
-      → mailProxyProtocol upstream (127.0.0.1:8443, local relay)
-      → adds proxy_protocol → stalwartOneHttps (10.255.0.3:1042 → container 443)
+      → original client PROXY header + TLS → stalwartOneHttps (10.255.0.3:1042 → container 443)
       → Stalwart terminates TLS using native ACME cert
 
 Client → mail.reinitialized.net:993 (IMAPS)
@@ -76,19 +78,20 @@ Client → mail.reinitialized.net:587 (Submission + STARTTLS)
       → Stalwart handles STARTTLS upgrade using native ACME cert
 ```
 
-**Why the local HTTPS relay?** The `10.1.12.2:443` SNI routing server block is shared
-between mail traffic and DNS admin UI traffic. DNS UI backends do NOT expect PROXY protocol
-headers, so `proxy_protocol on` cannot be added to the shared block. Instead, mail traffic
-is routed to a local relay at `127.0.0.1:8443` that selectively adds PROXY protocol before
-forwarding to Stalwart's HTTPS listener.
+The shared `10.1.12.2:443` listener adds the PROXY header while it still has the
+original client's address. Mail goes directly to Stalwart. Allowed DNS UI traffic
+goes through `dnsOneUIProxyProtocol` at `127.0.0.1:8443`, which accepts the header
+only from loopback and strips it before forwarding TLS to the DNS backend. The
+public listener does not accept client-supplied PROXY headers. The previous mail
+relay added a header after losing the original address and reported loopback.
 
 ### Changes to rp1.nix
 1. **Removed** `security.acme.certs."mail.reinitialized.net"` — Stalwart owns the cert now
-2. **Replaced** stream SSL termination block (`127.0.0.1:8443 ssl`) with a plain TCP PROXY protocol relay (`127.0.0.1:8443` without SSL) — still needed because the `10.1.12.2:443` SNI routing server block is shared with DNS UI traffic that must NOT receive PROXY protocol headers
-3. **Updated** SNI routing map to send `mail.reinitialized.net` to `mailProxyProtocol` upstream (local relay at 127.0.0.1:8443)
+2. **Removed** local HTTPS termination; Stalwart terminates TLS.
+3. **Updated** SNI routing to send mail directly to `stalwartOneHttps` with the original client PROXY header; private DNS UI traffic uses the stripping relay.
 4. **Added** ACME challenge proxy in `mail.reinitialized.net` virtualHost: `/.well-known/acme-challenge/` → `http://127.0.0.1:8480` (local stream relay with PROXY protocol)
 5. **Added** `stalwartOneHttps` upstream pointing to `10.255.0.3:1042` (Stalwart's HTTPS/443 listener)
-6. **Added** local stream relay at `127.0.0.1:8443` → `stalwartOneHttps` with `proxy_protocol on` (HTTPS passthrough with PROXY protocol)
+6. **Repurposed** `127.0.0.1:8443` for DNS, accepting loopback PROXY input and passing raw TLS to `dnsOneUI`.
 7. **Added** local stream relay at `127.0.0.1:8480` → `stalwartOneHttp` with `proxy_protocol on` (ACME challenge proxy with PROXY protocol)
 5. **Removed** `useACMEHost` from the mail virtualHost
 6. **Removed** port 8443 from firewall allowlist (loopback relay doesn't need firewall rules)
@@ -116,7 +119,9 @@ Stalwart automatically applies the ACME cert to all listeners with `tls.implicit
 ### PROXY Protocol
 PROXY protocol is preserved on all stream passthrough blocks (both mail protocols and HTTPS). Stalwart's `server.proxy.trusted-networks = "10.255.0.2/32"` (rp1's mesh IP specifically) expects PROXY protocol headers from rp1 to extract real client IPs for logging and security.
 
-This has a critical implication: **ALL connections from 10.255.0.2 to Stalwart must include PROXY protocol headers**, including the ACME challenge proxy (HTTP). This is why both the HTTPS passthrough and the ACME challenge proxy use local stream relays to inject PROXY protocol.
+All connections from `10.255.0.2` to Stalwart must include PROXY protocol headers,
+including the ACME challenge proxy. HTTPS adds its header at the public stream
+listener; the HTTP ACME path retains its local relay at `127.0.0.1:8480`.
 
 See [stalwart-trusted-networks-proxy-protocol.md](../investigations/stalwart-trusted-networks-proxy-protocol.md).
 

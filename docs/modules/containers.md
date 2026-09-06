@@ -95,9 +95,14 @@ The profile defines `services.containerAutoUpdate`.
 | `randomizedDelaySec` | `"15min"` | Timer jitter |
 | `skipContainers` | `[]` | Container names from `virtualisation.oci-containers.containers` to skip |
 | `pullOnly` | `false` | Pull images without restarting containers |
-| `restartChangedOnly` | `true` | Restart only when the pulled image ID changes |
+| `restartChangedOnly` | `true` | Restart active containers whose running image differs from the pulled image |
 
 The service iterates through declarative containers, runs `docker pull`, and restarts the matching systemd unit when needed. Unit names come from each container's `serviceName`, defaulting to `docker-<container-name>`.
+
+The comparison uses the running container's image, so a previously pulled image
+or a shared tag cannot mask an outstanding update. Inactive services stay stopped;
+missing units and failed image inspections fail the update job. `pullOnly` continues
+to pull without restarts, and `skipContainers` remains authoritative.
 
 The service logs `container_update_event` lines containing container name, image, service, old image ID, new image ID, and action. Pull failures cause the service to fail after all containers have been checked. It also sets `OnFailure=infra-update-report@%n.service`; with `secrets.infraAutomation` configured, that reporter creates or updates a Forgejo issue through the automatic update tooling.
 
@@ -137,6 +142,16 @@ users.users.docker = {
 ```
 
 The user has a fixed authorized key named `docker-volume-migration`. Its SSH `ForceCommand` parses arguments and allows only the volume migration command forms, legacy SCP server modes, and SFTP. Migration containers use the fixed Alpine image and named volumes; arbitrary Docker commands, host bind mounts, and shell commands are rejected. The login shell does not load writable shell startup files, and forwarding, user SSH startup scripts, and PTYs are disabled.
+
+SCP/SFTP run inside a Bubblewrap sandbox with separate namespaces. Writable host
+paths are limited to `/home/docker` and
+`/var/lib/docker/volumes/.migration-staging` when present and accessible to the
+caller. Existing POSIX permissions still apply; this does not grant traversal
+through Docker's private data directory. Only OpenSSH's runtime closure and the
+read-only account/group databases accompany those directories. Host `/proc`,
+runtime sockets, migration keys and the rest of the Nix store are absent. Symlinks
+and protocol-supplied paths resolve inside this view. Sandbox setup failure denies
+the transfer. Normal streamed volume migration keeps its existing command path.
 
 The private key for outbound migration is written by `deploy-docker-migration-key` from:
 

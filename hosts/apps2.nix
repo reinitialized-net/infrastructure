@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   pkgs,
   ...
 }:
@@ -160,6 +161,7 @@
       hostname = "pgadmin4";
       image = "dpage/pgadmin4:latest";
       environment = config.secrets.pgAdmin4.keys;
+      environmentFiles = lib.optional (config.secrets.pgAdmin4.file != null) config.secrets.pgAdmin4.file;
       networks = [
         "backend"
       ];
@@ -177,6 +179,9 @@
       hostname = "redisInsight";
       image = "redis/redisinsight:latest";
       environment = config.secrets.redisInsight.keys;
+      environmentFiles = lib.optional (
+        config.secrets.redisInsight.file != null
+      ) config.secrets.redisInsight.file;
       networks = [
         "backend"
       ];
@@ -193,14 +198,17 @@
       autoStart = true;
       hostname = "forgejoRunner";
       image = "code.forgejo.org/forgejo/runner:12";
+      environment = config.secrets.forgejoRunner.keys;
+      environmentFiles = lib.optional (
+        config.secrets.forgejoRunner.file != null
+      ) config.secrets.forgejoRunner.file;
       cmd = [
         "bash"
         "-c"
         ''
-          # Secrets interpolated at Nix build time into bash variables
-          FORGEJO_INSTANCE_URL="${config.secrets.forgejoRunner.keys.FORGEJO_INSTANCE_URL}"
-          FORGEJO_ADMIN_TOKEN="${config.secrets.forgejoRunner.keys.FORGEJO_ADMIN_API_TOKEN}"
-          CONFIGURED_LABELS="${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_LABELS}"
+          # Read credentials at runtime; the optional env file keeps them out of the store.
+          FORGEJO_ADMIN_TOKEN="$FORGEJO_ADMIN_API_TOKEN"
+          CONFIGURED_LABELS="$FORGEJO_RUNNER_LABELS"
 
           # Generate config.yml if it doesn't exist
           if [ ! -f /data/config.yml ]; then
@@ -208,9 +216,9 @@
             echo "Generated default config.yml"
 
             # Patch config.yml with desired settings
-            sed -i 's|^  capacity: 1|  capacity: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_CAPACITY}|' /data/config.yml
-            sed -i 's|^  fetch_timeout: 5s|  fetch_timeout: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_FETCH_TIMEOUT}|' /data/config.yml
-            sed -i 's|^  fetch_interval: 2s|  fetch_interval: ${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_FETCH_INTERVAL}|' /data/config.yml
+            sed -i "s|^  capacity: 1|  capacity: $FORGEJO_RUNNER_CAPACITY|" /data/config.yml
+            sed -i "s|^  fetch_timeout: 5s|  fetch_timeout: $FORGEJO_RUNNER_FETCH_TIMEOUT|" /data/config.yml
+            sed -i "s|^  fetch_interval: 2s|  fetch_interval: $FORGEJO_RUNNER_FETCH_INTERVAL|" /data/config.yml
 
             # Configure Docker socket access - automount will automatically find and mount the socket
             sed -i 's|^  docker_host: "-"|  docker_host: "automount"|' /data/config.yml
@@ -234,7 +242,7 @@
             elif command -v curl > /dev/null 2>&1; then
               echo "Deregistering runner ID $RUNNER_ID from Forgejo..."
               HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
-                -H "Authorization: token $FORGEJO_ADMIN_TOKEN" \
+                --header @<(printf 'Authorization: token %s\n' "$FORGEJO_ADMIN_TOKEN") \
                 "$FORGEJO_INSTANCE_URL/api/v1/admin/runners/$RUNNER_ID")
               echo "Forgejo deregister response: HTTP $HTTP_STATUS"
             else
@@ -250,8 +258,8 @@
             forgejo-runner register \
               --no-interactive \
               --instance "$FORGEJO_INSTANCE_URL" \
-              --token "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_REGISTRATION_TOKEN}" \
-              --name "${config.secrets.forgejoRunner.keys.FORGEJO_RUNNER_NAME}" \
+              --token "$FORGEJO_RUNNER_REGISTRATION_TOKEN" \
+              --name "$FORGEJO_RUNNER_NAME" \
               --labels "$CONFIGURED_LABELS" \
               --config /data/config.yml
             return $?

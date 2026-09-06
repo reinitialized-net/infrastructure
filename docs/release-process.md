@@ -64,3 +64,14 @@ Automatic PR promotion applies the same lockfile-preserving build policy. It
 stops at the first validation failure and binds the Forgejo merge to the commit
 that was validated. Manual-update PRs also require an approving repository writer
 on that commit; see [Automatic Updates](architecture/automatic-updates.md).
+
+Before unattended fleet deployment, provision verified SSH host keys for every
+target in the deployment user's `~/.ssh/known_hosts`. Obtain fingerprints through
+the Proxmox/physical console or another authenticated administrative channel.
+Deployment fails if an identity is missing; it never enrolls an unauthenticated
+`ssh-keyscan` result. Existing entries are retained and SSH still rejects changed
+keys. Do not bypass that check to make an update proceed.
+
+Container maintenance compares the running image with the pulled image and leaves
+stopped services stopped. Failure reports include the hostname in their issue
+title so separate hosts cannot overwrite one another's report.

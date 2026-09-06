@@ -8,10 +8,12 @@ Only test listeners accept PROXY headers, to simulate client source addresses.
 import pathlib
 import re
 import socket
+import socketserver
 import ssl
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 
@@ -21,23 +23,49 @@ def main():
     blocks = re.findall(r"(?ms)^(?:geo|map|upstream|server)\b.*?^}", stream)
 
     def server(endpoint):
-        matches = [b for b in blocks if b.startswith("server ") and f"listen {endpoint};" in b]
+        matches = [b for b in blocks if b.startswith("server ")
+                   and re.search(rf"listen {re.escape(endpoint)}(?: proxy_protocol)?;", b)]
         assert len(matches) == 1, endpoint
         return matches[0]
 
-    reservations = [socket.socket() for _ in range(6)]
+    reservations = [socket.socket() for _ in range(4)]
     for sock in reservations:
         sock.bind(("127.0.0.1", 0))
-    front_one, front_two, dns_one, dns_two, mail, reject = [s.getsockname()[1] for s in reservations]
+    front_one, front_two, relay, reject = [s.getsockname()[1] for s in reservations]
     config = [b for b in blocks if b.startswith(("geo ", "map "))]
     for address, port in [("10.1.12.2:443", front_one), ("10.1.12.3:443", front_two)]:
         config.append(server(address).replace(
             f"listen {address};",
             f"listen 127.0.0.1:{port} proxy_protocol; set_real_ip_from 127.0.0.1;",
         ))
-    for name, port in [("dnsOneUI", dns_one), ("dnsTwoUI", dns_two), ("mailProxyProtocol", mail)]:
-        config.append(f'upstream {name} {{ server 127.0.0.1:{port}; }}')
-        config.append(f'server {{ listen 127.0.0.1:{port}; return "{name}"; }}')
+    # Real TCP backends check the wire format, not only NGINX's chosen route.
+    class Backend(socketserver.StreamRequestHandler):
+        def handle(self):
+            self.request.settimeout(2)
+            name = self.server.backend_name
+            identity = ""
+            if name == "stalwartOneHttps":
+                fields = self.rfile.readline(256).decode().split()
+                if len(fields) != 6 or fields[:2] != ["PROXY", "TCP4"]:
+                    self.wfile.write(b"invalid PROXY header")
+                    return
+                identity = f":{fields[2]}:{fields[4]}"
+            header = self.rfile.read(5)
+            if len(header) != 5 or header[:2] != b"\x16\x03":
+                self.wfile.write(b"expected unmodified TLS")
+                return
+            self.rfile.read(int.from_bytes(header[3:5], "big"))
+            self.wfile.write((name + identity).encode())
+
+    backends = []
+    for name in ("dnsOneUI", "dnsTwoUI", "stalwartOneHttps"):
+        backend = socketserver.ThreadingTCPServer(("127.0.0.1", 0), Backend)
+        backend.backend_name = name
+        backends.append(backend)
+        threading.Thread(target=backend.serve_forever, daemon=True).start()
+        config.append(f'upstream {name} {{ server 127.0.0.1:{backend.server_address[1]}; }}')
+    config.append(f'upstream dnsOneUIProxyProtocol {{ server 127.0.0.1:{relay}; }}')
+    config.append(server("127.0.0.1:8443").replace("127.0.0.1:8443", f"127.0.0.1:{relay}"))
     if "upstream rejectDnsAdmin" in stream:
         config.append(f"upstream rejectDnsAdmin {{ server 127.0.0.1:{reject}; }}")
         config.append(server("127.0.0.1:8444").replace("127.0.0.1:8444", f"127.0.0.1:{reject}"))
@@ -100,17 +128,22 @@ def main():
                     for port, dns in [(front_one, "dnsOneUI"), (front_two, "dnsTwoUI")]:
                         expected = dns if private else ""
                         if port == front_one and name and name.lower() == "mail.reinitialized.net":
-                            expected = "mailProxyProtocol"
+                            expected = f"stalwartOneHttps:{source}:12345"
                         actual = request(port, source, client_hello(name))
                         assert actual == expected, (source, name, dns, expected, actual)
                         cases += 1
             for port in (front_one, front_two):
                 assert request(port, "198.51.100.1", b"not TLS\r\n") == ""
                 cases += 1
-            print(f"PASS: {cases} source/SNI cases; DNS admin restricted, public mail preserved")
+                assert request(port, "198.51.100.1", b"PROXY TCP4 10.1.1.1 127.0.0.1 12345 443\r\n") == ""
+                cases += 1
+            print(f"PASS: {cases} source/SNI cases; DNS ACL and raw TLS preserved; mail receives original client IP/port")
         finally:
             process.terminate()
             process.communicate(timeout=5)
+            for backend in backends:
+                backend.shutdown()
+                backend.server_close()
 
 
 if __name__ == "__main__":

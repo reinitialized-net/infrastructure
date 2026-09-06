@@ -12,7 +12,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
-      file = lib.mkDefault /run/secrets/infra-automation-token;
+      file = lib.mkDefault "/run/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";
@@ -83,6 +83,8 @@
     };
 
     jaeger = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/jaeger.env";
       description = "Jaeger telemetry backend configuration";
       keys = {
         SPAN_STORAGE_TYPE = "badger";
@@ -94,6 +96,8 @@
     };
 
     grafana = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/grafana.env";
       description = "Grafana visualization configuration";
       keys = {
         GF_SECURITY_ADMIN_USER = "admin";
@@ -114,6 +118,8 @@
     };
 
     forgejo = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/forgejo.env";
       description = "Forgejo git forge configuration";
       keys = {
         # Auto-registration for OAuth2/OIDC logins via Authentik
@@ -125,6 +131,8 @@
     };
 
     authentik = {
+      # Optional root-owned runtime env file; omit duplicate keys below when used.
+      # file = "/var/lib/service-secrets/authentik.env";
       description = "Authentik identity provider configuration";
       keys = {
         AUTHENTIK_SECRET_KEY = "PLACE_GENERATED_SECRET_KEY_HERE";

@@ -1,5 +1,6 @@
 {
   config,
+  lib,
   ...
 }:
 {
@@ -162,6 +163,9 @@
       # Back up postgres1_data volume before first deploy with this image.
       image = "pgvector/pgvector:pg18";
       environment = config.secrets.postgres1.keys;
+      environmentFiles = lib.optional (
+        config.secrets.postgres1.file != null
+      ) config.secrets.postgres1.file;
       networks = [
         "backend"
       ];

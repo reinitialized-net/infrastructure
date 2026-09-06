@@ -14,20 +14,15 @@ set -euo pipefail
 # ── Dependency paths (substituted by Nix) ──────────────────────────────────────
 CURL="@curl@/bin/curl"
 JQ="@jq@/bin/jq"
-COLUMN="@util-linux@/bin/column"
 SORT="@coreutils@/bin/sort"
 UNIQ="@coreutils@/bin/uniq"
 AWK="@gawk@/bin/awk"
 DATE="@coreutils@/bin/date"
 HEAD="@coreutils@/bin/head"
-TAIL="@coreutils@/bin/tail"
 WC="@coreutils@/bin/wc"
 CAT="@coreutils@/bin/cat"
-CUT="@coreutils@/bin/cut"
 GREP="@gnugrep@/bin/grep"
-SED="@gnused@/bin/sed"
 MKTEMP="@coreutils@/bin/mktemp"
-BASENAME="@coreutils@/bin/basename"
 TR="@coreutils@/bin/tr"
 RM="@coreutils@/bin/rm"
 
@@ -495,7 +490,6 @@ fi
 log_info "Generating recommended rules per interface..."
 echo ""
 
-RULE_NUM=0
 TOTAL_ALLOW_RULES=0
 
 {
@@ -513,7 +507,7 @@ TOTAL_ALLOW_RULES=0
     echo ""
 
     # Aggregate rules for this interface
-    # Group by: direction, protocol, source network (aggregated to /24), destination, destination port
+    # Group identical flows without granting access to unobserved source hosts.
     $AWK -v iface="$iface" '
       $2 == iface {
         count = $1
@@ -523,20 +517,12 @@ TOTAL_ALLOW_RULES=0
         dst   = $6
         port  = $7
 
-        # Aggregate source IPs to /24 networks for cleaner rules
-        n = split(src, octets, ".")
-        if (n == 4) {
-          src_net = octets[1] "." octets[2] "." octets[3] ".0/24"
-        } else {
-          src_net = src
-        }
-
         # Build rule key
-        key = dir "|" proto "|" src_net "|" dst "|" port
+        key = dir "|" proto "|" src "|" dst "|" port
         hits[key] += count
         dirs[key] = dir
         protos[key] = proto
-        srcs[key] = src_net
+        srcs[key] = src
         dsts[key] = dst
         ports[key] = port
       }
@@ -637,11 +623,7 @@ for iface in $LOG_INTERFACES; do
   RULE_SEQ=1
   $AWK -v iface="$iface" '
     $2 == iface {
-      src = $5
-      if (split(src, octets, ".") == 4) {
-        src = octets[1] "." octets[2] "." octets[3] ".0/24"
-      }
-      printf "%s|%s|%s|%s|%s\n", $3, $4, src, $6, $7
+      printf "%s|%s|%s|%s|%s\n", $3, $4, $5, $6, $7
     }
   ' "$RULES_TMPDIR/traffic_summary.tsv" | $SORT -u > "$RULES_TMPDIR/interface_flows"
 

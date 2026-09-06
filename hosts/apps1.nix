@@ -196,6 +196,7 @@
       hostname = "forgejo";
       image = "code.forgejo.org/forgejo/forgejo:16";
       environment = config.secrets.forgejo.keys;
+      environmentFiles = lib.optional (config.secrets.forgejo.file != null) config.secrets.forgejo.file;
       networks = [
         "backend"
       ];
@@ -216,6 +217,7 @@
       image = "jaegertracing/all-in-one:latest";
       user = "10001:10001";
       environment = config.secrets.jaeger.keys;
+      environmentFiles = lib.optional (config.secrets.jaeger.file != null) config.secrets.jaeger.file;
       networks = [
         "backend"
       ];
@@ -234,6 +236,7 @@
       hostname = "grafana";
       image = "grafana/grafana:latest";
       environment = config.secrets.grafana.keys;
+      environmentFiles = lib.optional (config.secrets.grafana.file != null) config.secrets.grafana.file;
       networks = [
         "backend"
       ];
@@ -252,6 +255,9 @@
       image = "ghcr.io/goauthentik/server:2026.8";
       cmd = [ "server" ];
       environment = config.secrets.authentik.keys;
+      environmentFiles = lib.optional (
+        config.secrets.authentik.file != null
+      ) config.secrets.authentik.file;
       networks = [
         "backend"
       ];
@@ -271,6 +277,9 @@
       image = "ghcr.io/goauthentik/server:2026.8";
       cmd = [ "worker" ];
       environment = config.secrets.authentik.keys;
+      environmentFiles = lib.optional (
+        config.secrets.authentik.file != null
+      ) config.secrets.authentik.file;
       networks = [
         "backend"
       ];

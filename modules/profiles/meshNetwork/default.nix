@@ -156,6 +156,23 @@ in {
         trustedInterfaces = [ meshInterface ];
       };
 
+      # Docker DNAT bypasses the host INPUT firewall. Check the original
+      # destination before DNAT, while preserving local Docker clients.
+      networking.nftables.tables.mesh-ingress = {
+        family = "inet";
+        content = ''
+          chain prerouting {
+            type filter hook prerouting priority -310; policy accept;
+            ip daddr ${meshLib.getPeerAllowedIP meshSubnet cfg.nodeId} jump require_mesh
+          }
+          chain require_mesh {
+            iifname { "lo", "${meshInterface}", "docker0" } return
+            iifname "br-*" return
+            counter drop
+          }
+        '';
+      };
+
       networking.wireguard.interfaces.${meshInterface} = let
         # Determine final peer list: use autoPeers if enabled and peers is empty, otherwise use configured peers
         finalPeers = if cfg.autoPeers && cfg.peers == []
