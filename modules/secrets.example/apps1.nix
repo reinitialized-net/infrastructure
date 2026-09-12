@@ -2,7 +2,8 @@
   config,
   lib,
   ...
-}: {
+}:
+{
   secrets = {
     # Provision private-key files separately before services start on every boot.
     # Keep these persistent paths root-owned and inaccessible to other users.
@@ -12,7 +13,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
-      file = lib.mkDefault "/run/secrets/infra-automation-token";
+      file = lib.mkDefault "/var/lib/infratainer/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";
@@ -27,19 +28,19 @@
       # TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
       file = lib.mkDefault "/var/lib/service-secrets/acme-dns.env";
     };
-    
+
     hudu = {
       description = "Hudu secrets";
       # Prefer a separately provisioned persistent environment file in production.
       # file = "/var/lib/service-secrets/hudu.env";
       # Set keys = {} when the environment file contains all Hudu settings.
       keys = {
-        SECRET_KEY_BASE = "783471e6e7f1e100e19f4c9898e679ea308d017efbf3f5eff69ffca663dfdff043d90d066dddcf584cee537bd6cbcc6957e1373567f8ebf1450b35c361074575";
-        PASSWORD_KEY = "640f83885bbbb4b376b2fcd6f5ddc1cc";
+        SECRET_KEY_BASE = "PLACE_GENERATED_SECRET_KEY_BASE_HERE";
+        PASSWORD_KEY = "PLACE_GENERATED_PASSWORD_KEY_HERE";
         DOMAIN = "docs.example.com";
         URL = "example.com";
         SUBDOMAINS = "docs";
-        TWO_FACTOR_KEY = "761ee57449c16ae2e32ef22a6442101b";
+        TWO_FACTOR_KEY = "PLACE_GENERATED_TWO_FACTOR_KEY_HERE";
 
         PUID = "1000";
         PGID = "1000";
@@ -51,10 +52,9 @@
         # Database connection to PostgreSQL on db1.
         DB_HOST = "10.255.0.11";
         DB_PORT = "1024";
-        DB_USERNAME = "postgres";
-        DB_PASSWORD = "";
+        DB_USERNAME = "hudu";
+        DB_PASSWORD = "PLACE_DB_PASSWORD_HERE";
         DB_NAME = "hudu_production";
-        POSTGRES_HOST_AUTH_METHOD = "trust";
 
         SMTP_DOMAIN = "smtp.example.com";
         SMTP_ADDRESS = "smtp.example.com";
@@ -63,7 +63,7 @@
         SMTP_USERNAME = "";
         SMTP_PASSWORD = "";
         SMTP_AUTHENTICATION = "login";
-        SMTP_OPENSSL_VERIFY_MODE = "none";
+        SMTP_OPENSSL_VERIFY_MODE = "peer";
         SMTP_FROM_ADDRESS = "";
 
         USE_LOCAL_FILESYSTEM = "true";

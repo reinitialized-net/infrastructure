@@ -38,7 +38,7 @@ makeDualExport :: host: string -> attrs -> {
 | `system` | `"x86_64-linux"` | Passed to both builders |
 | `hardware` | `"qemu"` | Imports `modules/hardware/<hardware>.nix` |
 | `modules` | `[]` | Extra NixOS modules passed before host/profile defaults |
-| `includeSecrets` | `true` | Import the host's live secret module; set false for secret-free install media |
+| `includeSecrets` | `true` | Import live secrets for `nixosSystem`; VMA packages always use synthetic templates |
 | `vmId` | `null` | Required when `exportVMA = true` |
 | `cores` | `2` | Proxmox CPU cores |
 | `memory` | `4096` | RAM in MiB |
@@ -108,7 +108,7 @@ Builds a NixOS configuration for a host.
 3. `modules/profiles/standard.nix`
 4. `modules/profiles/firewall.nix`
 5. `hosts/<host>.nix`, unless `host == "standard"`
-6. `modules/secrets/<host>.nix`, when the file exists
+6. `$INFRA_SECRETS_DIR/<host>.nix` when `includeSecrets` is enabled
 7. A default `system.stateVersion`
 
 The function passes these `specialArgs`: `self`, `system`, `defaultStateVersion`, `nixpkgsUnstable`, `nixpkgsMaster`, and `lib`.
@@ -139,11 +139,13 @@ The derivation writes:
 
 ```text
 result/
-├── vzdump-qemu-<vmId>.vma.zst
-└── CREDENTIALS.txt
+└── vzdump-qemu-<vmId>.vma.zst
 ```
 
-`CREDENTIALS.txt` contains the generated password for `rnetadmin`. Save it securely and do not commit it.
+VMA packages use the checked-in synthetic secret template rather than live
+secrets. The `rnetadmin` password is locked; bootstrap through its configured SSH
+key. Provision required `/var/lib/service-secrets` files before starting
+container services after import.
 
 ### Image Details
 

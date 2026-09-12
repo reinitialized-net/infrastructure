@@ -37,7 +37,7 @@ The repository's host exports are built with `makeConfiguration`, which also imp
 - `modules/profiles/standard.nix`
 - `modules/profiles/firewall.nix`
 - `hosts/<host>.nix`
-- `modules/secrets/<host>.nix`, when present
+- `$INFRA_SECRETS_DIR/<host>.nix`, during impure live builds
 
 `containers` and `mountData` are not automatic. Add them explicitly for Docker hosts with persistent data:
 

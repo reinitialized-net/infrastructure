@@ -8,7 +8,9 @@
 
 The secrets module defines a simple option namespace for passing secret values and secret file paths to other NixOS modules. It does not encrypt, decrypt, create, or permission files by itself.
 
-Live files under `modules/secrets/` are ignored by git. Templates under `modules/secrets.example/` document the keys expected by each host.
+Live host modules belong in a protected directory outside the checkout, normally
+`/var/lib/infratainer/secrets`. Templates under `modules/secrets.example/`
+document the keys expected by each host.
 
 ## Option Schema
 
@@ -30,7 +32,9 @@ secrets.<name> = {
 
 ## Import Behavior
 
-`makeConfiguration` automatically imports `modules/secrets/<host>.nix` when the file exists. If that in-tree file is absent and `INFRA_SECRETS_DIR` is set, it imports `$INFRA_SECRETS_DIR/<host>.nix` instead. This external path is used by automatic update jobs that build from a clean managed checkout or a fetched Forgejo flake.
+When `INFRA_SECRETS_DIR` is set, `makeConfiguration` imports
+`$INFRA_SECRETS_DIR/<host>.nix` and fails if it is missing. No live in-tree
+fallback exists: `path:` flakes copy ignored files into the Nix store.
 
 Using `INFRA_SECRETS_DIR` requires impure flake evaluation. The standard host-local `nixos-upgrade` path sets `--impure` automatically, and the devenv automation passes it for managed-checkout validation and deploys.
 
@@ -47,9 +51,9 @@ gitignored files: using it in a checkout containing `modules/secrets/` copies th
 files into the store even when the secrets themselves use runtime paths. Do not
 copy live secret files into a build snapshot.
 
-Do not commit:
+Do not create or commit:
 
-- `modules/secrets/`
+- live files under `modules/secrets/`
 - generated VMA `result/`
 - `result/CREDENTIALS.txt`
 
@@ -94,32 +98,31 @@ Do not generate it using `builtins.toFile` or `environment.etc.*.text`.
 
 ### Container Environment Files
 
-Hudu, Forgejo, Jaeger, Grafana, Authentik, pgAdmin, Redis Insight, Forgejo Runner,
-Immich, Tuwunel, Paperless, Pelican, OCIS and PostgreSQL accept an optional
-`secrets.<name>.file` with Docker environment assignments:
+Production containers consume fixed root-owned environment files under
+`/var/lib/service-secrets`. Provision every required file before activation;
+the Nix configuration deliberately does not synthesize secret-bearing files.
 
 ```nix
-secrets.forgejoRunner = {
-  file = "/var/lib/service-secrets/forgejo-runner.env";
-  keys = {};
-};
+/var/lib/service-secrets/forgejo-runner.env
 ```
 
 Provision each file before activation, with the same values used by the service
 today. Docker's env-file format uses literal `NAME=value` lines, without shell
 quoting, expansion or `export`. Remove any duplicated entries from `keys`, because
 explicit environment variables take precedence over env-file values. Nonsecret
-settings can remain in `keys`. UniFi's MongoDB credential mapping still uses
-inline keys and needs a separate coordinated conversion.
+settings can remain in `keys`. UniFi uses two files because the images require
+different names: `unifi-mongodb.env` contains
+`MONGO_INITDB_ROOT_USERNAME/PASSWORD`; `unifi.env` contains
+`MONGO_USER/PASS/DBNAME/PORT/AUTHSOURCE`.
 
 This support does not remove credentials from old generations or rotate them.
 Migrate and verify each service before coordinating token/password rotation.
 Preserve application encryption keys; replacing them blindly can make data
 unreadable. Changing `POSTGRES_PASSWORD` alone does not change an existing
-PostgreSQL role's password. Runner registration still supplies its
-registration credential through the runner CLI's token argument. Its lifetime
-depends on server-side rotation; treat it as exposed to host process observers
-until that registration flow is replaced with a supported private input method.
+PostgreSQL role's password. Runner registration still supplies its credential
+through the CLI. The runner no longer receives a Forgejo admin token or Docker
+`--privileged`, but its Docker socket remains host-root-equivalent; run only
+trusted jobs until it is moved to a disposable isolated host.
 
 ### Docker Volume Migration
 
@@ -136,22 +139,14 @@ Provision the source file before the key-deployment unit starts. The containers 
 
 ### OPNsense Firewall Tool
 
-`updateNetworkFirewallRules` on `devenv` reads `secrets.opnsenseFirewall`:
+`updateNetworkFirewallRules` on `devenv` reads:
 
 ```nix
-secrets.opnsenseFirewall = {
-  description = "OPNsense firewall API credentials";
-  file = lib.mkDefault "/run/secrets/opnsense-api-secret";
-  keys = {
-    host = "OPNSENSE_HOST_OR_IP";
-    port = "443";
-    apiKey = "PLACE_API_KEY_HERE";
-    apiSecret = "PLACE_API_SECRET_HERE";
-  };
-};
+/var/lib/service-secrets/opnsense.env
 ```
 
-Environment variables override secrets, and CLI flags override both:
+The root-owned mode-0640 file is read at runtime and uses the variables below.
+Process environment variables override the file, and CLI flags override both:
 
 | Environment variable | Meaning |
 |----------------------|---------|

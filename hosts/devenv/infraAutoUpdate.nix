@@ -14,12 +14,6 @@ let
   logDir = "/var/log/infratainer";
   runDir = "/run/infratainer";
   secretsDir = automationKeys.secretsDir or "${stateDir}/secrets";
-  liveSecretsSource = "${self}/modules/secrets";
-  liveTokenSource = "${liveSecretsSource}/infra-automation-token";
-  liveDashboardWebhookSecretSource = "${liveSecretsSource}/infra-renovate-webhook-secret";
-  hasLiveSecretsSource = builtins.pathExists liveSecretsSource;
-  hasLiveTokenSource = builtins.pathExists liveTokenSource;
-  hasLiveDashboardWebhookSecretSource = builtins.pathExists liveDashboardWebhookSecretSource;
   meshTopology = import "${self}/modules/profiles/meshNetwork/meshTopology.nix" { inherit lib; };
   exportedHosts = builtins.attrNames self.nixosConfigurations;
   deployHostIps = lib.filter (ip: ip != null) (
@@ -802,11 +796,19 @@ let
                 git -C "$checkout_dir" checkout --detach "$head_sha" || return 1
 
                 cd "$checkout_dir" || return 1
-                require_secrets_dir || return 1
-                export INFRA_SECRETS_DIR="$secrets_dir"
+                # Candidate flake inputs are executable Nix code. Never expose
+                # production secrets or API credentials to their evaluator.
+                test -d modules/secrets.example || return 1
+                rm -rf -- modules/secrets || return 1
+                cp -a -- modules/secrets.example modules/secrets || return 1
+                unset INFRA_SECRETS_DIR GIT_PASSWORD GIT_ASKPASS
                 jq empty renovate.json || return 1
-                nix flake show path:. --no-write-lock-file --impure || return 1
-                nix build --impure --no-write-lock-file --no-link \
+                nix flake show path:. --no-write-lock-file \
+                  --option restrict-eval true \
+                  --option allowed-uris "github: https://github.com https://api.github.com" || return 1
+                nix build --no-write-lock-file --no-link \
+                  --option restrict-eval true \
+                  --option allowed-uris "github: https://github.com https://api.github.com" \
                   path:.#nixosConfigurations.devenv.config.system.build.toplevel \
                   path:.#nixosConfigurations.rp1.config.system.build.toplevel \
                   path:.#nixosConfigurations.apps1.config.system.build.toplevel \
@@ -1088,8 +1090,8 @@ in
   ];
 
   systemd.tmpfiles.rules = [
-    "d ${stateDir} 0750 rnetadmin rnetadmin -"
-    "d ${secretsDir} 0750 rnetadmin rnetadmin -"
+    "d ${stateDir} 0750 rnetadmin wheel -"
+    "d ${secretsDir} 0750 rnetadmin wheel -"
     "d ${logDir} 0750 rnetadmin rnetadmin -"
     "d ${runDir} 0700 rnetadmin rnetadmin -"
   ];
@@ -1101,32 +1103,13 @@ in
     ];
     text = ''
       secrets_dir=${lib.escapeShellArg secretsDir}
-      source_dir=${lib.escapeShellArg liveSecretsSource}
       token_file=${lib.escapeShellArg tokenFile}
       webhook_secret_file=${lib.escapeShellArg dashboardWebhookSecretFile}
       persistent_token="$secrets_dir/infra-automation-token"
       persistent_webhook_secret="$secrets_dir/infra-renovate-webhook-secret"
 
-      ${pkgs.coreutils}/bin/install -d -o rnetadmin -g rnetadmin -m 0750 "$secrets_dir"
+      ${pkgs.coreutils}/bin/install -d -o rnetadmin -g wheel -m 0750 "$secrets_dir"
 
-      ${lib.optionalString hasLiveSecretsSource ''
-        copied_modules=0
-        for secret_module in "$source_dir"/*.nix; do
-          [ -e "$secret_module" ] || continue
-          ${pkgs.coreutils}/bin/install -o rnetadmin -g rnetadmin -m 0640 "$secret_module" "$secrets_dir/$(${pkgs.coreutils}/bin/basename "$secret_module")"
-          copied_modules=1
-        done
-
-        if [ "$copied_modules" -eq 0 ]; then
-          echo "warning: no Infratainer secret modules found in $source_dir"
-        fi
-      ''}
-      ${lib.optionalString hasLiveTokenSource ''
-        ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 ${lib.escapeShellArg liveTokenSource} "$persistent_token"
-      ''}
-      ${lib.optionalString (dashboardWebhookEnabled && hasLiveDashboardWebhookSecretSource) ''
-        ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 ${lib.escapeShellArg liveDashboardWebhookSecretSource} "$persistent_webhook_secret"
-      ''}
       ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$token_file")"
       if [ -r "$persistent_token" ]; then
         if [ "$persistent_token" != "$token_file" ]; then

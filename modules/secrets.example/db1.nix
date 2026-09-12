@@ -2,7 +2,8 @@
   config,
   lib,
   ...
-}: {
+}:
+{
   secrets = {
     # Provision private-key files separately before services start on every boot.
     # Keep these persistent paths root-owned and inaccessible to other users.
@@ -12,7 +13,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
-      file = lib.mkDefault "/run/secrets/infra-automation-token";
+      file = lib.mkDefault "/var/lib/infratainer/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";
@@ -26,7 +27,7 @@
       # file = "/var/lib/service-secrets/postgres1.env";
       keys = {
         POSTGRES_USER = "rnetadmin";
-        POSTGRES_PASSWORD = "rnetadmin";  # Initial setup only
+        POSTGRES_PASSWORD = "PLACE_GENERATED_POSTGRES_PASSWORD_HERE"; # Initial setup only
       };
     };
     volumeMigration = {

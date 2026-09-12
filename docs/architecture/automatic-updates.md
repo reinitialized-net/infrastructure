@@ -12,12 +12,23 @@
    repository, targeting `indev`, whose branch starts with `renovate/`.
 3. PRs labeled `infra-auto-merge` are validated locally. PRs labeled `manual-update`
    are left open until they have a current approving PR review from a repository
-   writer other than the Infratainer automation account, then they use the same validation path:
+   writer other than the Infratainer automation account, then they use the same validation path.
+   All executable Nix input and lock-file updates are `manual-update`. Candidate
+   evaluation copies the checked-in synthetic secret modules into the disposable
+   checkout, drops secret and Git credential environment variables, and enables
+   restricted pure evaluation so dependency code cannot read arbitrary host paths:
 
    ```bash
-   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix flake show path:. --no-write-lock-file --impure
    jq empty renovate.json
-   INFRA_SECRETS_DIR=/var/lib/infratainer/secrets nix build --impure --no-write-lock-file --no-link \
+   rm -rf -- modules/secrets
+   cp -a -- modules/secrets.example modules/secrets
+   unset INFRA_SECRETS_DIR GIT_PASSWORD GIT_ASKPASS
+   nix flake show path:. --no-write-lock-file \
+     --option restrict-eval true \
+     --option allowed-uris "github: https://github.com https://api.github.com"
+   nix build --no-write-lock-file --no-link \
+     --option restrict-eval true \
+     --option allowed-uris "github: https://github.com https://api.github.com" \
      path:.#nixosConfigurations.devenv.config.system.build.toplevel \
      path:.#nixosConfigurations.rp1.config.system.build.toplevel \
      path:.#nixosConfigurations.apps1.config.system.build.toplevel \
@@ -80,23 +91,22 @@ Immediate Dependency Dashboard checkbox handling is enabled by default on `deven
 
 `secrets.infraAutomation.keys.dashboardWebhookSecretFile` defaults to `/run/secrets/infra-renovate-webhook-secret`. During activation, `devenv` restores that file from `/var/lib/infratainer/secrets/infra-renovate-webhook-secret`; if neither copy exists, activation generates a new random secret and stores it persistently outside the repository. `infra-renovate-dashboard-webhook-ensure.service` then creates or updates the Forgejo repository webhook with that secret through the existing Infratainer Forgejo token.
 
-The managed checkout does not contain `modules/secrets/` because those files are gitignored. During `devenv` activation, if the local flake source contains the live `modules/secrets` tree, activation copies `*.nix` secret modules into the external secrets directory and seeds `modules/secrets/infra-automation-token` as `/var/lib/infratainer/secrets/infra-automation-token`. Every `devenv` activation then restores `/run/secrets/infra-automation-token` from that persistent copy with `rnetadmin` read access. This makes the first automatic update cycle ready after `rebuildHost devenv` and keeps the runtime token available after later clean-checkout rebuilds.
-
-If `modules/secrets/infra-renovate-webhook-secret` exists, `devenv` activation seeds `/var/lib/infratainer/secrets/infra-renovate-webhook-secret` from it before restoring the runtime webhook secret file with `rnetadmin` read access. This is optional; generated local secrets are preferred unless a specific shared secret must be retained.
-
-If activation cannot see the live secret tree, provision the live secret modules manually before automatic validation or deploy builds from `/var/lib/infratainer/checkout`:
+The managed checkout must not contain live files under `modules/secrets/`.
+`path:` flakes copy ignored files into the Nix store before evaluation, so an
+in-tree secret is exposed even if no module imports it. Provision the external
+overlay before automatic validation or deployment:
 
 ```bash
-sudo install -d -o rnetadmin -g rnetadmin -m 0750 /var/lib/infratainer/secrets
-sudo install -o rnetadmin -g rnetadmin -m 0640 modules/secrets/*.nix /var/lib/infratainer/secrets/
+sudo install -d -o root -g wheel -m 0750 /var/lib/infratainer/secrets
+sudo install -o rnetadmin -g wheel -m 0640 /secure/source/apps1.nix /var/lib/infratainer/secrets/apps1.nix
 sudo install -d -o root -g rnetadmin -m 0750 /run/secrets
-sudo install -o root -g rnetadmin -m 0640 modules/secrets/infra-automation-token /run/secrets/infra-automation-token
+sudo install -o root -g rnetadmin -m 0640 /secure/source/infra-automation-token /run/secrets/infra-automation-token
 sudo install -o root -g rnetadmin -m 0640 /path/to/github-com-token /run/secrets/github-com-token
 ```
 
 The directory must include any helper files imported by host secret modules, such as `infraAutomation.nix`.
 
-This bootstrap runs on **devenv only**. Each remote host's fallback update also
+The overlay bootstrap runs on **devenv only**. Each remote host's fallback update also
 needs its own `<host>.nix` and required helper modules under
 `/var/lib/infratainer/secrets`, provisioned as root with directory mode `0700` and
 file mode `0600`. Do not copy other hosts' modules to that machine. `ai1` currently
@@ -125,7 +135,7 @@ The URL is intentionally mesh-local. Do not expose this listener through the pub
 
 ## Renovate Labels
 
-`renovate.json` gives every PR the base `dependencies` label and appends manager, service, and risk labels with `addLabels` so matching rules do not overwrite each other. Eligible PRs get `infra-auto-merge`. The promoter only merges PRs with that label after validation passes.
+`renovate.json` gives every PR the base `dependencies` label and appends manager, service, and risk labels with `addLabels` so matching rules do not overwrite each other. Eligible low-risk PRs get `infra-auto-merge`. Executable Nix input and lock-file updates get `manual-update`; the promoter requires a current human approval before their restricted validation and merge.
 
 Major container updates are labeled `manual-update`. They stay open until a human approves the PR in Forgejo. After approval, `infra-promote` validates the PR against the same flake and host build checks, then merges it through the Forgejo API if validation passes.
 

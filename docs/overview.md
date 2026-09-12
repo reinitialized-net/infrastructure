@@ -58,7 +58,9 @@ Use `makeDualExport` for normal host additions so `nixosConfigurations` and VMA 
 
 Host modules under `hosts/` set static networking, enable mesh networking, define services, and wire secrets into container environments. `makeConfiguration` automatically imports `hosts/<host>.nix` for every host except the special `"standard"` host name.
 
-Live secrets are imported automatically from `modules/secrets/<host>.nix` when that file exists. Secret templates live in `modules/secrets.example/`.
+Live secrets are imported from `$INFRA_SECRETS_DIR/<host>.nix` during impure
+evaluation. They must remain outside the checkout. Templates live in
+`modules/secrets.example/`.
 
 ## Network Model
 
@@ -89,7 +91,7 @@ Most Docker service-to-service traffic uses mesh IPs and explicitly mapped host 
 - placeholder raw images for additional SCSI disks
 - OVMF VARS and TPM state images
 - generated Proxmox QEMU config
-- a random generated `rnetadmin` password in `CREDENTIALS.txt`
+- locked password login with bootstrap through the configured `rnetadmin` SSH key
 
 The first configured disk becomes `scsi0` and stores the OS. The `mountData` profile expects the data disk to be `scsi1`.
 

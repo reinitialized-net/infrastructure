@@ -8,13 +8,6 @@
   # Import mesh topology for host IP resolution
   meshTopology = import "${self}/modules/profiles/meshNetwork/meshTopology.nix" { inherit lib; };
 
-  # OPNsense secrets from the secrets module
-  opnsenseSecrets = config.secrets.opnsenseFirewall or {};
-  opnsenseKeys = opnsenseSecrets.keys or {};
-  opnsenseSecretFile = if opnsenseSecrets ? file && opnsenseSecrets.file != null
-    then toString opnsenseSecrets.file
-    else "/run/secrets/opnsense-api-secret";
-
   # Deployment tools can only target hosts exported by the flake and present in
   # mesh topology for IP resolution.
   exportedHosts = builtins.attrNames self.nixosConfigurations;
@@ -80,11 +73,7 @@
       gawk = "${gawk}";
       gnugrep = "${gnugrep}";
       gnused = "${gnused}";
-      secretsHost = opnsenseKeys.host or "";
-      secretsPort = opnsenseKeys.port or "443";
-      secretsApiKey = opnsenseKeys.apiKey or "";
-      secretsApiSecret = opnsenseKeys.apiSecret or "";
-      secretsApiSecretFile = opnsenseSecretFile;
+      secretsEnvFile = "/var/lib/service-secrets/opnsense.env";
     })
   ];
 in {

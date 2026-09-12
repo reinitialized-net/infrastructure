@@ -26,12 +26,16 @@ MKTEMP="@coreutils@/bin/mktemp"
 TR="@coreutils@/bin/tr"
 RM="@coreutils@/bin/rm"
 
-# ── Secrets (sourced from NixOS secrets module at build time) ──────────────────
-SECRETS_HOST="@secretsHost@"
-SECRETS_PORT="@secretsPort@"
-SECRETS_API_KEY="@secretsApiKey@"
-SECRETS_API_SECRET="@secretsApiSecret@"
-SECRETS_API_SECRET_FILE="@secretsApiSecretFile@"
+# ── Runtime secrets (never embedded in the Nix store) ──────────────────────────
+SECRETS_HOST=""
+SECRETS_PORT="443"
+SECRETS_API_KEY=""
+SECRETS_API_SECRET=""
+SECRETS_ENV_FILE="@secretsEnvFile@"
+if [[ -r "$SECRETS_ENV_FILE" ]]; then
+  # shellcheck disable=SC1090
+  source "$SECRETS_ENV_FILE"
+fi
 
 # ── Configuration (env vars override secrets, CLI flags override both) ─────────
 OPNSENSE_HOST="${OPNSENSE_HOST:-$SECRETS_HOST}"
@@ -70,12 +74,7 @@ usage() {
   echo "Connect to an OPNsense firewall, analyze 30 days of traffic logs,"
   echo "and generate recommended firewall rules per interface."
   echo ""
-  echo "Credentials are sourced from the NixOS secrets module by default:"
-  echo "  secrets.opnsenseFirewall.keys.host       → Firewall host/IP"
-  echo "  secrets.opnsenseFirewall.keys.port        → Management port"
-  echo "  secrets.opnsenseFirewall.keys.apiKey      → API key"
-  echo "  secrets.opnsenseFirewall.keys.apiSecret   → API secret"
-  echo "  secrets.opnsenseFirewall.file             → API secret file (fallback)"
+  echo "Credentials are sourced from $SECRETS_ENV_FILE by default."
   echo ""
   echo "Options (override secrets/env):"
   echo "  -H, --host HOST         OPNsense hostname or IP"
@@ -206,23 +205,15 @@ if [[ -z "$OPNSENSE_API_KEY" ]]; then
   read -rp "API Key: " OPNSENSE_API_KEY
 fi
 
-# Read API secret: prefer env/CLI/secrets key, then secrets file, then prompt
+# Read API secret from runtime environment/file or prompt.
 if [[ -z "$OPNSENSE_API_SECRET" ]]; then
-  if [[ -n "$SECRETS_API_SECRET_FILE" && -f "$SECRETS_API_SECRET_FILE" ]]; then
-    OPNSENSE_API_SECRET=$($CAT "$SECRETS_API_SECRET_FILE" | $TR -d '\n')
-    log_info "API secret loaded from secrets file: ${SECRETS_API_SECRET_FILE}"
-  else
-    if [[ -n "$SECRETS_API_SECRET_FILE" && "$SECRETS_API_SECRET_FILE" != "/run/secrets/opnsense-api-secret" ]]; then
-      log_warn "Secrets file not found: ${SECRETS_API_SECRET_FILE}"
-    fi
-    read -rsp "API Secret: " OPNSENSE_API_SECRET
-    echo ""
-  fi
+  read -rsp "API Secret: " OPNSENSE_API_SECRET
+  echo ""
 fi
 
 if [[ -z "$OPNSENSE_HOST" || -z "$OPNSENSE_API_KEY" || -z "$OPNSENSE_API_SECRET" ]]; then
   log_error "OPNsense host, API key, and API secret are all required."
-  log_error "Configure via: modules/secrets/devenv.nix (keys.host, keys.apiKey, file for secret)"
+  log_error "Configure $SECRETS_ENV_FILE or set OPNSENSE_HOST, OPNSENSE_API_KEY, and OPNSENSE_API_SECRET."
   exit 1
 fi
 
@@ -233,7 +224,7 @@ echo -e "${BOLD}╔════════════════════�
 echo -e "${BOLD}║  OPNsense Firewall Rule Generator                            ║${NC}"
 echo -e "${BOLD}╠══════════════════════════════════════════════════════════════╣${NC}"
 echo -e "  Host:      ${CYAN}${OPNSENSE_HOST}:${OPNSENSE_PORT}${NC}"
-echo -e "  Secret:    ${CYAN}${SECRETS_API_SECRET_FILE:-none}${NC}"
+echo -e "  Secret:    ${CYAN}${SECRETS_ENV_FILE}${NC}"
 echo -e "  Log Range: ${CYAN}Last ${LOG_DAYS} days${NC}"
 echo -e "  Top Flows: ${CYAN}${TOP_FLOWS}${NC}"
 echo -e "  Dry Run:   ${CYAN}${DRY_RUN}${NC}"

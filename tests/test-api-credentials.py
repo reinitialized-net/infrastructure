@@ -41,9 +41,6 @@ print('{}')
             count += 1
     assert count == 3, count
     runner = (root / "hosts/apps2.nix").read_text()
-    command = re.search(r'HTTP_STATUS=\$\((curl .*?"\$FORGEJO_INSTANCE_URL/api/v1/admin/runners/\$RUNNER_ID")\)', runner, re.S)[1]
-    result = subprocess.run([shutil.which("bash"), "-euc", command], env={
-        **env, "FORGEJO_ADMIN_TOKEN": token, "FORGEJO_INSTANCE_URL": "http://unused.invalid", "RUNNER_ID": "42",
-    }, text=True, capture_output=True)
-    assert result.returncode == 0, result.stderr
-print("API credential checks passed: all four callers preserve headers without bearer tokens in argv")
+    assert "$FORGEJO_ADMIN_API_TOKEN" not in runner
+    assert "/api/v1/admin/runners/" not in runner
+print("API credential checks passed: all three API callers preserve headers without bearer tokens in argv")

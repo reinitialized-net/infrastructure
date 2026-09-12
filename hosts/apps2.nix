@@ -111,10 +111,7 @@
       autoStart = true;
       hostname = "unifi_mongodb";
       image = "docker.io/library/mongo:7.0";
-      environment = {
-        MONGO_INITDB_ROOT_USERNAME = config.secrets.unifi.keys.MONGO_USER;
-        MONGO_INITDB_ROOT_PASSWORD = config.secrets.unifi.keys.MONGO_PASS;
-      };
+      environmentFiles = [ "/var/lib/service-secrets/unifi-mongodb.env" ];
       networks = [
         "backend"
       ];
@@ -131,13 +128,9 @@
         PUID = "1000";
         PGID = "1000";
         TZ = "America/New_York";
-        MONGO_USER = config.secrets.unifi.keys.MONGO_USER;
-        MONGO_PASS = config.secrets.unifi.keys.MONGO_PASS;
         MONGO_HOST = config.virtualisation.oci-containers.containers.unifi_mongodb.hostname;
-        MONGO_PORT = config.secrets.unifi.keys.MONGO_PORT;
-        MONGO_DBNAME = config.secrets.unifi.keys.MONGO_DBNAME;
-        MONGO_AUTHSOURCE = config.secrets.unifi.keys.MONGO_AUTHSOURCE;
       };
+      environmentFiles = [ "/var/lib/service-secrets/unifi.env" ];
       networks = [
         "backend"
       ];
@@ -160,8 +153,8 @@
       autoStart = true;
       hostname = "pgadmin4";
       image = "dpage/pgadmin4:latest";
-      environment = config.secrets.pgAdmin4.keys;
-      environmentFiles = lib.optional (config.secrets.pgAdmin4.file != null) config.secrets.pgAdmin4.file;
+      environment = builtins.removeAttrs config.secrets.pgAdmin4.keys [ "PGADMIN_DEFAULT_PASSWORD" ];
+      environmentFiles = [ "/var/lib/service-secrets/pgadmin4.env" ];
       networks = [
         "backend"
       ];
@@ -178,10 +171,11 @@
       autoStart = true;
       hostname = "redisInsight";
       image = "redis/redisinsight:latest";
-      environment = config.secrets.redisInsight.keys;
-      environmentFiles = lib.optional (
-        config.secrets.redisInsight.file != null
-      ) config.secrets.redisInsight.file;
+      environment = builtins.removeAttrs config.secrets.redisInsight.keys [
+        "RI_REDIS_USERNAME1"
+        "RI_REDIS_PASSWORD1"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/redisinsight.env" ];
       networks = [
         "backend"
       ];
@@ -198,16 +192,16 @@
       autoStart = true;
       hostname = "forgejoRunner";
       image = "code.forgejo.org/forgejo/runner:12";
-      environment = config.secrets.forgejoRunner.keys;
-      environmentFiles = lib.optional (
-        config.secrets.forgejoRunner.file != null
-      ) config.secrets.forgejoRunner.file;
+      environment = builtins.removeAttrs config.secrets.forgejoRunner.keys [
+        "FORGEJO_RUNNER_REGISTRATION_TOKEN"
+        "FORGEJO_ADMIN_API_TOKEN"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/forgejo-runner.env" ];
       cmd = [
         "bash"
         "-c"
         ''
-          # Read credentials at runtime; the optional env file keeps them out of the store.
-          FORGEJO_ADMIN_TOKEN="$FORGEJO_ADMIN_API_TOKEN"
+          # Read the registration credential at runtime; the env file keeps it out of the store.
           CONFIGURED_LABELS="$FORGEJO_RUNNER_LABELS"
 
           # Generate config.yml if it doesn't exist
@@ -224,34 +218,6 @@
             sed -i 's|^  docker_host: "-"|  docker_host: "automount"|' /data/config.yml
           fi
 
-          # Deregister the old runner from the Forgejo server before re-registering.
-          # This prevents duplicate runner entries when re-registration is needed (e.g. label changes
-          # or stale credentials). Reads the runner ID from .runner, calls the Forgejo admin API to
-          # delete it, then removes the local state files.
-          deregister_runner() {
-            if [ ! -f /data/.runner ]; then
-              return 0
-            fi
-
-            RUNNER_ID=$(grep -o '"id":[0-9]*' /data/.runner | head -1 | sed 's/"id"://')
-
-            if [ -z "$RUNNER_ID" ]; then
-              echo "Warning: Could not extract runner ID from .runner; skipping server-side deregistration"
-            elif [ -z "$FORGEJO_ADMIN_TOKEN" ] || [ "$FORGEJO_ADMIN_TOKEN" = "REPLACE_WITH_FORGEJO_ADMIN_API_TOKEN" ]; then
-              echo "Warning: FORGEJO_ADMIN_API_TOKEN not configured; skipping server-side deregistration (old runner entry may remain)"
-            elif command -v curl > /dev/null 2>&1; then
-              echo "Deregistering runner ID $RUNNER_ID from Forgejo..."
-              HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE \
-                --header @<(printf 'Authorization: token %s\n' "$FORGEJO_ADMIN_TOKEN") \
-                "$FORGEJO_INSTANCE_URL/api/v1/admin/runners/$RUNNER_ID")
-              echo "Forgejo deregister response: HTTP $HTTP_STATUS"
-            else
-              echo "Warning: curl not available; skipping server-side deregistration"
-            fi
-
-            rm -f /data/.runner /data/.runner-labels
-          }
-
           # Register the runner against the Forgejo instance
           register_runner() {
             echo "Registering runner..."
@@ -265,14 +231,15 @@
             return $?
           }
 
-          # Detect label changes: if configured labels differ from what was used at last registration,
-          # deregister the old runner first to avoid creating a duplicate entry in Forgejo.
+          # Never give the job runner a Forgejo admin token. Label changes are
+          # rare and must be deregistered by an administrator before local state
+          # is removed.
           STORED_LABELS=$(cat /data/.runner-labels 2>/dev/null || echo "")
           if [ -f /data/.runner ] && [ "$CONFIGURED_LABELS" != "$STORED_LABELS" ]; then
-            echo "Runner labels have changed — deregistering old runner to prevent duplicates..."
+            echo "Runner labels changed; deregister it in Forgejo before removing /data/.runner." >&2
             echo "  Was: $STORED_LABELS"
             echo "  Now: $CONFIGURED_LABELS"
-            deregister_runner
+            exit 1
           fi
 
           # Register if not already registered
@@ -286,22 +253,7 @@
             fi
           fi
 
-          # Start the runner daemon.
-          # If it exits with failure (e.g. stale credentials after DB loss), deregister cleanly
-          # and attempt one re-registration before giving up.
-          if ! forgejo-runner daemon --config /data/config.yml; then
-            echo "Runner daemon exited with failure. Attempting clean re-registration..."
-            deregister_runner
-
-            if register_runner; then
-              echo "$CONFIGURED_LABELS" > /data/.runner-labels
-              echo "Re-registration successful. Starting daemon again..."
-              exec forgejo-runner daemon --config /data/config.yml
-            else
-              echo "Re-registration failed. Exiting."
-              exit 1
-            fi
-          fi
+          exec forgejo-runner daemon --config /data/config.yml
         ''
       ];
       networks = [
@@ -313,7 +265,6 @@
       ];
       workdir = "/data";
       extraOptions = [
-        "--privileged"
         # Add docker group (GID 999) for socket access
         # Must use numeric GID since the container doesn't have 'docker' in /etc/group
         "--group-add=999"

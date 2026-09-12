@@ -86,7 +86,8 @@ It creates:
 - `rnetadmin` as a normal wheel user with an SSH authorized key
 - `rnetadmin` group
 
-For VMA builds, `generateVMAImage` overrides `rnetadmin.hashedPassword` with a generated password written to `CREDENTIALS.txt`.
+For VMA builds, `generateVMAImage` locks `rnetadmin` password login. Bootstrap
+uses the configured SSH key.
 
 ### sudo-rs And Polkit
 

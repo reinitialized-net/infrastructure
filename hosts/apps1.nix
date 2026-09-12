@@ -96,8 +96,7 @@
       autoStart = true;
       hostname = "hudu1";
       image = "hududocker/hudu:2.45.1";
-      environment = config.secrets.hudu.keys;
-      environmentFiles = lib.optional (config.secrets.hudu.file != null) config.secrets.hudu.file;
+      environmentFiles = [ "/var/lib/service-secrets/hudu.env" ];
       networks = [
         "backend"
       ];
@@ -114,8 +113,7 @@
       autoStart = true;
       hostname = "hudu2";
       image = "hududocker/hudu:2.45.1";
-      environment = config.secrets.hudu.keys;
-      environmentFiles = lib.optional (config.secrets.hudu.file != null) config.secrets.hudu.file;
+      environmentFiles = [ "/var/lib/service-secrets/hudu.env" ];
       cmd = [
         "bundle"
         "exec"
@@ -235,8 +233,8 @@
       autoStart = true;
       hostname = "grafana";
       image = "grafana/grafana:latest";
-      environment = config.secrets.grafana.keys;
-      environmentFiles = lib.optional (config.secrets.grafana.file != null) config.secrets.grafana.file;
+      environment = builtins.removeAttrs config.secrets.grafana.keys [ "GF_SECURITY_ADMIN_PASSWORD" ];
+      environmentFiles = [ "/var/lib/service-secrets/grafana.env" ];
       networks = [
         "backend"
       ];
@@ -254,10 +252,12 @@
       hostname = "authentik-server";
       image = "ghcr.io/goauthentik/server:2026.8";
       cmd = [ "server" ];
-      environment = config.secrets.authentik.keys;
-      environmentFiles = lib.optional (
-        config.secrets.authentik.file != null
-      ) config.secrets.authentik.file;
+      environment = builtins.removeAttrs config.secrets.authentik.keys [
+        "AUTHENTIK_SECRET_KEY"
+        "AUTHENTIK_POSTGRESQL__PASSWORD"
+        "AUTHENTIK_EMAIL__PASSWORD"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/authentik.env" ];
       networks = [
         "backend"
       ];
@@ -276,10 +276,12 @@
       hostname = "authentik-worker";
       image = "ghcr.io/goauthentik/server:2026.8";
       cmd = [ "worker" ];
-      environment = config.secrets.authentik.keys;
-      environmentFiles = lib.optional (
-        config.secrets.authentik.file != null
-      ) config.secrets.authentik.file;
+      environment = builtins.removeAttrs config.secrets.authentik.keys [
+        "AUTHENTIK_SECRET_KEY"
+        "AUTHENTIK_POSTGRESQL__PASSWORD"
+        "AUTHENTIK_EMAIL__PASSWORD"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/authentik.env" ];
       networks = [
         "backend"
       ];

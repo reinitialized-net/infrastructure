@@ -162,10 +162,8 @@
       # volume mount and PGDATA path are unchanged — no data migration needed.
       # Back up postgres1_data volume before first deploy with this image.
       image = "pgvector/pgvector:pg18";
-      environment = config.secrets.postgres1.keys;
-      environmentFiles = lib.optional (
-        config.secrets.postgres1.file != null
-      ) config.secrets.postgres1.file;
+      environment = builtins.removeAttrs config.secrets.postgres1.keys [ "POSTGRES_PASSWORD" ];
+      environmentFiles = [ "/var/lib/service-secrets/postgres1.env" ];
       networks = [
         "backend"
       ];
@@ -185,6 +183,11 @@
       autoStart = true;
       hostname = "valkey1";
       image = "valkey/valkey:9-alpine";
+      cmd = [
+        "valkey-server"
+        "--aclfile"
+        "/run/valkey/users.acl"
+      ];
       networks = [
         "backend"
       ];
@@ -193,6 +196,7 @@
       ];
       volumes = [
         "valkey1_data:/data"
+        "/var/lib/service-secrets/valkey-users.acl:/run/valkey/users.acl:ro"
       ];
     };
   };

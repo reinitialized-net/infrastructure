@@ -8,7 +8,6 @@
 
     vscodeServer = {
       url = "github:nix-community/nixos-vscode-server";
-      inputs.nixpkgs.follows = "nixpkgsStable";
     };
   };
 
@@ -18,7 +17,7 @@
       library = import "${inputs.self}/library" {
         inherit (inputs) self;
       };
-      
+
       # Define dual-export systems once - call makeDualExport once per system
       dualSystems = {
         standard = {
@@ -47,17 +46,17 @@
           memory = 65536;
           cores = 6;
           disks = [
-            { 
+            {
               storage = "hotData";
-              size = 250; 
+              size = 250;
             }
-            { 
+            {
               storage = "coldData";
               size = 250;
             }
           ];
           networking = [
-            { 
+            {
               bridge = "vmbr0";
               firewall = false;
               vlan = 200;
@@ -74,17 +73,17 @@
           enableProtection = true;
           vmId = 203;
           disks = [
-            { 
+            {
               storage = "hotData";
-              size = 20; 
+              size = 20;
             }
-            { 
+            {
               storage = "coldData";
               size = 50;
             }
           ];
           networking = [
-            { 
+            {
               bridge = "vmbr0";
               firewall = false;
               vlan = 12;
@@ -103,17 +102,17 @@
           enableProtection = true;
           memory = 8192;
           disks = [
-            { 
+            {
               storage = "hotData";
-              size = 20; 
+              size = 20;
             }
-            { 
+            {
               storage = "coldData";
               size = 50;
             }
           ];
           networking = [
-            { 
+            {
               bridge = "vmbr0";
               firewall = false;
               vlan = 11;
@@ -131,17 +130,17 @@
           enableProtection = true;
           memory = 8192;
           disks = [
-            { 
+            {
               storage = "hotData";
-              size = 20; 
+              size = 20;
             }
-            { 
+            {
               storage = "coldData";
               size = 150;
             }
           ];
           networking = [
-            { 
+            {
               bridge = "vmbr0";
               firewall = false;
               vlan = 11;
@@ -159,17 +158,17 @@
           enableProtection = true;
           memory = 8192;
           disks = [
-            { 
+            {
               storage = "hotData";
-              size = 20; 
+              size = 20;
             }
-            { 
+            {
               storage = "coldData";
               size = 25;
             }
           ];
           networking = [
-            { 
+            {
               bridge = "vmbr0";
               firewall = false;
               vlan = 11;
@@ -195,17 +194,17 @@
           enableProtection = true;
           memory = 8192;
           disks = [
-            { 
+            {
               storage = "hotData";
-              size = 20; 
+              size = 20;
             }
-            { 
+            {
               storage = "hotData"; # Using hotData for both disks to optimize for performance of the databases
               size = 20;
             }
           ];
           networking = [
-            { 
+            {
               bridge = "vmbr0";
               firewall = false;
               vlan = 11;
@@ -223,17 +222,17 @@
         #   enableProtection = true;
         #   memory = 8192;
         #   disks = [
-        #     { 
+        #     {
         #       storage = "hotData";
-        #       size = 20; 
+        #       size = 20;
         #     }
-        #     { 
+        #     {
         #       storage = "coldData";
         #       size = 100;
         #     }
         #   ];
         #   networking = [
-        #     { 
+        #     {
         #       bridge = "vmbr0";
         #       firewall = false;
         #       vlan = 11;
@@ -285,16 +284,16 @@
       packages = library.forAllSystems (
         system:
         {
-            # Reference VMA package from dual export
-            devenv = dualSystems.devenv.package;
-            
-            rp1 = dualSystems.rp1.package;
+          # Reference VMA package from dual export
+          devenv = dualSystems.devenv.package;
 
-            apps1 = dualSystems.apps1.package;
-            apps2 = dualSystems.apps2.package;
-            apps3 = dualSystems.apps3.package;
+          rp1 = dualSystems.rp1.package;
 
-            db1 = dualSystems.db1.package;
+          apps1 = dualSystems.apps1.package;
+          apps2 = dualSystems.apps2.package;
+          apps3 = dualSystems.apps3.package;
+
+          db1 = dualSystems.db1.package;
         }
         // inputs.nixpkgsStable.lib.optionalAttrs (system == "x86_64-linux") {
           ai1-installer = ai1Installer.config.system.build.isoImage;

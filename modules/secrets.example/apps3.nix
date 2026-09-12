@@ -13,7 +13,7 @@
     };
     infraAutomation = {
       description = "Forgejo bot credentials and metadata for automated infrastructure update failure reporting";
-      file = lib.mkDefault "/run/secrets/infra-automation-token";
+      file = lib.mkDefault "/var/lib/infratainer/secrets/infra-automation-token";
       keys = {
         forgejoBaseUrl = "https://git.ds.reinitialized.net";
         repoOwner = "reinitialized.net";

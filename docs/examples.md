@@ -109,7 +109,6 @@ The result contains:
 ```text
 result/
 ├── vzdump-qemu-204.vma.zst
-└── CREDENTIALS.txt
 ```
 
 Import on Proxmox:
@@ -238,7 +237,7 @@ OPNSENSE_API_SECRET=secret \
 updateNetworkFirewallRules --dry-run --days 14 --top-flows 100
 ```
 
-The tool can also read `secrets.opnsenseFirewall` from `modules/secrets/devenv.nix`.
+The tool reads `/var/lib/service-secrets/opnsense.env` at runtime.
 
 ## Deploy From `devenv`
 

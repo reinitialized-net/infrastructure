@@ -14,11 +14,22 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Changed
 
+- Move live host modules entirely outside the flake source, move container and
+  OPNsense credentials to protected runtime files, stage per-application Valkey
+  ACL users, and require impure external-overlay builds for deployments.
+- Build VMA packages with synthetic templates and locked password login instead
+  of generating derivation-backed plaintext administrator credentials.
+- Require current human approval for executable Nix input and lock-file updates; validate candidates with synthetic secret modules under restricted evaluation instead of exposing production secret paths or Git credentials.
 - Preserve additive Renovate service and risk labels for Infratainer-managed dependency PRs and label every active container image family by affected service.
 - Report declarative container unit failures through the shared Infratainer Forgejo issue reporter, including containers skipped by digest-drift restarts.
 
 ### Fixed
 
+- Remove obsolete `nixos-vscode-server` input overriding that no longer targets an existing upstream input, and replace reusable cryptographic-looking values in the Hudu secret template with explicit generation placeholders.
+- Remove the Forgejo admin token and Docker privileged flag from the runner;
+  label changes now fail closed until an administrator deregisters it, while the
+  remaining Docker socket authority is tracked for isolated-host migration.
+- Keep generated Proxmox VM hardware clocks in UTC, matching the NixOS time configuration and preventing post-boot clock jumps.
 - Reject physical ingress to mesh-addressed services before Docker DNAT, preserving WireGuard, local Docker clients and deliberate physical DNS listeners.
 - Preserve original mail HTTPS client addresses while stripping PROXY protocol only on the DNS branch; retain DNS administration source restrictions.
 - Confine migration SCP/SFTP to approved transfer directories and a minimal read-only OpenSSH runtime, without changing streamed volume migration.

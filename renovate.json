@@ -26,7 +26,7 @@
     "labels": [
       "dependencies",
       "nix",
-      "infra-auto-merge"
+      "manual-update"
     ]
   },
   "customManagers": [
@@ -59,14 +59,14 @@
   ],
   "packageRules": [
     {
-      "description": "Group Nix flake input updates and make them eligible for local validation plus auto-merge.",
+      "description": "Group executable Nix flake input updates and require current human approval before local validation and merge.",
       "matchManagers": [
         "nix"
       ],
       "groupName": "nix flake inputs",
       "addLabels": [
         "nix",
-        "infra-auto-merge"
+        "manual-update"
       ],
       "automerge": false
     },
@@ -97,7 +97,7 @@
       "groupName": "nix flake inputs",
       "addLabels": [
         "nix",
-        "infra-auto-merge"
+        "manual-update"
       ],
       "postUpgradeTasks": {
         "commands": [

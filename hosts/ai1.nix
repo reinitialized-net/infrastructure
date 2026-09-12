@@ -8,9 +8,10 @@ let
     (pkgs.llama-cpp.override {
       cudaSupport = true;
       cudaPackages = pkgs.cudaPackages_12_9;
-    }).overrideAttrs {
-      NIX_CFLAGS_COMPILE = "-march=skylake -mtune=skylake";
-    };
+    }).overrideAttrs
+      {
+        NIX_CFLAGS_COMPILE = "-march=skylake -mtune=skylake";
+      };
 in
 {
   networking = {
@@ -21,11 +22,9 @@ in
         port = 8080;
         protocol = "tcp";
         ipType = "ipv4";
-        source = [
-          "10.0.0.0/8"
-          "172.16.0.0/12"
-          "192.168.0.0/16"
-        ];
+        # The llama.cpp API has no application authentication. Restrict it to
+        # the operator desktop instead of every RFC1918 client.
+        source = [ "10.1.13.10/32" ];
       }
     ];
   };

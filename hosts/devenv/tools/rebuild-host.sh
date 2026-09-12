@@ -5,11 +5,9 @@ set -euo pipefail
 VALID_HOSTS="@validHosts@"
 FLAKE_PATH="${FLAKE_PATH:-/home/develop/projects/reinitialized.net/infrastructure}"
 SSH_USER="rnetadmin"
-NIXOS_REBUILD_FLAGS=()
-
-if [[ -n "${INFRA_SECRETS_DIR:-}" ]]; then
-  NIXOS_REBUILD_FLAGS+=(--impure)
-fi
+INFRA_SECRETS_DIR="${INFRA_SECRETS_DIR:-/var/lib/infratainer/secrets}"
+export INFRA_SECRETS_DIR
+NIXOS_REBUILD_FLAGS=(--impure)
 
 usage() {
   echo "Usage: rebuildHost TARGET [--boot]"

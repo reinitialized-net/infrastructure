@@ -22,7 +22,10 @@ in
       group = "develop";
       homePermissions = "0700";
       extraUserAttrs = {
-        extraGroups = [ "docker" "wheel" ];
+        extraGroups = [
+          "docker"
+          "wheel"
+        ];
         shell = pkgs.bashInteractive;
         isNormalUser = true;
 
@@ -80,7 +83,7 @@ in
     usbutils
 
     nixd
-    nixfmt-rfc-style
+    nixfmt
 
     # GPG tools - pinentry must be in PATH for GPG agent
     pinentry-curses

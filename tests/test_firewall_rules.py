@@ -99,11 +99,16 @@ def run_tests():
         if not executable:
             raise SystemExit(f"Required test command is missing: {command}")
         source = source.replace(f"@{package}@", str(Path(executable).resolve().parent.parent))
-    for key, value in {"Host": "firewall.invalid", "Port": "443", "ApiKey": "mock-key", "ApiSecret": "mock-secret", "ApiSecretFile": ""}.items():
-        source = source.replace(f"@secrets{key}@", value)
-
     with tempfile.TemporaryDirectory(prefix="firewall-test-") as temp:
         root = Path(temp)
+        secrets = root / "opnsense.env"
+        secrets.write_text(
+            'SECRETS_HOST="firewall.invalid"\n'
+            'SECRETS_PORT="443"\n'
+            'SECRETS_API_KEY="mock-key"\n'
+            'SECRETS_API_SECRET="mock-secret"\n'
+        )
+        source = source.replace("@secretsEnvFile@", str(secrets))
         (root / "bin").mkdir()
         fake_curl = root / "bin/curl"
         fake_curl.write_text(f"#!{shutil.which('bash')}\nexec {shlex.quote(sys.executable)} {shlex.quote(str(Path(__file__).resolve()))} --mock-curl \"$@\"\n")

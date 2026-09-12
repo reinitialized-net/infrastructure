@@ -30,7 +30,8 @@ Build the bootable `ai1` installer ISO:
 nix build path:.#ai1-installer
 ```
 
-The VMA build writes `result/vzdump-qemu-<vmId>.vma.zst` and `result/CREDENTIALS.txt`. Treat `CREDENTIALS.txt` as sensitive; it contains the generated `rnetadmin` password for the image.
+The VMA build writes `result/vzdump-qemu-<vmId>.vma.zst`. Password login is
+locked in the image; bootstrap with the configured `rnetadmin` SSH key.
 
 ## Current Flake Outputs
 
@@ -139,7 +140,7 @@ Credentials come from `secrets.opnsenseFirewall` on `devenv`, or from environmen
 | `modules/profiles/` | Standard, firewall, secrets, mesh, containers, and data-disk profiles |
 | `modules/packages/` | Package overrides used by service hosts |
 | `modules/secrets.example/` | Checked-in templates for live secrets |
-| `modules/secrets/` | Live secrets, ignored by git |
+| `/var/lib/infratainer/secrets/` | External live secret overlay on `devenv`; never place it inside the checkout |
 | `docs/` | Architecture, module, example, and investigation notes |
 | `overrides/vma.nix` | QEMU package override with VMA support |
 
@@ -156,6 +157,9 @@ Credentials come from `secrets.opnsenseFirewall` on `devenv`, or from environmen
 
 ## Secrets
 
-Do not commit live secrets. Real secrets live in `modules/secrets/<host>.nix`; templates live in `modules/secrets.example/<host>.nix`.
+Do not put live secrets anywhere under the repository. Real host modules live in
+the protected external overlay `/var/lib/infratainer/secrets`; templates live in
+`modules/secrets.example/<host>.nix`.
 
-`makeConfiguration` imports `modules/secrets/<host>.nix` automatically when the file exists. When adding or renaming a secret key used by a host, update the matching example file.
+Set `INFRA_SECRETS_DIR=/var/lib/infratainer/secrets` and use impure evaluation.
+When adding or renaming a secret key used by a host, update the matching example.

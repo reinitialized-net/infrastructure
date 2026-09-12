@@ -5,6 +5,8 @@ set -euo pipefail
 VALID_HOSTS="@validHosts@"
 JQ="@jq@/bin/jq"
 RELEASE_BRANCH="indev"
+INFRA_SECRETS_DIR="${INFRA_SECRETS_DIR:-/var/lib/infratainer/secrets}"
+export INFRA_SECRETS_DIR
 
 usage() {
   cat <<'USAGE'
@@ -106,13 +108,13 @@ fi
 
 echo "Validating release $tag from $RELEASE_BRANCH..."
 "$JQ" empty renovate.json
-nix flake show path:. --no-write-lock-file
+nix flake show path:. --no-write-lock-file --impure
 
 build_args=()
 for host in $VALID_HOSTS; do
   build_args+=("path:.#nixosConfigurations.$host.config.system.build.toplevel")
 done
-nix build --no-write-lock-file --no-link "${build_args[@]}"
+nix build --impure --no-write-lock-file --no-link "${build_args[@]}"
 
 bash -n hosts/devenv/tools/update-network-firewall-rules.sh
 bash -n hosts/devenv/tools/release-infra.sh

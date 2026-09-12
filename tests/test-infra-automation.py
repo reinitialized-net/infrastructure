@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory() as temporary:
     work = Path(temporary)
     checkout = work / "checkout"
     (checkout / ".git").mkdir(parents=True)
+    (checkout / "modules/secrets.example").mkdir(parents=True)
     trace = work / "trace"
     log = work / "validation.log"
     # Unattended deploys may use only previously verified host identities.
@@ -80,7 +81,7 @@ nix() { printf '%s\\n' "$1" >> "$trace"; [[ "$FAIL" != "$1" ]]; }
 bash() { printf '%s\\n' syntax >> "$trace"; [[ "$FAIL" != syntax ]]; }
 """
     call = f'validate_pr 12 renovate/dependency {"a" * 40} {shlex.quote(str(log))}'
-    for failed in ("fetch", "checkout", "secrets", "json", "flake", "build", "syntax"):
+    for failed in ("fetch", "checkout", "json", "flake", "build", "syntax"):
         trace.write_text("")
         run(setup + doubles + validate + f"\nif {call}; then exit 91; fi\n",
             work, FAIL=failed, ACTUAL_HEAD="a" * 40)
@@ -93,6 +94,10 @@ bash() { printf '%s\\n' syntax >> "$trace"; [[ "$FAIL" != syntax ]]; }
     assert "--detach" not in trace.read_text()
     run(setup + doubles + validate + f"\n{call}\n", work,
         FAIL="never", ACTUAL_HEAD="a" * 40)
+    assert "cp -a -- modules/secrets.example modules/secrets" in validate
+    assert "--option restrict-eval true" in validate
+    assert "--impure" not in validate
+    assert 'unset INFRA_SECRETS_DIR GIT_PASSWORD GIT_ASKPASS' in validate
 
     # Approval must be active, human, by a writer and tied to the validated head.
     approval = functions("has_manual_approval")[0]

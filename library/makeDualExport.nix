@@ -50,7 +50,13 @@ let
   
   # Full args for VMA generation
   vmaArgs = {
-    inherit system hardware modules includeSecrets vmId cores memory enableProtection disks networking;
+    inherit system hardware vmId cores memory enableProtection disks networking;
+    # Images are distributable artifacts. Evaluate them with non-secret example
+    # modules so live credentials can never enter the image or build closure.
+    includeSecrets = false;
+    modules = modules ++ nixpkgs.lib.optional
+      (builtins.pathExists "${self}/modules/secrets.example/${host}.nix")
+      "${self}/modules/secrets.example/${host}.nix";
   };
   
 in {

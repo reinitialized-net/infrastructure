@@ -79,8 +79,13 @@
       autoStart = true;
       hostname = "immich-server";
       image = "ghcr.io/immich-app/immich-server:release";
-      environment = config.secrets.immich.keys;
-      environmentFiles = lib.optional (config.secrets.immich.file != null) config.secrets.immich.file;
+      environment = builtins.removeAttrs config.secrets.immich.keys [
+        "DB_PASSWORD"
+        "IMMICH_OIDC_CLIENT_SECRET"
+        "REDIS_USERNAME"
+        "REDIS_PASSWORD"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/immich.env" ];
       networks = [
         "backend"
       ];
@@ -114,8 +119,10 @@
       autoStart = true;
       hostname = "tuwunel";
       image = "ghcr.io/matrix-construct/tuwunel:v1.9.0";
-      environment = config.secrets.tuwunel.keys;
-      environmentFiles = lib.optional (config.secrets.tuwunel.file != null) config.secrets.tuwunel.file;
+      environment = builtins.removeAttrs config.secrets.tuwunel.keys [
+        "CONDUWUIT_REGISTRATION_TOKEN"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/tuwunel.env" ];
       networks = [
         "backend"
       ];
@@ -132,10 +139,13 @@
       autoStart = true;
       hostname = "paperless-ngx";
       image = "ghcr.io/paperless-ngx/paperless-ngx:latest";
-      environment = config.secrets.paperless.keys;
-      environmentFiles = lib.optional (
-        config.secrets.paperless.file != null
-      ) config.secrets.paperless.file;
+      environment = builtins.removeAttrs config.secrets.paperless.keys [
+        "PAPERLESS_DBPASS"
+        "PAPERLESS_SECRET_KEY"
+        "PAPERLESS_ADMIN_PASSWORD"
+        "PAPERLESS_REDIS"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/paperless.env" ];
       networks = [
         "backend"
       ];
@@ -155,12 +165,19 @@
       autoStart = true;
       hostname = "pelican-panel";
       image = "ghcr.io/pelican-dev/panel:latest";
-      environmentFiles = lib.optional (config.secrets.pelican.file != null) config.secrets.pelican.file;
-      environment = config.secrets.pelican.keys // {
-        # rp1 terminates HTTPS; the container serves HTTP on its mesh port.
-        BEHIND_PROXY = "true";
-        TRUSTED_PROXIES = "10.255.0.2";
-      };
+      environmentFiles = [ "/var/lib/service-secrets/pelican.env" ];
+      environment =
+        builtins.removeAttrs config.secrets.pelican.keys [
+          "APP_KEY"
+          "DB_PASSWORD"
+          "REDIS_USERNAME"
+          "REDIS_PASSWORD"
+        ]
+        // {
+          # rp1 terminates HTTPS; the container serves HTTP on its mesh port.
+          BEHIND_PROXY = "true";
+          TRUSTED_PROXIES = "10.255.0.2";
+        };
       networks = [
         "backend"
       ];
@@ -185,8 +202,11 @@
         "-c"
         "ocis init || true; ocis server"
       ];
-      environment = config.secrets.ocis.keys;
-      environmentFiles = lib.optional (config.secrets.ocis.file != null) config.secrets.ocis.file;
+      environment = builtins.removeAttrs config.secrets.ocis.keys [
+        "OCIS_OIDC_CLIENT_SECRET"
+        "IDM_ADMIN_PASSWORD"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/ocis.env" ];
       networks = [
         "backend"
       ];
