@@ -88,8 +88,9 @@ in
     # GPG tools - pinentry must be in PATH for GPG agent
     pinentry-curses
 
-    pkgsUnstable.opencode
     pkgsUnstable.codex
+    pkgsUnstable.nodejs_22
+    pkgsUnstable.python3
   ];
   # Enable required programs
   programs = {
