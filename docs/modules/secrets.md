@@ -102,6 +102,10 @@ Production containers consume fixed root-owned environment files under
 `/var/lib/service-secrets`. Provision every required file before activation;
 the Nix configuration deliberately does not synthesize secret-bearing files.
 
+The Valkey ACL is the exception: provision `valkey-users.acl`, and the `db1`
+tmpfiles rule sets it to mode `0400`, UID 999, GID 1000 so the image's non-root
+Valkey process can read it.
+
 ```nix
 /var/lib/service-secrets/forgejo-runner.env
 ```

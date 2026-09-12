@@ -17,6 +17,8 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 - Move live host modules entirely outside the flake source, move container and
   OPNsense credentials to protected runtime files, stage per-application Valkey
   ACL users, and require impure external-overlay builds for deployments.
+- Set Valkey's required memory-overcommit sysctl and enforce the runtime ACL
+  file ownership expected by its non-root container user.
 - Build VMA packages with synthetic templates and locked password login instead
   of generating derivation-backed plaintext administrator credentials.
 - Require current human approval for executable Nix input and lock-file updates; validate candidates with synthetic secret modules under restricted evaluation instead of exposing production secret paths or Git credentials.

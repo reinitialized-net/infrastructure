@@ -4,6 +4,8 @@
   ...
 }:
 {
+  boot.kernel.sysctl."vm.overcommit_memory" = 1;
+
   # Networking Configuration
   networking = {
     hostName = "db1";
@@ -27,6 +29,11 @@
       matchConfig.Path = "pci-0000:06:12.0";
     };
   };
+  # The Valkey image drops from root to this fixed uid/gid before reading ACLs.
+  # `z` changes metadata only when the externally provisioned file exists.
+  systemd.tmpfiles.rules = [
+    "z /var/lib/service-secrets/valkey-users.acl 0400 999 1000 -"
+  ];
   # Configure MeshNetwork
   services.meshNetwork = {
     enable = true;
