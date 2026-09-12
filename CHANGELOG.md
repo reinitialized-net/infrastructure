@@ -31,6 +31,7 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 - Remove the Forgejo admin token and Docker privileged flag from the runner;
   label changes now fail closed until an administrator deregisters it, while the
   remaining Docker socket authority is tracked for isolated-host migration.
+- Publish pgAdmin's current restricted-context listener on container port 8080.
 - Keep generated Proxmox VM hardware clocks in UTC, matching the NixOS time configuration and preventing post-boot clock jumps.
 - Reject physical ingress to mesh-addressed services before Docker DNAT, preserving WireGuard, local Docker clients and deliberate physical DNS listeners.
 - Preserve original mail HTTPS client addresses while stripping PROXY protocol only on the DNS branch; retain DNS administration source restrictions.

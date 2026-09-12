@@ -159,7 +159,7 @@
         "backend"
       ];
       ports = [
-        "10.255.0.4:1031:80/tcp" # pgAdmin4 web interface
+        "10.255.0.4:1031:8080/tcp" # pgAdmin4 web interface
       ];
       volumes = [
         "pgadmin4_data:/var/lib/pgadmin"
