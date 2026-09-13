@@ -29,6 +29,10 @@ in
     environment.TZ = "America/Chicago";
     environmentFiles = [ config.secrets.frigate.file ];
     volumes = [
+      # Qualified against the pinned Frigate image; exposes CPU thread placement
+      # that its stock OpenVINO configuration does not currently allow setting.
+      "${./openvino_cpu.py}:/opt/frigate/frigate/detectors/plugins/openvino_cpu.py:ro"
+      "${./check_camera.py}:/opt/frigate/check_camera.py:ro"
       "${root}/config:/config"
       "${root}/media:/media/frigate"
       "/etc/localtime:/etc/localtime:ro"
@@ -37,7 +41,15 @@ in
       "--shm-size=256m"
       "--tmpfs=/tmp/cache:rw,size=536870912"
       "--memory=2g"
-      "--cpus=2"
+      "--cpus=4"
+      # API availability alone missed both capture and keyframe outages.
+      # Mark unhealthy without introducing automatic camera restart loops.
+      "--health-cmd=python3 /opt/frigate/check_camera.py"
+      "--health-interval=60s"
+      "--health-timeout=30s"
+      "--health-start-period=90s"
+      "--health-start-interval=30s"
+      "--health-retries=3"
     ];
   };
 

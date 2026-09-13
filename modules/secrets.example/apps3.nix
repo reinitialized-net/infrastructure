@@ -6,7 +6,7 @@
 {
   secrets = {
     frigate = {
-      description = "Runtime Docker env file: FRIGATE_CAMERA_13_37_URL and FRIGATE_JWT_SECRET; never inline credentials";
+      description = "Runtime Docker env file: FRIGATE_CAMERA_13_37_URL, FRIGATE_CAMERA_13_37_SNAPSHOT_URL, and FRIGATE_JWT_SECRET; never inline credentials";
       file = lib.mkDefault "/var/lib/service-secrets/frigate.env";
     };
     # Provision private-key files separately before services start on every boot.

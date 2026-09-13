@@ -1,4 +1,5 @@
 # Managed by Nix. Edit this file, then rebuild apps3; UI edits are replaced on restart.
+version: 0.18-0
 mqtt:
   enabled: false
 auth:
@@ -11,14 +12,42 @@ networking:
   listen:
     internal: "127.0.0.1:5000"
 go2rtc:
+  # Share one camera connection and copy H.264 without encoding. IP Webcam's
+  # RTSP SDP advertises stale landscape SPS for portrait video. Reading MPEG-TS
+  # lets go2rtc derive live dimensions from the actual in-band video headers.
+  # Separate on-demand connections were faster but failed camera recovery
+  # qualification. Do not reintroduce connection churn without retesting it.
+  streams:
+    camera_13_37:
+      - "ffmpeg:{FRIGATE_CAMERA_13_37_URL}#input=rtsp/udp#video=copy"
+  ffmpeg:
+    # IP Webcam delivers periodic keyframes over UDP but loses them over TCP.
+    # Force UDP only on the camera leg; Frigate's local restream remains TCP.
+    rtsp/udp: -fflags nobuffer -flags low_delay -timeout {timeout} -user_agent go2rtc/ffmpeg -rtsp_transport udp -i {input}
+    output: -f mpegts -
   api:
     listen: "127.0.0.1:1984"
   rtsp:
     listen: "127.0.0.1:8554"
   webrtc:
     listen: "127.0.0.1:8555"
+# The VM has an AVX2-capable Intel CPU but no accelerator passthrough.
+# OpenVINO avoids the default TFLite detector's ~271 ms inference latency.
+detectors:
+  ov:
+    type: openvino_cpu
+    device: CPU
+    # Three inference workers leave capacity for capture and the shared host.
+    num_threads: 3
+model:
+  path: /openvino-model/ssdlite_mobilenet_v2.xml
+  labelmap_path: /openvino-model/coco_91cl_bkgr.txt
+  width: 300
+  height: 300
+  input_tensor: nhwc
+  input_pixel_format: bgr
 detect:
-  enabled: false # Motion recording does not require an object detector.
+  enabled: true
 record:
   enabled: true
   continuous:
@@ -37,12 +66,41 @@ snapshots:
   enabled: false
 cameras:
   camera_13_37:
+    motion:
+      # The default 100-pixel height reduces this portrait view to 56x100,
+      # losing small geckos. 180x320 motion analysis preserves the tested small
+      # targets with much less processing time than using the full 360x640.
+      frame_height: 320
+      # Requalified against the current enclosure: 15/5 still missed two of
+      # five small, low-contrast synthetic targets. Watch reflection noise.
+      threshold: 10
+      contour_area: 3
+      improve_contrast: true
+    live:
+      streams:
+        "Full resolution": camera_13_37
     ffmpeg:
+      output_args:
+        # Smaller files also bound Frigate's HLS playback chunks, reducing the
+        # data fetched for each seek. Cut only at source keyframes; never encode.
+        record: -f segment -segment_time 5 -segment_format mp4 -reset_timestamps 1 -strftime 1 -c copy -an
       inputs:
-        - path: "{FRIGATE_CAMERA_13_37_URL}"
-          input_args: preset-rtsp-generic
-          roles: [record, detect]
+        - path: rtsp://127.0.0.1:8554/camera_13_37
+          input_args: preset-rtsp-restream
+          roles: [record]
+        - path: "{FRIGATE_CAMERA_13_37_SNAPSHOT_URL}"
+          # IP Webcam serves a fresh JPEG per request. Pace requests before
+          # decoding: output fps alone still decodes every H.264 source frame.
+          # Keep image2's 1/5-second timestamps. Wall-clock timestamps caused
+          # this looped input to deliver bursts that overflowed capture.
+          input_args: -re -loop 1 -framerate 5 -f image2
+          roles: [detect]
     detect:
+      # Keep motion analysis small; live view uses the original go2rtc stream.
+      # Only five camera snapshots per second are decoded; recording and live
+      # viewing copy the independent original H.264 stream at its source FPS.
+      # COCO has no gecko class. Motion is evaluated independently and still
+      # controls recording; avoid blocking its frames on unrelated inference.
       enabled: false
       width: 360
       height: 640
