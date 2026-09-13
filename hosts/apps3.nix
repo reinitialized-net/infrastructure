@@ -4,6 +4,8 @@
   ...
 }:
 {
+  imports = [ ./apps3/frigate.nix ];
+
   # Networking Configuration
   networking = {
     hostName = "apps3";

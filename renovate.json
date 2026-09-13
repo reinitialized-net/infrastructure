@@ -582,6 +582,22 @@
         "manual-update"
       ],
       "automerge": false
+    },
+    {
+      "description": "Require manual review of Frigate config and recording database migrations.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "ghcr.io/blakeblackshear/frigate"
+      ],
+      "addLabels": [
+        "container",
+        "service:frigate",
+        "stateful-data",
+        "manual-update"
+      ],
+      "automerge": false
     }
   ]
 }

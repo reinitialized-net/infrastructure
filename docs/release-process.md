@@ -78,3 +78,10 @@ keys. Do not bypass that check to make an update proceed.
 Container maintenance compares the running image with the pulled image and leaves
 stopped services stopped. Failure reports include the hostname in their issue
 title so separate hosts cannot overwrite one another's report.
+
+## Frigate updates
+
+Frigate image updates require manual review (`manual-update`) and are excluded
+from host-local automatic restarts. Before upgrading, stop the recorder and back
+up its configuration and SQLite database; verify recording/playback after the
+upgrade. See [camera DVR operations](camera-dvr.md) for retention and rollback.

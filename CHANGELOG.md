@@ -9,6 +9,9 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Added
 
+- Add Frigate on apps3 with internal HTTPS access through rp1, 30-day motion
+  retention, runtime credentials, and a shared-storage free-space cutoff.
+
 - Add physical `ai1` Dell XPS 8930 support with a USB-bootable, offline-capable NixOS installer ISO and two-disk installation command.
 - Add a direct llama.cpp server built for CUDA 12.9 (`sm_61`) and the i7-8700, with a fixed 128 Ki-token slot, quantized KV cache, Flash Attention, automatic maximum layer offload, prompt-cache reuse, and full-performance host tuning.
 

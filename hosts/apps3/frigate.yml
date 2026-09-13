@@ -1,0 +1,49 @@
+# Managed by Nix. Edit this file, then rebuild apps3; UI edits are replaced on restart.
+mqtt:
+  enabled: false
+auth:
+  enabled: true
+  cookie_secure: true
+  failed_login_rate_limit: "5/minute"
+tls:
+  enabled: false # rp1 terminates HTTPS; backend traffic travels over WireGuard.
+networking:
+  listen:
+    internal: "127.0.0.1:5000"
+go2rtc:
+  api:
+    listen: "127.0.0.1:1984"
+  rtsp:
+    listen: "127.0.0.1:8554"
+  webrtc:
+    listen: "127.0.0.1:8555"
+detect:
+  enabled: false # Motion recording does not require an object detector.
+record:
+  enabled: true
+  continuous:
+    days: 0
+  motion:
+    days: 30
+  alerts:
+    retain:
+      days: 30
+      mode: motion
+  detections:
+    retain:
+      days: 30
+      mode: motion
+snapshots:
+  enabled: false
+cameras:
+  camera_13_37:
+    ffmpeg:
+      inputs:
+        - path: "{FRIGATE_CAMERA_13_37_URL}"
+          input_args: preset-rtsp-generic
+          roles: [record, detect]
+    detect:
+      enabled: false
+      width: 360
+      height: 640
+      fps: 5

@@ -746,6 +746,22 @@ in
         };
       };
 
+      "cameras.in.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [ "10.1.12.4" ];
+        locations."/" = {
+          proxyPass = "http://10.255.0.5:1030";
+          proxyWebsockets = true;
+          extraConfig = ''
+            ${internalOnly}
+            proxy_buffering off;
+            proxy_read_timeout 120s;
+          '';
+        };
+      };
+
       "photos.reinitialized.me" = {
         forceSSL = true;
         enableACME = true;
