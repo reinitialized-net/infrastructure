@@ -27,6 +27,11 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Fixed
 
+- Lock the privileged develop account through its hashed-password option while preserving SSH-key access.
+- Connect pure, restricted promotion builds to explicit synthetic host checks instead of an unused in-tree template directory.
+- Require independently verified migration SSH host keys and protect export archive/checksum staging against symlink replacement.
+- Add external-secret host onboarding guidance and a bounded production exposure check plan.
+
 - Remove obsolete `nixos-vscode-server` input overriding that no longer targets an existing upstream input, and replace reusable cryptographic-looking values in the Hudu secret template with explicit generation placeholders.
 - Remove the Forgejo admin token and Docker privileged flag from the runner;
   label changes now fail closed until an administrator deregisters it, while the

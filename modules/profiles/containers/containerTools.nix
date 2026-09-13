@@ -46,7 +46,9 @@ let
       IdentityFile /var/lib/docker-volume-migration/identity
       IdentitiesOnly yes
       BatchMode yes
-      StrictHostKeyChecking accept-new
+      StrictHostKeyChecking yes
+      GlobalKnownHostsFile /dev/null
+      UpdateHostKeys no
       UserKnownHostsFile /var/lib/docker-volume-migration/known_hosts
   '';
 

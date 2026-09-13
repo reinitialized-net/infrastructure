@@ -281,6 +281,13 @@
         db1 = dualSystems.db1.nixosSystem;
         #gs1 = dualSystems.gs1.nixosSystem;
       };
+
+      # Pure validation uses checked-in synthetic metadata explicitly. Live
+      # nixosConfigurations retain their external-only secret import behavior.
+      checks.x86_64-linux = builtins.mapAttrs (
+        host: _: dualSystems.${host}.validationSystem.config.system.build.toplevel
+      ) inputs.self.nixosConfigurations;
+
       packages = library.forAllSystems (
         system:
         {

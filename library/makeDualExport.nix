@@ -47,6 +47,15 @@ let
   nixosArgs = {
     inherit system hardware modules includeSecrets;
   };
+
+  # Validation must remain independent of external live configuration even
+  # when a release evaluates all flake outputs with --impure.
+  validationArgs = nixosArgs // {
+    includeSecrets = false;
+    modules = modules ++ nixpkgs.lib.optional
+      (builtins.pathExists "${self}/modules/secrets.example/${host}.nix")
+      "${self}/modules/secrets.example/${host}.nix";
+  };
   
   # Full args for VMA generation
   vmaArgs = {
@@ -60,6 +69,8 @@ let
   };
   
 in {
+  validationSystem = makeConfiguration host validationArgs;
+
   # Export VMA package if requested and vmId is provided
   package = if exportVMA && vmId != null 
     then generateVMAImage host vmaArgs

@@ -798,9 +798,6 @@ let
                 cd "$checkout_dir" || return 1
                 # Candidate flake inputs are executable Nix code. Never expose
                 # production secrets or API credentials to their evaluator.
-                test -d modules/secrets.example || return 1
-                rm -rf -- modules/secrets || return 1
-                cp -a -- modules/secrets.example modules/secrets || return 1
                 unset INFRA_SECRETS_DIR GIT_PASSWORD GIT_ASKPASS
                 jq empty renovate.json || return 1
                 nix flake show path:. --no-write-lock-file \
@@ -809,13 +806,13 @@ let
                 nix build --no-write-lock-file --no-link \
                   --option restrict-eval true \
                   --option allowed-uris "github: https://github.com https://api.github.com" \
-                  path:.#nixosConfigurations.devenv.config.system.build.toplevel \
-                  path:.#nixosConfigurations.rp1.config.system.build.toplevel \
-                  path:.#nixosConfigurations.apps1.config.system.build.toplevel \
-                  path:.#nixosConfigurations.apps2.config.system.build.toplevel \
-                  path:.#nixosConfigurations.apps3.config.system.build.toplevel \
-                  path:.#nixosConfigurations.ai1.config.system.build.toplevel \
-                  path:.#nixosConfigurations.db1.config.system.build.toplevel || return 1
+                  path:.#checks.x86_64-linux.devenv \
+                  path:.#checks.x86_64-linux.rp1 \
+                  path:.#checks.x86_64-linux.apps1 \
+                  path:.#checks.x86_64-linux.apps2 \
+                  path:.#checks.x86_64-linux.apps3 \
+                  path:.#checks.x86_64-linux.ai1 \
+                  path:.#checks.x86_64-linux.db1 || return 1
                 bash -n hosts/devenv/tools/update-network-firewall-rules.sh || return 1
                 bash -n hosts/devenv/tools/release-infra.sh
               } > "$log_file" 2>&1

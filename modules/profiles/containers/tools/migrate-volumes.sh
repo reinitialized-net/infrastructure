@@ -8,6 +8,7 @@
 #
 
 set -euo pipefail
+umask 077
 
 # Use the local daemon and immutable CLI configuration, including when invoked
 # as docker, whose home is writable through the migration SFTP service.
@@ -26,7 +27,7 @@ NC='\033[0m'
 VERSION="3.1.0"
 
 # Default values
-BACKUP_DIR="/var/lib/docker/volumes/.migration-staging"
+BACKUP_DIR="/mnt/data/docker-volume-backups"
 COMPRESS="gzip"
 COMPRESS_EXPLICIT=false
 VERIFY_CHECKSUM=true
@@ -50,7 +51,7 @@ stopped_containers=""
 remote_stopped_containers=""
 destination_touched=false
 migration_succeeded=false
-export_temp_file=""
+export_temp_dir=""
 
 # Function to print colored output
 print_info() {
@@ -124,7 +125,7 @@ Optional Arguments:
   -h           Show this help message
 
 Notes:
-  - Export/import use ${BACKUP_DIR} (inside Docker's data dir).
+  - Exports default to ${BACKUP_DIR}; imports accept an explicit archive path.
   - Transfer mode streams data directly into the remote volume via SSH.
     No intermediate files are created on either host during transfer.
   - Transfer mode auto-detects and stops containers on both local and remote hosts.
@@ -274,6 +275,67 @@ get_compress_ext() {
     esac
 }
 
+# Export paths must not be replaceable by another local user. Sticky ancestors
+# (such as /tmp) are safe only because every existing child is root/caller-owned.
+# The output directory itself must be private to trusted owners, not shared.
+check_export_directory() {
+    local directory=$1
+    local ancestor details owner permissions transfer_root
+    # SCP/SFTP has the docker UID inside these bind mounts. Even 0700
+    # directories there would be writable by that remote principal.
+    case "$directory" in
+        /home/docker|/home/docker/*|/var/lib/docker/volumes/.migration-staging|/var/lib/docker/volumes/.migration-staging/*|/mnt/data/docker/volumes/.migration-staging|/mnt/data/docker/volumes/.migration-staging/*)
+            print_error "Export directory is exposed to migration SCP/SFTP. Choose a private directory outside the transfer roots."
+            return 1
+            ;;
+    esac
+    ancestor="$directory"
+    while :; do
+        if [ -e "$ancestor" ]; then
+            # Device/inode comparison also catches aliases through bind mounts.
+            for transfer_root in /home/docker /var/lib/docker/volumes/.migration-staging; do
+                if [ "$ancestor" -ef "$transfer_root" ]; then
+                    print_error "Export directory is exposed to migration SCP/SFTP: $ancestor"
+                    return 1
+                fi
+            done
+            if [ ! -d "$ancestor" ]; then
+                print_error "Export path is not a directory: $ancestor"
+                return 1
+            fi
+            details=$(@coreutils@/bin/stat -c '%u %a' -- "$ancestor")
+            read -r owner permissions <<< "$details"
+            if (( owner != 0 && owner != EUID )) ||
+                { (( (8#$permissions & 0022) != 0 )) &&
+                  { [ "$ancestor" = "$directory" ] || (( (8#$permissions & 01000) == 0 )); }; }; then
+                print_error "Unsafe export directory ancestry: $ancestor. Use a root/caller-owned directory without group/other write access."
+                return 1
+            fi
+        fi
+        [ "$ancestor" != / ] || break
+        ancestor=$(@coreutils@/bin/dirname -- "$ancestor")
+    done
+}
+
+prepare_export_directory() {
+    local directory created_directory
+    directory=$(@coreutils@/bin/realpath -m -- "$BACKUP_DIR")
+    check_export_directory "$directory"
+    @coreutils@/bin/mkdir -p -m 700 -- "$directory"
+    # A missing child of a sticky directory can be planted between the first
+    # check and mkdir. Reject path redirection and recheck every created ancestor
+    # before opening any writable staging paths.
+    created_directory=$(@coreutils@/bin/realpath -e -- "$directory")
+    if [ "$created_directory" != "$directory" ]; then
+        print_error "Export directory changed during creation: $directory"
+        return 1
+    fi
+    check_export_directory "$created_directory"
+    BACKUP_DIR="$created_directory"
+    # Create before stopping containers; all writable temporary paths stay private.
+    export_temp_dir=$(@coreutils@/bin/mktemp -d "$BACKUP_DIR/.migration-backup.XXXXXX")
+}
+
 # Function to export volume to a backup file
 export_volume() {
     local volume=$1
@@ -284,14 +346,14 @@ export_volume() {
     compress_cmd=$(get_compress_cmd)
 
     local final_backup_file="${backup_file}${compress_ext}"
-    export_temp_file=$(@coreutils@/bin/mktemp "$(@coreutils@/bin/dirname "$backup_file")/.migration-backup.XXXXXX")
-    backup_file="$export_temp_file"
+    backup_file="$export_temp_dir/archive"
+    # Precreate with restrictive permissions; container truncation retains them.
+    : > "$backup_file"
 
     print_info "Exporting volume: $volume"
     print_info "Backup location: $final_backup_file"
 
-    # Use a Docker container to tar the volume and write it to the staging dir.
-    # The staging dir is inside /var/lib/docker/volumes so Docker can bind-mount it.
+    # Bind only the private export staging directory into the archive container.
     local staging_dir
     staging_dir=$(@coreutils@/bin/dirname "$backup_file")
     local backup_name
@@ -325,16 +387,19 @@ export_volume() {
             local checksum
             checksum=$(calculate_checksum "$backup_file")
             print_info "Checksum: $checksum"
+            @coreutils@/bin/echo "$checksum" > "$export_temp_dir/checksum"
         fi
 
-        @coreutils@/bin/mv -f "$backup_file" "$final_backup_file"
-        export_temp_file=""
-        backup_file="$final_backup_file"
+        # Rename replaces symlinks themselves, including links to directories.
+        # Publish the checksum first: interruption then fails verification of an
+        # old archive rather than leaving a new archive with no checksum.
         if [ "$VERIFY_CHECKSUM" = true ]; then
-            @coreutils@/bin/echo "$checksum" > "${backup_file}.sha256"
+            @coreutils@/bin/mv -fT -- "$export_temp_dir/checksum" "${final_backup_file}.sha256"
         else
-            @coreutils@/bin/rm -f "${backup_file}.sha256"
+            @coreutils@/bin/rm -f -- "${final_backup_file}.sha256"
         fi
+        @coreutils@/bin/mv -fT -- "$backup_file" "$final_backup_file"
+        backup_file="$final_backup_file"
 
         # Show backup file info
         local size
@@ -513,7 +578,7 @@ cleanup() {
     local status=$?
     trap - EXIT
     set +e
-    [ -z "$export_temp_file" ] || @coreutils@/bin/rm -f "$export_temp_file"
+    [ -z "$export_temp_dir" ] || @coreutils@/bin/rm -rf -- "$export_temp_dir"
     if [ "$AUTO_RESTART" = true ]; then
         if [ "$MODE" = "import" ] && [ "$destination_touched" = true ] && [ "$migration_succeeded" != true ]; then
             print_warning "Restore failed after writing the destination; its containers remain stopped. Restore a verified backup before starting them."
@@ -629,8 +694,7 @@ case $MODE in
                 exit 1
             fi
             # Check staging access before any containers are stopped.
-            @coreutils@/bin/mkdir -p "$BACKUP_DIR"
-            BACKUP_DIR=$(@coreutils@/bin/realpath -e "$BACKUP_DIR")
+            prepare_export_directory
         else
             operation_volume="${DEST_VOLUME_NAME:-$VOLUME_NAME}"
             if [ ! -f "$BACKUP_FILE" ]; then

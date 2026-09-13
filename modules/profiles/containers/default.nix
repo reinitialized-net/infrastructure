@@ -369,13 +369,19 @@ in
           chmod 600 "$key_tmp"
           chown docker:docker "$key_tmp"
           mv -T "$key_tmp" "$state_dir/identity"
-          if [ ! -e "$state_dir/known_hosts" ]; then
-            install -m 600 -o docker -g docker /dev/null "$state_dir/known_hosts"
-            # Preserve learned host identities. Read the old, user-writable
-            # path without root privileges so a symlink cannot expose secrets.
-            ${pkgs.util-linux}/bin/runuser -u docker -- ${pkgs.coreutils}/bin/cat \
-              /home/docker/.ssh/known_hosts > "$state_dir/known_hosts" 2>/dev/null || true
+          # Only administrator-provisioned trust is retained. The old
+          # docker-owned cache (and home known_hosts) is not verified trust.
+          if [ -L "$state_dir/known_hosts" ] || [ ! -f "$state_dir/known_hosts" ] ||
+             [ "$(stat -c %u "$state_dir/known_hosts")" != 0 ] ||
+             [ "$(find "$state_dir/known_hosts" -maxdepth 0 -perm /022 -print)" != "" ]; then
+            trust_tmp=$(mktemp "$state_dir/.known-hosts.XXXXXX")
+            trap 'rm -f "$key_tmp" "$trust_tmp"' EXIT
+            chmod 640 "$trust_tmp"
+            chown root:docker "$trust_tmp"
+            mv -fT "$trust_tmp" "$state_dir/known_hosts"
           fi
+          chown root:docker "$state_dir/known_hosts"
+          chmod 640 "$state_dir/known_hosts"
         '';
       };
     }

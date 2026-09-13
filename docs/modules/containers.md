@@ -159,7 +159,15 @@ The private key for outbound migration is written by `deploy-docker-migration-ke
 config.secrets.volumeMigration.file
 ```
 
-The service atomically writes `/var/lib/docker-volume-migration/identity` with mode `0600` in a root-owned directory. Outbound migration uses an immutable SSH configuration rather than the docker user's writable home configuration. Known host keys are stored in `/var/lib/docker-volume-migration/known_hosts`.
+The service atomically writes `/var/lib/docker-volume-migration/identity` with mode `0600` in a root-owned directory. Outbound migration uses an immutable SSH configuration rather than the docker user's writable home configuration. SSH requires an already verified destination host key in root-owned `/var/lib/docker-volume-migration/known_hosts`; unknown or changed keys fail before containers stop. Global and user home trust files are not used. On upgrade, the old docker-owned trust cache is replaced with an empty file; learned keys are not automatically trusted.
+
+Before transferring, obtain the destination's SSH public host key and verify its fingerprint through a trusted administrative channel (for example, its console). Prepare a known-hosts file containing that verified key for the exact hostname/IP passed to `-r`; use `[host]:port` for a nondefault `-p`. Install it on the source as an administrator:
+
+```bash
+sudo install -o root -g docker -m 0640 verified-migration-known-hosts /var/lib/docker-volume-migration/known_hosts
+```
+
+The input file must contain independently verified keys; unauthenticated `ssh-keyscan` output alone does not establish trust. Include all required destinations when replacing the file. Legitimate key rotation requires verification and replacement through the same trusted channel.
 
 The profile also grants members of the `docker` group passwordless sudo-rs access to run `ssh` and `test` as the `docker` user, plus exact `systemctl stop/start` commands for declared container units. Migration uses those units because NixOS removes declarative containers when they stop. Unmanaged containers still use Docker stop/start; unmanaged containers configured with automatic removal are rejected before stopping.
 
@@ -182,7 +190,7 @@ The `migrate-volumes` tool is installed by `containerTools.nix`.
 | `-V VOLUME` | Destination volume name when different from source |
 | `-c CONTAINER` | Local container to stop/start during export or transfer |
 | `-C CONTAINER` | Remote container to stop/start during transfer |
-| `-d DIR` | Backup directory, default `/var/lib/docker/volumes/.migration-staging` |
+| `-d DIR` | Backup directory, default `/mnt/data/docker-volume-backups` |
 | `-p PORT` | SSH port, default `22` |
 | `-n` | Do not stop containers |
 | `-k` | Skip checksum verification |
@@ -193,13 +201,15 @@ Examples:
 
 ```bash
 migrate-volumes export -v postgres1_data -c postgres1
-migrate-volumes import -v postgres1_data -f /var/lib/docker/volumes/.migration-staging/postgres1_data.tar.gz
+migrate-volumes import -v postgres1_data -f /mnt/data/docker-volume-backups/postgres1_data.tar.gz
 migrate-volumes transfer -v postgres1_data -r 10.1.11.3 -V imported_postgres1_data
 ```
 
 Transfer mode streams data over SSH and does not leave intermediate backup files on either host.
 
-Backup checksums and archive readability are checked before import stops consumers. Failed discovery or container stops abort the operation. The stop plan includes running OCI containers that depend on a volume consumer, because systemd also stops those dependents. Cleanup resumes only containers that were running before the operation; a failed transfer resumes the source, while a destination that may have been partially written remains stopped. Successful transfers leave the source stopped and resume the destination. Export writes to a temporary file so a failed export preserves the previous backup.
+Backup checksums and archive readability are checked before import stops consumers. Failed discovery or container stops abort the operation. The stop plan includes running OCI containers that depend on a volume consumer, because systemd also stops those dependents. Cleanup resumes only containers that were running before the operation; a failed transfer resumes the source, while a destination that may have been partially written remains stopped. Successful transfers leave the source stopped and resume the destination. Export prepares the archive and checksum in a private `0700` temporary directory, then publishes them by renaming over the final names without following symlinks. Failed archive creation or checksum publication preserves the previous archive; interruption between the two renames can leave a checksum mismatch, so verify the pair before importing. Temporary staging is removed on failure and success.
+
+The export directory and its ancestors must be owned by root or the caller; group/other writable directories are rejected except sticky ancestors such as `/tmp`. Exports into `/home/docker` or the legacy `/var/lib/docker/volumes/.migration-staging` transfer tree are rejected because restricted SCP/SFTP can access those trees. The new default export directory is outside that sandbox. If the caller cannot create it, use `-d` with a private directory outside the transfer trees that Docker can bind-mount. Existing archives in the legacy staging directory can still be imported.
 
 Update both migration hosts to the current tool before using automatic stop/recovery. A destination without the migration planning command is rejected before containers are stopped.
 

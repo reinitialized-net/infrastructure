@@ -14,14 +14,15 @@
    are left open until they have a current approving PR review from a repository
    writer other than the Infratainer automation account, then they use the same validation path.
    All executable Nix input and lock-file updates are `manual-update`. Candidate
-   evaluation copies the checked-in synthetic secret modules into the disposable
-   checkout, drops secret and Git credential environment variables, and enables
+   evaluation builds `checks.x86_64-linux.<host>`, which independently construct
+   each host with external secret imports disabled and its checked-in synthetic
+   module when present (`ai1` needs none). These checks remain synthetic during
+   impure release evaluation. Live `nixosConfigurations` keep external-only imports.
+   Validation drops secret and Git credential environment variables and enables
    restricted pure evaluation so dependency code cannot read arbitrary host paths:
 
    ```bash
    jq empty renovate.json
-   rm -rf -- modules/secrets
-   cp -a -- modules/secrets.example modules/secrets
    unset INFRA_SECRETS_DIR GIT_PASSWORD GIT_ASKPASS
    nix flake show path:. --no-write-lock-file \
      --option restrict-eval true \
@@ -29,13 +30,13 @@
    nix build --no-write-lock-file --no-link \
      --option restrict-eval true \
      --option allowed-uris "github: https://github.com https://api.github.com" \
-     path:.#nixosConfigurations.devenv.config.system.build.toplevel \
-     path:.#nixosConfigurations.rp1.config.system.build.toplevel \
-     path:.#nixosConfigurations.apps1.config.system.build.toplevel \
-     path:.#nixosConfigurations.apps2.config.system.build.toplevel \
-     path:.#nixosConfigurations.apps3.config.system.build.toplevel \
-     path:.#nixosConfigurations.ai1.config.system.build.toplevel \
-     path:.#nixosConfigurations.db1.config.system.build.toplevel
+     path:.#checks.x86_64-linux.devenv \
+     path:.#checks.x86_64-linux.rp1 \
+     path:.#checks.x86_64-linux.apps1 \
+     path:.#checks.x86_64-linux.apps2 \
+     path:.#checks.x86_64-linux.apps3 \
+     path:.#checks.x86_64-linux.ai1 \
+     path:.#checks.x86_64-linux.db1
    bash -n hosts/devenv/tools/update-network-firewall-rules.sh
    bash -n hosts/devenv/tools/release-infra.sh
    ```

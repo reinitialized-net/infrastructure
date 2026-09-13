@@ -29,7 +29,8 @@ in
         shell = pkgs.bashInteractive;
         isNormalUser = true;
 
-        initialPassword = "!";
+        # Lock password authentication while retaining SSH public-key access.
+        hashedPassword = "!";
         openssh.authorizedKeys.keys = [
           "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEgNNIkOFenuf9S6sy5heFeysErwMgfGD//r4jWgbg/E develop"
         ];

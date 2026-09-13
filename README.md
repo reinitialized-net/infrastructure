@@ -6,16 +6,19 @@ For standard NixOS options, use the [NixOS manual](https://nixos.org/manual/nixo
 
 ## Quick Start
 
+Use [Host onboarding](docs/host-onboarding.md) when adding a host. Keep live
+secret files outside the checkout and provision runtime credentials separately.
+
 Show current flake outputs without updating `flake.lock`:
 
 ```bash
 nix flake show path:. --no-write-lock-file
 ```
 
-Build one host configuration without activating it:
+Build one host with synthetic metadata, without activating it:
 
 ```bash
-nix build path:.#nixosConfigurations.rp1.config.system.build.toplevel
+nix build .#checks.x86_64-linux.rp1 --no-write-lock-file --no-link
 ```
 
 Build one Proxmox VMA image:
@@ -92,7 +95,9 @@ Format changed Nix files when the formatter is available:
 nixfmt-rfc-style <file>.nix
 ```
 
-This flake does not define `checks`, `formatter`, `apps`, or `devShells`, so do not assume `nix fmt` or `nix flake check` provides repository validation.
+`checks.x86_64-linux.<host>` builds each exported host with checked-in synthetic
+metadata under pure evaluation. These are build checks, not deployment outputs.
+The flake does not define `formatter`, `apps`, or `devShells`.
 
 ## Fleet Management
 

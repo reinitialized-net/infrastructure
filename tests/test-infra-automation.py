@@ -13,6 +13,21 @@ import textwrap
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = (ROOT / "hosts/devenv/infraAutoUpdate.nix").read_text()
 
+# Release flake-show intentionally runs impure with a live overlay. Validation
+# outputs must use a separate constructor, not extend that live configuration.
+dual_export = (ROOT / "library/makeDualExport.nix").read_text()
+validation_args = dual_export.split("validationArgs = nixosArgs // {", 1)[1].split("\n  };", 1)[0]
+assert "includeSecrets = false;" in validation_args
+assert "modules/secrets.example/${host}.nix" in validation_args
+assert "validationSystem = makeConfiguration host validationArgs;" in dual_export
+flake = (ROOT / "flake.nix").read_text()
+checks = flake.split("checks.x86_64-linux =", 1)[1].split("packages =", 1)[0]
+assert "dualSystems.${host}.validationSystem.config.system.build.toplevel" in checks
+assert "getEnv" not in checks and "extendModules" not in checks
+release = (ROOT / "hosts/devenv/tools/release-infra.sh").read_text()
+assert "export INFRA_SECRETS_DIR" in release
+assert "nix flake show path:. --no-write-lock-file --impure" in release
+
 
 def functions(name):
     pattern = rf"(?m)^( +){name}\(\) ([{{(])\n.*?^\1[}})]$"
@@ -32,7 +47,6 @@ with tempfile.TemporaryDirectory() as temporary:
     work = Path(temporary)
     checkout = work / "checkout"
     (checkout / ".git").mkdir(parents=True)
-    (checkout / "modules/secrets.example").mkdir(parents=True)
     trace = work / "trace"
     log = work / "validation.log"
     # Unattended deploys may use only previously verified host identities.
@@ -77,7 +91,11 @@ git() {{
     doubles = """
 require_secrets_dir() { [[ "$FAIL" != secrets ]]; }
 jq() { [[ "$FAIL" != json ]]; }
-nix() { printf '%s\\n' "$1" >> "$trace"; [[ "$FAIL" != "$1" ]]; }
+nix() {
+  [[ ! -v INFRA_SECRETS_DIR && ! -v GIT_PASSWORD && ! -v GIT_ASKPASS ]] || return 99
+  printf '%s\\n' "$*" >> "$trace"
+  [[ "$FAIL" != "$1" ]]
+}
 bash() { printf '%s\\n' syntax >> "$trace"; [[ "$FAIL" != syntax ]]; }
 """
     call = f'validate_pr 12 renovate/dependency {"a" * 40} {shlex.quote(str(log))}'
@@ -92,9 +110,17 @@ bash() { printf '%s\\n' syntax >> "$trace"; [[ "$FAIL" != syntax ]]; }
     run(setup + doubles + validate + f"\nif {call}; then exit 92; fi\n",
         work, FAIL="never", ACTUAL_HEAD="b" * 40)
     assert "--detach" not in trace.read_text()
+    trace.write_text("")
     run(setup + doubles + validate + f"\n{call}\n", work,
-        FAIL="never", ACTUAL_HEAD="a" * 40)
-    assert "cp -a -- modules/secrets.example modules/secrets" in validate
+        FAIL="never", ACTUAL_HEAD="a" * 40,
+        INFRA_SECRETS_DIR="/synthetic-forbidden-overlay",
+        GIT_PASSWORD="synthetic-credential", GIT_ASKPASS="/synthetic-askpass")
+    build = next(line for line in trace.read_text().splitlines() if line.startswith("build "))
+    for host in ("devenv", "rp1", "apps1", "apps2", "apps3", "ai1", "db1"):
+        assert f"path:.#checks.x86_64-linux.{host}" in build, build
+    assert "nixosConfigurations" not in build
+    assert "modules/secrets" not in validate
+    assert not (checkout / "modules").exists()
     assert "--option restrict-eval true" in validate
     assert "--impure" not in validate
     assert 'unset INFRA_SECRETS_DIR GIT_PASSWORD GIT_ASKPASS' in validate

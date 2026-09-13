@@ -52,6 +52,13 @@ def main() -> None:
     automation = (ROOT / "hosts/devenv/infraAutoUpdate.nix").read_text()
     assert 'liveSecretsSource = "${self}/modules/secrets"' not in automation
 
+    devenv = (ROOT / "hosts/devenv.nix").read_text()
+    assert 'initialPassword = "!";' not in devenv
+    assert 'hashedPassword = "!";' in devenv
+    assert 'username = "develop";' in devenv
+    assert '"docker"' in devenv and '"wheel"' in devenv
+    assert "openssh.authorizedKeys.keys" in devenv
+
 
 if __name__ == "__main__":
     main()
