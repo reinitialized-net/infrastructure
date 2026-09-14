@@ -1,5 +1,10 @@
 # Camera DVR
 
+The newer gecko-only recording requirement is assessed in
+[Gecko detection and recording](gecko-tracking.md). It is **not yet enabled**:
+the live policy remains general motion retention. Historical motion sensitivity
+and playback qualification below do not establish gecko-recognition accuracy.
+
 ## Selection (2026-09-12)
 
 Frigate is the selected FOSS recorder: an MIT-licensed Docker application with

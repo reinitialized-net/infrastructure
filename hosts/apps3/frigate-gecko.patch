@@ -1,0 +1,407 @@
+--- a/record/maintainer.py
++++ b/record/maintainer.py
+@@ -1,6 +1,10 @@
+ """Maintain recording segments in cache."""
+ 
+ import asyncio
++import tempfile
++from frigate.gecko_media_clock import read_clock, segment_clock
++from frigate.gecko_clip import trim_clip_async
++from frigate.gecko_recording_health import heartbeat
+ import datetime
+ import logging
+ import os
+@@ -14,6 +18,7 @@
+ from typing import Any
+ 
+ import numpy as np
++from frigate.gecko_recording_gate import GeckoRecordingGate
+ import psutil
+ 
+ from frigate.comms.detections_updater import DetectionSubscriber, DetectionTypeEnum
+@@ -98,12 +103,29 @@
+         self.recordings_publisher = RecordingsDataPublisher()
+ 
+         self.stop_event = stop_event
++        self.gecko_gates = defaultdict(GeckoRecordingGate)
++        self.gecko_epoch = None
+         self.object_recordings_info: dict[str, list] = defaultdict(list)
+         self.audio_recordings_info: dict[str, list] = defaultdict(list)
+         self.end_time_cache: dict[str, tuple[datetime.datetime, float]] = {}
+         self.unexpected_cache_files_logged: bool = False
+ 
++    def sync_gecko_clock(self):
++        clock = read_clock()
++        if clock is None:
++            return None
++        if self.gecko_epoch != clock["epoch"]:
++            self.gecko_epoch = clock["epoch"]
++            self.gecko_gates["camera_13_37"] = GeckoRecordingGate()
++            for path in list(self.end_time_cache):
++                if Path(path).name.startswith("camera_13_37@"):
++                    self.end_time_cache.pop(path, None)
++        return clock
++
+     async def move_files(self) -> None:
++        # run() creates a new event loop for each maintenance batch.
++        # An asyncio lock must never retain waiters from an earlier loop.
++        self.gecko_trim_lock = asyncio.Lock()
+         cache_files = [
+             d
+             for d in os.listdir(CACHE_DIR)
+@@ -310,7 +332,7 @@
+         # fire and forget recordings entries
+         self.requestor.send_data(
+             INSERT_MANY_RECORDINGS,
+-            [r for r in recordings_to_insert if r is not None],
++            [entry for result in recordings_to_insert if result is not None for entry in (result if isinstance(result, list) else [result])],
+         )
+ 
+     def _expire_stale_recordings_info(
+@@ -346,6 +368,17 @@
+             self.drop_segment(cache_path)
+             return None
+ 
++        gecko_segment_times = None
++        if camera == "camera_13_37":
++            clock = self.sync_gecko_clock()
++            gecko_segment_times = segment_clock(clock, cache_path) if clock else None
++            if gecko_segment_times is None:
++                # A missing, incomplete, or previous-epoch manifest authorizes nothing.
++                if time.time() - Path(cache_path).stat().st_mtime > 20:
++                    self.drop_segment(cache_path)
++                return None
++            start_time = datetime.datetime.fromtimestamp(gecko_segment_times[0], datetime.UTC)
++
+         if cache_path in self.end_time_cache:
+             end_time, duration = self.end_time_cache[cache_path]
+         else:
+@@ -387,6 +420,52 @@
+                 (camera, start_time.timestamp(), cache_path),
+                 RecordingsDataTypeEnum.valid.value,
+             )
++
++        if gecko_segment_times is not None and abs(duration-(gecko_segment_times[1]-gecko_segment_times[0])) > 0.05:
++            self.drop_segment(cache_path)
++            return None
++
++        # Experimental replay only: decide before any persistent media write.
++        if camera == "camera_13_37":
++            gate = self.gecko_gates[camera]
++            if gate.last_frame is None or gate.last_frame < end_time.timestamp():
++                # Allow a bounded catch-up interval; never retain on stale input.
++                if time.time() > end_time.timestamp() + 15:
++                    self.drop_segment(cache_path)
++                return None
++            if gate.allows(start_time.timestamp(), end_time.timestamp()):
++                return await self.move_segment(
++                    camera, start_time, end_time, duration, cache_path,
++                    SegmentInfo(0, 1, 0, 0, None),
++                )
++            intervals = gate.accepted_intervals(start_time.timestamp(), end_time.timestamp())
++            results = []
++            # The source and every intermediate remain in the volatile cache.
++            # Serialize encodes to bound CPU and RAM under concurrent segments.
++            async with self.gecko_trim_lock:
++                try:
++                    with tempfile.TemporaryDirectory(prefix="gecko-trim-", dir=os.path.dirname(cache_path)) as directory:
++                        for index, (accepted_start, accepted_end) in enumerate(intervals):
++                            clipped = os.path.join(directory, f"{index}.mp4")
++                            info = await trim_clip_async(
++                                cache_path, clipped, start_time.timestamp(),
++                                accepted_start, accepted_end,
++                            )
++                            if info is None:
++                                continue
++                            result = await self.move_segment(
++                                camera,
++                                datetime.datetime.fromtimestamp(info["start"], datetime.UTC),
++                                datetime.datetime.fromtimestamp(info["end"], datetime.UTC),
++                                info["duration"], clipped, SegmentInfo(0, 1, 0, 0, None),
++                            )
++                            if result is not None:
++                                results.append(result)
++                except Exception:
++                    logger.exception("Gecko boundary encoding failed; discarding remaining cache")
++                finally:
++                    self.drop_segment(cache_path)
++            return results
+ 
+         record_config = self.config.cameras[camera].record
+         segment_stats: SegmentInfo | None = None
+@@ -630,7 +709,7 @@
+         os.makedirs(directory, exist_ok=True)
+ 
+         # file will be in utc due to start_time being in utc
+-        file_name = f"{start_time.strftime('%M.%S.mp4')}"
++        file_name = start_time.strftime("%M.%S.%f.mp4" if camera == "camera_13_37" else "%M.%S.mp4")
+         file_path = os.path.join(directory, file_name)
+ 
+         try:
+@@ -745,6 +824,11 @@
+                         regions,
+                     ) = data
+ 
++                    if camera == "camera_13_37":
++                        clock = self.sync_gecko_clock()
++                        if clock is not None and frame_time >= clock["base"]+clock["first_pts"]:
++                            self.gecko_gates[camera].observe(frame_time, current_tracked_objects)
++
+                     if self.config.cameras[camera].record.enabled:
+                         self.object_recordings_info[camera].append(
+                             (
+@@ -784,6 +868,7 @@
+ 
+             try:
+                 asyncio.run(self.move_files())
++                heartbeat()
+             except Exception as e:
+                 logger.error(
+                     "Error occurred when attempting to maintain recording cache"
+--- a/output/preview.py
++++ b/output/preview.py
+@@ -382,6 +382,8 @@
+         frame_time: float,
+         frame: np.ndarray,
+     ) -> None:
++        if self.camera_name == "camera_13_37":
++            return
+         self.offline = False
+ 
+         # always write the first frame
+@@ -424,6 +426,8 @@
+             return
+ 
+     def flag_offline(self, frame_time: float) -> None:
++        if self.camera_name == "camera_13_37":
++            return
+         if not self.offline:
+             self.write_frame_to_cache(
+                 frame_time,
+--- a/track/norfair_tracker.py
++++ b/track/norfair_tracker.py
+@@ -17,6 +17,7 @@
+ from frigate.camera import PTZMetrics
+ from frigate.config import CameraConfig
+ from frigate.ptz.autotrack import PtzMotionEstimator
++from frigate.gecko_visual_motion import GeckoVisualMotion
+ from frigate.track import ObjectTracker
+ from frigate.track.stationary_classifier import (
+     StationaryMotionClassifier,
+@@ -131,6 +132,7 @@
+         self.camera_name = config.name
+         self.track_id_map: dict[str, str] = {}
+         self.stationary_classifier = StationaryMotionClassifier()
++        self.gecko_visual_motion = GeckoVisualMotion() if self.camera_name == "camera_13_37" else None
+ 
+         # Define tracker configurations for static camera
+         self.object_type_configs = {
+@@ -311,6 +313,8 @@
+ 
+     def deregister(self, id: str, track_id: str) -> None:
+         obj = self.tracked_objects[id]
++        if self.gecko_visual_motion is not None:
++            self.gecko_visual_motion.forget(id)
+ 
+         del self.tracked_objects[id]
+         del self.disappeared[id]
+@@ -354,6 +358,11 @@
+             }
+ 
+         xmin, ymin, xmax, ymax = box
++        if self.gecko_visual_motion is not None and self.tracked_objects[id]["label"] == "gecko":
++            moved = self.gecko_visual_motion.moved(id, yuv_frame, box)
++            if moved:
++                reset_position(xmin, ymin, xmax, ymax)
++            return not moved
+         position = self.positions[id]
+         self.stationary_box_history[id].append(box)
+ 
+@@ -523,6 +532,8 @@
+             yuv_frame = self.frame_manager.get(
+                 frame_name, self.camera_config.frame_shape_yuv
+             )
++        if self.gecko_visual_motion is not None:
++            self.gecko_visual_motion.begin_frame(frame_time, yuv_frame)
+         for obj in detections:
+             label = obj[0]
+             if label not in detections_by_type:
+@@ -633,7 +644,7 @@
+                     str(t.global_id),
+                     new_obj,
+                     thresholds,
+-                    yuv_frame if thresholds.motion_classifier_enabled else None,
++                    yuv_frame if thresholds.motion_classifier_enabled or (self.gecko_visual_motion is not None and new_obj["label"] == "gecko") else None,
+                 )
+ 
+         # clear expired tracks
+--- a/video/detect.py
++++ b/video/detect.py
+@@ -1,6 +1,7 @@
+ """Manages camera object detection processes."""
+ 
+ import logging
++from frigate.gecko_scan_regions import GeckoScanRegions
+ import queue
+ import time
+ from datetime import UTC, datetime
+@@ -148,7 +149,13 @@
+     tensor_input = create_tensor_input(frame, model_config, region)
+ 
+     detections = []
+-    region_detections = object_detector.detect(tensor_input)
++    # Gecko model calibration must survive the remote detector's default 0.4 floor.
++    if object_detector.name == "camera_13_37" and set(objects_to_track) == {"gecko"}:
++        region_detections = object_detector.detect(
++            tensor_input, threshold=object_filters["gecko"].min_score
++        )
++    else:
++        region_detections = object_detector.detect(tensor_input)
+     for d in region_detections:
+         box = d[2]
+         size = region[2] - region[0]
+@@ -205,7 +212,12 @@
+     fps_tracker = EventsPerSecond()
+     fps_tracker.start()
+ 
+-    startup_scan = True
++    gecko_scan = (
++        GeckoScanRegions.enclosure(camera_config.detect.width, camera_config.detect.height)
++        if camera_config.name == "camera_13_37" and set(camera_config.objects.track) == {"gecko"}
++        else None
++    )
++    startup_scan = gecko_scan is None
+     stationary_frame_counter = 0
+     camera_enabled = True
+ 
+@@ -323,6 +335,9 @@
+                     )
+                 ]
+ 
++            if gecko_scan is not None:
++                stationary_object_ids = []
++
+             # get tracked object boxes that aren't stationary
+             tracked_object_boxes = [
+                 (
+@@ -390,6 +405,11 @@
+                     regions.append(region)
+                 startup_scan = False
+ 
++            if gecko_scan is not None:
++                regions = list(dict.fromkeys([*regions, *gecko_scan.next()]))
++                # Never seed a gecko observation solely from a prior frame.
++                stationary_object_ids = []
++
+             # resize regions and detect
+             # seed with stationary objects
+             detections = [
+--- a/video/ffmpeg.py
++++ b/video/ffmpeg.py
+@@ -1,6 +1,7 @@
+ """Manages ffmpeg processes for camera frame capture."""
+ 
+ import logging
++from frigate.gecko_media_clock import GeckoFrameReader, prepare_command
+ import queue
+ import subprocess as sp
+ import threading
+@@ -49,6 +50,10 @@
+     stop_event: MpEvent,
+ ) -> None:
+     frame_size = frame_shape[0] * frame_shape[1]
++    gecko_reader = (
++        GeckoFrameReader(ffmpeg_process.stdout, ffmpeg_process.gecko_context, frame_shape)
++        if getattr(ffmpeg_process, "gecko_context", None) is not None else None
++    )
+     frame_rate = EventsPerSecond()
+     frame_rate.start()
+     skipped_eps = EventsPerSecond()
+@@ -75,7 +80,13 @@
+             frame_name = f"{config.name}_frame{frame_index}"
+             frame_buffer = frame_manager.write(frame_name)
+             try:
+-                frame_buffer[:] = ffmpeg_process.stdout.read(frame_size)
++                frame_time = current_frame.value
++                if gecko_reader is not None:
++                    pixels, frame_time = gecko_reader.read()
++                    frame_buffer[:] = pixels
++                    current_frame.value = datetime.now().timestamp()
++                else:
++                    frame_buffer[:] = ffmpeg_process.stdout.read(frame_size)
+             except Exception:
+                 # shutdown has been initiated
+                 if stop_event.is_set():
+@@ -85,7 +96,7 @@
+                     f"{config.name}: Unable to read frames from ffmpeg process."
+                 )
+ 
+-                if ffmpeg_process.poll() is not None:
++                if gecko_reader is not None or ffmpeg_process.poll() is not None:
+                     logger.error(
+                         f"{config.name}: ffmpeg process is not running. exiting capture thread..."
+                     )
+@@ -98,7 +109,7 @@
+             # don't lock the queue to check, just try since it should rarely be full
+             try:
+                 # add to the queue
+-                frame_queue.put((frame_name, current_frame.value), False)
++                frame_queue.put((frame_name, frame_time), False)
+                 frame_manager.close(frame_name)
+             except queue.Full:
+                 # if the queue is full, skip this frame
+@@ -106,6 +117,8 @@
+ 
+             frame_index = 0 if frame_index == shm_frame_count - 1 else frame_index + 1
+     finally:
++        if gecko_reader is not None:
++            gecko_reader.close()
+         config_subscriber.stop()
+ 
+ 
+@@ -534,9 +547,13 @@
+         ffmpeg_cmd = [
+             c["cmd"] for c in self.config.ffmpeg_cmds if "detect" in c["roles"]
+         ][0]
++        gecko_context = None
++        if self.config.name == "camera_13_37" and set(self.config.objects.track) == {"gecko"}:
++            ffmpeg_cmd, gecko_context = prepare_command(ffmpeg_cmd)
+         self.ffmpeg_detect_process = start_or_restart_ffmpeg(
+             ffmpeg_cmd, self.logger, self.logpipe, self.frame_size
+         )
++        self.ffmpeg_detect_process.gecko_context = gecko_context
+         self.ffmpeg_pid.value = self.ffmpeg_detect_process.pid
+         self.capture_thread = CameraCaptureRunner(
+             self.config,
+--- a/config/camera/camera.py
++++ b/config/camera/camera.py
+@@ -277,6 +277,15 @@
+                 self.detect.height,
+             )
+ 
++            if self.name == "camera_13_37" and set(self.objects.track) == {"gecko"}:
++                if set(ffmpeg_input.roles) != {"record", "detect"}:
++                    raise ValueError("Gecko recording and detection require one input clock")
++                scale_detect_args = [
++                    "-map", "0:v:0", "-vf",
++                    f"select=isnan(prev_selected_t)+gte(t-prev_selected_t\\,{1/self.detect.fps-0.0001}),scale={self.detect.width}:{self.detect.height}",
++                    "-fps_mode", "passthrough", "-enc_time_base", "filter",
++                    "-c:v", "rawvideo", "-pix_fmt", "yuv420p", "-f", "nut",
++                ]
+             ffmpeg_output_args = scale_detect_args + ffmpeg_output_args + ["pipe:"]
+ 
+         if "record" in ffmpeg_input.roles and self.record.enabled:
+@@ -288,6 +297,13 @@
+                 or self.ffmpeg.output_args.record
+             )
+ 
++            if self.name == "camera_13_37" and set(self.objects.track) == {"gecko"}:
++                record_args += [
++                    "-avoid_negative_ts", "disabled", "-segment_list",
++                    "/tmp/cache/camera_13_37-gecko-segments.csv",
++                    "-segment_list_type", "csv", "-segment_list_size", "180",
++                    "-segment_list_flags", "+live",
++                ]
+             ffmpeg_output_args = (
+                 record_args
+                 + [f"{os.path.join(CACHE_DIR, self.name)}@{CACHE_SEGMENT_FORMAT}.mp4"]
