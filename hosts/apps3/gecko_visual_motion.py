@@ -1,6 +1,6 @@
 """Experimental gecko movement check for the pinned Frigate 0.18 image.
 
-Not enabled in production. This checks image changes, not object identity.
+This checks image changes, not object identity.
 The caller must supply real gecko tracks and qualify the thresholds on footage.
 Camera registration uses background feature consensus so camera drift and box
 jitter do not, by themselves, become gecko movement. Uncertain registration

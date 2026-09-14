@@ -1,7 +1,7 @@
 {
   "image": "ghcr.io/blakeblackshear/frigate:0.18.0",
   "image_id": "sha256:808254590862db209e363fba48a609d954a20ed98cceab51389616a1a3ba7f08",
-  "status": "Experimental; no production qualification",
+  "status": "Experimental; deployment requires separate model and runtime qualification",
   "files": {
     "record/maintainer.py": {
       "before": "fa76037dfc8b5c7ad1d6ed6440dffd1ccce8799eb86699e14881a93edd75464f",
@@ -17,7 +17,7 @@
     },
     "video/detect.py": {
       "before": "8232f95d2828dcf26182e0666f8a8ff49ed4c19384222bd87837bb98f2be8bb0",
-      "after": "c4a4e28e3e631ce9a70f15c824e2bd69b19fb3069de0daaa8960bf4146216728"
+      "after": "1b105f11d7bffdf54cf96eecf378dfa90359c2930c7b2b2ebde8f91a90dfd17c"
     },
     "video/ffmpeg.py": {
       "before": "b937404c26d95b3e4af27d2228834fbe05410afc5527df7741b9ea0a1262158d",
@@ -29,13 +29,13 @@
     }
   },
   "helpers": {
-    "gecko_recording_gate.py": "c72b4c607e2f4092bf5c1389f4b41fe773f525f50364d19d67786bf906bd707e",
-    "gecko_visual_motion.py": "7bd506b00fea17ed1508f85289accc4451998645345693a02145611248221262",
+    "gecko_recording_gate.py": "6807a12e7a7480040282139c6f449d005422861ec0c227e2fcb5f9adac94e08f",
+    "gecko_visual_motion.py": "7e0dd1f49191bdbe1c2bd4d463dbdab8d8cd94b9b0980b8b0383b353d40fe429",
     "gecko_presence.py": "a50c618a251ca39c993b62c51ec5e2ae4d89cbb1f458afc8c5c3f428b07a3ec2",
-    "gecko_scan_regions.py": "cfed65dcae969df439080c26a15b89c4e2b4dc62807eef8c7e4cc170d8a25e5e",
+    "gecko_scan_regions.py": "17b9c91aab7811d5ed7071650f6e7be807fae67755b2f2c5bca3ff80e5fad5ae",
     "gecko_media_clock.py": "aa4ddc58053bd37e20ddb037fbb4c5d7727b2ed8ec2101b6ff524b2cd9873fed",
     "gecko_clip.py": "f16d8b11be7b75834a8e2aea09d6c32cefb24588644714dd64f56e4f56793607",
     "gecko_recording_health.py": "8ceeccdd9dc732284de2e6304131d4803386a21fe044e6fb13c619a6273b9005",
-    "detectors/plugins/openvino_gecko_cpu.py": "b6891e97ca76374dd0d5c243ab1b9255dbb66f4e3e0acec61c2acab9f44d8e40"
+    "detectors/plugins/openvino_gecko_cpu.py": "51b00d1d2e03be15b6f7fa0c810da062376177510746a14657bd29c53ce85197"
   }
 }

@@ -667,3 +667,239 @@ the running system showed only Frigate and the generated container updater
 changing; the latter contains the pinned Frigate image and an equivalent skip
 list. This build must never be activated: it deliberately has no qualified
 model. The final selected-model build and deployment remain outstanding.
+
+V21 used 3,172 training images. Its fourth-epoch checkpoint removed the older
+background failures but missed the later plant pose and triggered on hair and
+branch texture. The final checkpoint improved that pose but triggered on plant
+leaves. A separate candidate averaged 75% of the fourth-epoch parameters and
+floating buffers with 25% of V19. This experiment follows the general
+[weight averaging approach](https://proceedings.mlr.press/v162/wortsman22a.html);
+it does not assume the paper's results transfer to this detector.
+
+The averaged checkpoint (SHA256
+0fe8300045ac9d6195ef398c82099c1498332794cd900d44d98e41f5fc3cd878)
+passed every exposed pose and background check, including four new direct-sun
+snapshots. Its first reserved V3 test nevertheless failed: 3/9 targets met the
+unchanged score and IoU requirements. Three geckos were missed and three had
+strong detections with insufficient localization overlap. None of the four
+reserved backgrounds triggered. The final V21 checkpoint subsequently matched
+5/9 on these now-exposed targets; that is development evidence only.
+
+V22 adds the exposed V3 poses and reviewed hair/branch negatives. The V3 video
+is consequently development footage, not an independent event. Its 22 further
+reviewed branch-presence frames remain useful temporal checks but cannot undo
+that training overlap. A new 02:19 plant sequence has no training frames: it
+contains a gecko emerging and turning, followed by exposed leaves. Temporal
+review corrected an initial mistaken assessment of a detection at 02:19:00;
+the nearby animal does not validate the exact empty-leaf frame. That frame was
+excluded from V22 training pending review and remains a negative control.
+
+The 04:45--07:45 archive survey supplied 42 additional lower-enclosure views,
+without a clear positive in the reviewed area. It does not establish daylight
+positive accuracy or absence of animals outside the reviewed area. No gecko
+configuration or model has been deployed.
+
+V22's final checkpoint (SHA256
+af2ebd8d0b27fd9b68fbeecba56b9d22347d0d8b826a6c68a31c8701fcfdf35d)
+matched all nine exposed V3 targets and had no strong detections in the tested
+background controls. The remaining development failure was the 04:39 partial
+head, scoring 0.301. Exact-frame review confirmed that this case contains a
+small visible head, neck, and forelimbs; it is distinct from the empty 02:19
+leaf frame. V23 adds four reviewed partial-head examples from the already
+exposed 04:39 event, using 3,828 training images. The old evaluation boxes and
+failed results remain unchanged.
+
+The separate 02:17--02:21 video contains 6,450 frames over 215 seconds, with no
+missing archive intervals. Six visible-gecko portions and four empty-scene
+frames were annotated before V23 inference. Native coordinate grids corrected
+the draft boxes before freezing them; these data never entered training.
+Replay qualification additionally checks that no video was retained at the
+reviewed empty source times, independently of the gate's own observations.
+
+V23's final checkpoint matched the known positive targets but produced four
+strong background detections on plant, hide, and branch texture. Its first
+checkpoint also triggered on a branch. Two additional raw first-checkpoint
+boxes belong to the already annotated real 04:39 gecko and overlap its stronger
+box; they are duplicate partial detections, not evidence of a background false
+positive. The original reports are preserved. V24 adds the five visually
+reviewed false-positive regions as 160 negative samples. The reserved 02:19
+sequence remains unused. Production Frigate was checked healthy before this
+training run; its general-motion recording configuration is still active.
+
+V24 reinforced five negative crops, using 3,988 training images. Its first
+checkpoint still triggered on internally clipped plant texture and missed the
+known floor target at natural-dual-review/305.png. The final checkpoint removed
+the strong background detections but still missed that floor target (0.462).
+Neither checkpoint qualified.
+
+The detector now experimentally requires two pixels of context at internal
+crop boundaries, preserving actual camera-frame edges. Overlapping regions
+provide other views of boundary-crossing animals. This addresses strong texture
+predictions truncated by a tile, without changing confidence or localization
+requirements. Three focused context tests were added; all 26 tests passed.
+The first context experiment's floor miss was already present in V24's first
+checkpoint, not caused by the context rule. A centered-recrop experiment did
+not resolve that existing miss and was not added to the runtime.
+
+V23 final with the context rule passed every exposed pose and background check,
+but its first reserved V4 test failed: 3/6 targets matched and 0/4 backgrounds
+triggered. Two poses were missed and one strong detection had insufficient box
+overlap. The original frozen manifest and failed result remain unchanged. V25
+adds the now-exposed V4 positives, same-view empty controls, and the known floor
+pose to V23's data, giving 4,356 training images. The 02:19 video is now
+explicitly development footage and cannot count as independent validation.
+No model export, selected-model replay, or production gecko deployment followed
+this failure.
+
+A further archive survey selected 36 frames using motion heatmaps, excluding
+the two plant events now used in training. Adjacent frames confirmed a separate
+gecko crossing the hide around 01:36 and disappearing behind the plant. Six
+poses and four full-scene empty controls were reviewed before detector inference
+and frozen as V5. The continuous archive contains 4,650 frames over 155 seconds,
+with no gaps or synthetic black frames. Its interval has no V25 training source;
+a previously used upper lamp-negative crop at 01:35:00 precedes the video.
+Motion blur makes exact contours less distinct, and the samples are correlated
+poses of an unknown individual, not a daylight or seven-identity qualification.
+
+V25 final (SHA256
+389c56bd48a3fd63d81ba0968090f11bfe78bcb6d6c596397ce383d97ab3f8e4)
+passed the older positive targets and 5/6 exposed V4 targets. It failed on one
+branch background and the first thin plant pose. Comparing that pose against
+the original empty and adjacent frames supported preserving its annotation:
+the model's box includes adjacent leaves. Its original localization requirement
+was not relaxed. V26 adds 120 copies of that unchanged image/label pairing and
+48 copies of two reviewed branch negatives, using 4,524 training images. The
+reserved V5 hide sequence remains excluded from training and inference.
+
+
+V26 final (SHA256
+57c6c25930031712da449eb35ca8a18c847f937ae85335fc2fbae3c50ba96ae7)
+passed all exposed development checks, then failed its first V5 test: four of
+six hide-crossing targets matched; none of four reviewed backgrounds triggered.
+The curled pose was missed and the following pose was poorly localized. The
+original frozen annotations and failure remain preserved. V27 adds this exposed
+crossing and matched empty-hide crops, using 4,884 training images. That event
+is now development data, not independent qualification.
+
+V27 final (SHA256
+9efec2a7403bdb99e5c81ce65c32056edf659c919205f4289b941d1ddd702471)
+failed development: 5/6 exposed hide poses matched and two overlapping detections
+triggered on one background branch. All 55 older targets and the exposed plant,
+floor, and partial-head targets matched. It was not exported or deployed.
+Earlier saved checkpoints trade the thin plant pose against a blurred hide pose;
+those results are also preserved. No confidence or IoU requirement was relaxed.
+
+Six additional hide-crossing frames were manually annotated before inference,
+along with four fresh daylight main-enclosure backgrounds. These are temporal
+checks from a represented event, not independent animal or event qualification.
+The separate containers below the main enclosure remain outside detection scope.
+A proposed stationary branch replay contains 55 seconds of missing archive in
+its 135-second timeline. Those intervals are explicit gaps, not negative examples
+or evidence of gecko inactivity. The first 65 seconds are uninterrupted; the
+branch identity is being rechecked before using it as stationary ground truth.
+The old ambiguous upper-branch positive labels remain excluded from the current
+training set. Production Frigate remains healthy with general-motion recording;
+accurate gecko-only production behavior is still unconfirmed.
+
+
+The fixed midpoint of V27's first two checkpoints (SHA256
+6e9bffa8509f63f76b80aa9e6b683d434f97ab0e938a78ef8cddbadbfa2ee943)
+passed the complete exposed development suite, then failed the frozen V6
+temporal test: 4/6 boxes matched and 0/4 fresh daylight backgrounds triggered.
+The two failures had strong gecko predictions but insufficient localization
+against the unchanged manual boxes. V28 adds these six exposed poses and matched
+empty-hide crops, giving 5,316 training images. The original V6 failure remains
+preserved; those frames are no longer independent validation.
+
+A local component diagnostic deliberately used the rejected V27 midpoint with
+the current context-rule patch; it is not deployment qualification. In the
+155-second real hide-crossing replay, 7/12 annotated poses matched the actual
+fresh tracker output. All four reviewed empty-time controls passed. Retention
+contained 59.8667 of 60.3999 authorized seconds, with the 0.5332-second omission
+inside the frame-boundary allowance and no recording-timing errors. This
+reproduced localization failures in the real runtime while exercising the new
+source patch. The diagnostic container was removed. Separately, the current
+bundle passed exact-image preflight, application, idempotence, and refusal of
+unexpected source changes; its manifest SHA256 is
+87e03352bb3a9e98bb72576c8c01f94ade15780e8f90726d317eed22814ecf0f.
+
+
+An uninterrupted 75-second archive from the owner-confirmed rock sequence
+contains a long still pose followed by a head turn. Review covered 5-second
+samples and the ten lowest-correlation pre-50-second frames selected from all
+375 frames sampled at 5 fps, using a fixed human ROI and background registration.
+A component test supplied the human-confirmed gecko identity/box to the current
+motion helper and retention gate. It produced exactly [0,30] seconds during the
+still period, no early movement flags, and restarted at 53.7987 seconds on the
+visible head turn. This is real-noise movement/quiet-deadline evidence, not
+selected-detector or end-to-end persisted-recording qualification.
+
+
+Further localization refinement did not qualify V28: its final checkpoint
+matched 5/6 V4 and 5/6 V6 targets. V29's first checkpoint passed all exposed
+cases, then matched 5/6 reserved V7 targets, missing one motion-blurred hide
+crossing. The final V29 checkpoint detected that exposed blur but falsely
+identified a foreground person in another frame. Both failures are preserved.
+V30 starts from the first V29 checkpoint and adds the now-exposed V7 examples
+and foreground obstruction negatives. Its first checkpoint, SHA256
+33242223282fe098cff6334e1ebe6748671f4181ff6a65df13d9fff9ac44bb17,
+passed all exposed development cases, including all six V7 targets and zero
+strong detections on their four daylight controls. Six new temporal branch/floor
+boxes from the represented two-gecko event and four new background controls
+were reviewed and frozen before V8 inference. Both floating and runtime integer
+boxes must meet IoU 0.5 at confidence 0.5. These correlated temporal tests do not
+establish independent-event, individual-identity, or daylight-positive recall.
+
+The current bundle manifest SHA256 is
+df16ff6c55ceeb6f9f4993eafb928a608513723f0124ea0bd470342ee950ce97.
+Changes since the preceding context-rule verification only clarify experimental
+status and helper documentation. Exact-image patch preflight, application,
+idempotence, and refusal were repeated successfully for this manifest.
+Production gecko tracking remains unconfirmed and the live configuration has
+not yet been changed.
+
+
+V30's first checkpoint failed the frozen V8 test on one floor-gecko box (5/6,
+zero background false detections); predictions included the animal but exceeded
+the localization tolerance. The final checkpoint, SHA256
+8a0c0180d59db9566ba3208dc05708e751ab1b660b87022cb4e4e6d4e2d2fba9,
+passed the exposed suite and all six V8 boxes, including integer-box checks,
+with zero detections on the four new backgrounds. V8 is now exposed to checkpoint
+selection. A V31 dataset was prepared but no V31 training was started. The final
+V30 ONNX SHA256 is
+ad794b579a7251df5f49394d32163baeefaf36bace0dcfc055f9cbbd236047a7.
+Its actual-apps3 numerical comparison passed all 300 raw cases (median 27.62 ms,
+p95 47.41 ms). This establishes adapter parity, not recording qualification.
+
+A separate local diagnostic used the rejected first V30 checkpoint on the real
+75-second stationary-rock video. It matched all observed steady frames, first
+confirmed the animal at 1.799 seconds, retained 29.733 seconds of the initial
+visit, retained zero forbidden quiet-period footage, and restarted after the
+head turn. Actual persisted packets passed the timing checks. This is useful
+current-patch evidence but the final selected checkpoint must pass its own
+replay. An isolated final-model NixOS candidate built successfully; only the
+Frigate and container-updater units differ from the currently running closure.
+It has not been activated.
+
+
+The first selected-model continuous replays failed and blocked deployment.
+The synthetic background sequence generated a strong false detection over the
+lamp from a 2,424-pixel generic motion region resized to the model input. The
+still-image suite had only exercised native 320-pixel crops. The hide replay
+matched 14/15 targets and narrowly exceeded its omission allowance; the plant
+replay matched 3/6 and dropped about 21 seconds of authorized recording after
+an encoder/cache backlog. These failed reports remain preserved.
+
+The gecko-specific runtime now discards generic-scale inference regions and
+uses the existing 30 native grid crops exclusively: two overlapping crops per
+track plus the rotating discovery scan. Other object types retain their original
+region behavior. This aligns runtime image scale with model qualification and
+prevents global motion from shrinking enclosure fixtures into untested shapes.
+Twenty-nine policy/crop tests pass, including oversized-region refusal by
+construction, continued stationary discovery, and overlapping track views.
+The new bundle SHA256 is
+c417fad18b5ed44adb4ebbebec9001eada90dcf069e03db9b409d1b063cdd7e2;
+exact-image patch preflight/application/idempotence/refusal passed. The model
+itself is unchanged. Repeated apps3 numerical comparison passed 300 cases,
+median 25.51 ms and p95 44.18 ms. Fresh runtime tests are required; no deployment
+or corrected-runtime success is claimed from these component results.

@@ -241,7 +241,7 @@
  """Manages camera object detection processes."""
  
  import logging
-+from frigate.gecko_scan_regions import GeckoScanRegions
++from frigate.gecko_scan_regions import GeckoScanRegions, has_crop_context
  import queue
  import time
  from datetime import UTC, datetime
@@ -260,7 +260,20 @@
      for d in region_detections:
          box = d[2]
          size = region[2] - region[0]
-@@ -205,7 +212,12 @@
+@@ -159,6 +166,12 @@
+ 
+         # ignore objects that were detected outside the frame
+         if (x_min >= detect_config.width - 1) or (y_min >= detect_config.height - 1):
++            continue
++
++        if d[0] == "gecko" and not has_crop_context(
++            (x_min, y_min, x_max, y_max), region,
++            detect_config.width, detect_config.height,
++        ):
+             continue
+ 
+         width = x_max - x_min
+@@ -205,7 +218,12 @@
      fps_tracker = EventsPerSecond()
      fps_tracker.start()
  
@@ -274,7 +287,7 @@
      stationary_frame_counter = 0
      camera_enabled = True
  
-@@ -323,6 +335,9 @@
+@@ -323,6 +341,9 @@
                      )
                  ]
  
@@ -284,12 +297,12 @@
              # get tracked object boxes that aren't stationary
              tracked_object_boxes = [
                  (
-@@ -390,6 +405,11 @@
+@@ -390,6 +411,11 @@
                      regions.append(region)
                  startup_scan = False
  
 +            if gecko_scan is not None:
-+                regions = list(dict.fromkeys([*regions, *gecko_scan.next()]))
++                regions = gecko_scan.for_tracks(object_boxes)
 +                # Never seed a gecko observation solely from a prior frame.
 +                stationary_object_ids = []
 +

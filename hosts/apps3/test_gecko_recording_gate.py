@@ -198,5 +198,69 @@ class GateTests(unittest.TestCase):
         self.assertFalse(self.gate.allows(5, 1))
 
 
+class CropContextTests(unittest.TestCase):
+    def test_large_motion_or_track_cannot_change_inference_scale(self):
+        from gecko_scan_regions import GeckoScanRegions
+        scan = GeckoScanRegions.enclosure(1080, 1920)
+        regions = scan.for_tracks([(0, 0, 2424, 2424), (443, 88, 979, 416)])
+        self.assertTrue(regions)
+        for x, y, z, t in regions:
+            self.assertEqual((z - x, t - y), (320, 320))
+            self.assertLessEqual(z, 1080)
+            self.assertLessEqual(t, 1200)
+
+    def test_tracking_does_not_starve_stationary_discovery(self):
+        from gecko_scan_regions import GeckoScanRegions
+        scan = GeckoScanRegions.enclosure(1080, 1920)
+        seen = set()
+        for _ in range(8):
+            regions = scan.for_tracks([(415, 975, 499, 1032)] * 7)
+            self.assertLessEqual(len(regions), 6)
+            seen.update(regions)
+        self.assertEqual(seen, set(scan.regions))
+
+    def test_boundary_track_gets_unclipped_native_context(self):
+        from gecko_scan_regions import GeckoScanRegions
+        scan = GeckoScanRegions.enclosure(1080, 1920)
+        box = (766, 974, 890, 1046)
+        regions = scan.for_tracks([box])
+        self.assertTrue(any(min(box[0] - x, box[1] - y,
+                                z - box[2], t - box[3]) >= 16
+                            for x, y, z, t in regions[:2]))
+        self.assertTrue(all((z - x, t - y) == (320, 320)
+                            for x, y, z, t in regions))
+
+    def test_track_recheck_has_two_overlapping_native_views(self):
+        from gecko_scan_regions import GeckoScanRegions, has_crop_context
+        scan = GeckoScanRegions.enclosure(1080, 1920)
+        box = (704, 957, 856, 1023)
+        regions = scan.for_tracks([box])
+        self.assertEqual(len(regions[:2]), 2)
+        for region in regions[:2]:
+            self.assertTrue(has_crop_context(box, region, 1080, 1920))
+
+    def test_artificial_edges_require_context(self):
+        from gecko_scan_regions import has_crop_context
+        region = (192, 768, 512, 1088)
+        for box in [(192, 900, 250, 940), (300, 768, 350, 810),
+                    (470, 900, 512, 940), (300, 1050, 350, 1088)]:
+            with self.subTest(box=box):
+                self.assertFalse(has_crop_context(box, region, 1080, 1920))
+        self.assertTrue(has_crop_context((300, 900, 350, 940), region, 1080, 1920))
+
+    def test_camera_edges_are_preserved(self):
+        from gecko_scan_regions import has_crop_context
+        self.assertTrue(has_crop_context((0, 0, 50, 50), (0, 0, 320, 320), 1080, 1920))
+        self.assertTrue(has_crop_context((1030, 1870, 1079, 1919),
+                                         (760, 1600, 1080, 1920), 1080, 1920))
+
+    def test_overlapping_view_accepts_boundary_crossing_object(self):
+        from gecko_scan_regions import has_crop_context
+        box = (490, 900, 550, 950)
+        self.assertFalse(has_crop_context((490, 900, 512, 950),
+                                          (192, 768, 512, 1088), 1080, 1920))
+        self.assertTrue(has_crop_context(box, (384, 768, 704, 1088), 1080, 1920))
+
+
 if __name__ == "__main__":
     unittest.main()

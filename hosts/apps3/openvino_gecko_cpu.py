@@ -1,4 +1,4 @@
-"""Experimental one-class gecko detector; not enabled in production.
+"""Checksum-bound one-class gecko detector for the pinned Frigate image.
 
 Accept RGB uint8 regions from Frigate and resize to the exported network's input
 size before normalizing. The model checksum, shape, class count, and input

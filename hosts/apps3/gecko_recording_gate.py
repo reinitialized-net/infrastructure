@@ -1,4 +1,4 @@
-"""Experimental retention gate; not wired into production.
+"""Retention gate for confirmed gecko tracks.
 
 Consumes confirmed Frigate/Norfair tracks, NOT raw model predictions. Movement
 must already have been established by the tracker. This module proves temporal
