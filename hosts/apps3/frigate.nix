@@ -33,6 +33,9 @@ in
       # that its stock OpenVINO configuration does not currently allow setting.
       "${./openvino_cpu.py}:/opt/frigate/frigate/detectors/plugins/openvino_cpu.py:ro"
       "${./check_camera.py}:/opt/frigate/check_camera.py:ro"
+      # One-class gecko detector; training data and results in docs/gecko-tracking.md.
+      "${./gecko.onnx}:/models/gecko.onnx:ro"
+      "${./gecko-labelmap.txt}:/models/gecko-labelmap.txt:ro"
       "${root}/config:/config"
       "${root}/media:/media/frigate"
       "/etc/localtime:/etc/localtime:ro"

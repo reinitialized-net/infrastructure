@@ -1,4 +1,94 @@
+# Gecko detection and recording
+
+**Status (2026-09-17): gecko-only recording is deployed on the two Tapo
+cameras (`camera_14_2` = Gecko1, `camera_14_3` = Gecko2).** The section
+directly below describes the deployed design. Everything from
+"[Assessment (2026-09-13)](#gecko-detection-and-recording-assessment-2026-09-13)"
+onward is the earlier investigation against the retired portrait camera
+`camera_13_37`; its patched-recorder design and V7–V30 models were **not**
+deployed and do not transfer to the new infrared views (V30 fired only on
+static background there). The helper modules and patch bundle it produced are
+still in `hosts/apps3/` but are unused by the running configuration.
+
+## Deployed design (2026-09-17)
+
+The stock Frigate 0.18 pipeline already provides the recording rule the owner
+asked for once a gecko class exists, so no Frigate source is patched:
+
+- **Model.** A one-class YOLO11n (`hosts/apps3/gecko.onnx`, 320x320, ONNX
+  opset 17, no built-in NMS) loaded by the existing `openvino_cpu` plugin, which
+  now accepts `yolo-generic` in addition to SSD and still only overrides the
+  CPU thread scheduling. Frigate runs one model, so every camera with
+  detection enabled sees only the `gecko` label; the disabled `camera_13_37`
+  logs a harmless "person not supported" warning.
+- **Grouping.** The gecko-specific configuration is written once on
+  `camera_14_2` as a YAML anchor (`&gecko_camera`) and merged into
+  `camera_14_3` with `<<: *gecko_camera`, which overrides only its own streams.
+  A new gecko camera is added by copying the `camera_14_3` block. Frigate
+  rejects unknown top-level keys, so the anchor cannot live in an `x-` template.
+  `camera_groups.geckos` groups the two cameras in the UI.
+- **Detection input.** The 2560x1440 main stream, decoded at 1280x720 and
+  5 fps (measured 0.27 CPU-core per camera; the 640x360 sub stream costs the
+  same to decode but shrinks a gecko to ~25 px). Frigate feeds 320 px regions
+  around motion, so a gecko is 50–100 px in the model input; training crops
+  were built at exactly that scale.
+- **Recording rule.** Per gecko camera: `record.motion.days: 0`,
+  `record.continuous.days: 0`, alerts disabled, and
+  `record.detections.retain.mode: active_objects` for 30 days with 5 s pre/post
+  capture. Frigate keeps a segment only while a tracked gecko is *active*;
+  `detect.stationary.threshold: 50` (10 s at 5 fps) plus the visual stationary
+  classifier ends activity after ten still seconds without counting box jitter
+  as movement. A stationary gecko stays tracked, so its next movement records
+  immediately.
+- **Motion.** `frame_height: 360`, `threshold: 20`, `contour_area: 10`,
+  contrast enhancement, and a mask over the camera's timestamp overlay, whose
+  changing digits otherwise generate constant motion.
+
+### Training data and results
+
+All training data came from the cameras' own first night (2026-09-17/18),
+extracted from the motion recordings on apps3 with `sudo docker cp`; no
+image left the owner's hosts. Labels were produced without hand-drawn boxes:
+
+1. Frames at 2 fps from every retained segment, stored at 1280x720.
+2. Foreground blobs against an all-night median background with a per-frame
+   gain fit, a brightness-relative threshold, and a local
+   normalised-cross-correlation gate so infrared exposure flicker on the bright
+   hide and branch is ignored.
+3. "Ghost" rejection: a blob whose region matches any of five period
+   backgrounds is a gecko that rested long enough to be baked into the median
+   and has since left. Ghosts are background, never labels.
+4. A first model trained on those blobs was run over every frame; its
+   detections were clustered by location and the clusters reviewed by eye, which
+   recovered resting geckos the blob step could not see and identified the
+   fixed false alarms (door latch, mesh edge, lamps, hide texture). The final
+   model was trained on the agreement of both sources with those locations as
+   hard negatives.
+
+Positives per frame peak around the expected five geckos per tank. Results and
+the deployed checksum are in the table below.
+
+| Item | Value |
+| --- | --- |
+| Deployed model | `hosts/apps3/gecko.onnx`, SHA-256 `46d7aa916648f4df28c526687a90cfe84fbb29699f5f5165fd0e1622a75c3fa0` (YOLO11n, 320x320, from checkpoint `b7b0e522…`) |
+| Training rounds | R1: 12k blob-labelled crops from V30 init, stopped at epoch 6. R2: 4.9k reviewed positives + 2.4k background + 2.0k hard-negative crops, 8 epochs. R3: +712 latch/corner hard negatives, 4 epochs |
+| Held-out split | Last 20% of each camera's segments by time (2,864 crops, 2,737 boxes) |
+| R3 held-out metrics (ultralytics, 0.25 conf) | precision 0.84, recall 0.63, mAP50 0.74, mAP50-95 0.44 — measured against the semi-automatic labels, so recall is understated where labels are fragments |
+| Known false alarms after R3 | none at the door latch, frame hardware or watermark corner on 1,712 held-out frames at ≥0.45; residual weak hits on the hide texture stay below the 0.6 confirmation threshold |
+| Known misses | geckos lying belly-down on the mesh floor of Gecko2 and animals seen only through two glass layers are often below 0.45 |
+| PyTorch vs Frigate OpenVINO parity | identical boxes (<0.01 px) on six crops; Frigate's stock YOLO post-processing drops anything under 0.4 |
+| Live after deploy (2026-09-18 02:05) | model loaded, inference 26 ms, 12 gecko events with clips on both cameras in the first minute |
+
+The two `objects.filters.gecko` values (`min_score: 0.45`, `threshold: 0.6`)
+were chosen from these distributions: true geckos mostly score 0.7–0.9, the
+remaining texture hits 0.45–0.58.
+
+Retraining: the docker images and scripts are described in the memory note
+on devenv; new gecko cameras should contribute a night of footage through the
+same pipeline before their detection is trusted.
+
 # Gecko detection and recording assessment (2026-09-13)
+
 
 **Status: researched and behavior-probed; gecko-only recording is not enabled.**
 The live camera still retains general motion for 30 days. No production

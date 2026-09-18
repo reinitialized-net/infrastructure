@@ -1,7 +1,8 @@
 """Frigate 0.18 CPU detector adapter for apps3's four-core VM.
 
 Use three inference threads without pinning, leaving capacity for video work
-and other services. Preserve the bundled SSD model and its output processing.
+and other services. Model loading and output decoding stay with the stock
+OpenVINO detector; only the compiled-model scheduling is replaced.
 This module is discovered by Frigate's detector plugin registry.
 """
 
@@ -26,15 +27,15 @@ class OpenVinoCpuConfig(BaseDetectorConfig):
 
 class OpenVinoCpu(DetectionApi):
     type_key = "openvino_cpu"
-    supported_models = [ModelTypeEnum.ssd]
+    supported_models = [ModelTypeEnum.ssd, ModelTypeEnum.yologeneric]
 
     def __init__(self, detector_config: OpenVinoCpuConfig):
         super().__init__(detector_config)
-        if detector_config.model.model_type != ModelTypeEnum.ssd:
-            raise ValueError("The apps3 CPU adapter is qualified only for SSD models")
+        if detector_config.model.model_type not in self.supported_models:
+            raise ValueError("The apps3 CPU adapter supports only SSD and yolo-generic models")
         self.detector = OvDetector(detector_config)
         if self.detector.model_invalid:
-            raise ValueError("Invalid SSD model")
+            raise ValueError("Invalid detection model")
 
         runner = self.detector.runner
         runner.compiled_model = runner.ov_core.compile_model(

@@ -1,4 +1,4 @@
-"""Health check for apps3's camera, run inside the pinned Frigate container.
+"""Health check for apps3's cameras, run inside the pinned Frigate container.
 
 The stock check only tests API availability. Require fresh capture statistics
 and usable recording-stream keyframes as well; do not restart the camera here.
@@ -23,34 +23,35 @@ def check():
     if Path("/dev/shm/.frigate-is-stopping").exists():
         return
 
-    camera = api("config")["cameras"]["camera_13_37"]
-    if not camera["enabled"]:
-        return
+    config = api("config")
     stats = api("stats")
     if time.time() - stats["service"]["last_updated"] > 90:
         raise RuntimeError("Camera statistics are stale")
-    # process_fps can retain its last value during an outage; use camera_fps.
-    if stats["cameras"]["camera_13_37"]["camera_fps"] <= 0:
-        raise RuntimeError("Camera capture is receiving no frames")
+    for name, camera in config["cameras"].items():
+        if not camera["enabled"]:
+            continue
+        # process_fps can retain its last value during an outage; use camera_fps.
+        if stats["cameras"][name]["camera_fps"] <= 0:
+            raise RuntimeError(f"{name}: capture is receiving no frames")
 
-    if camera["record"]["enabled"]:
-        # Probe the shared local restream, never a second camera connection.
-        # No retained-file freshness check: motion-only recording can be idle.
-        probe = subprocess.run(
-            [
-                FFPROBE_PATH, "-v", "error", "-rtsp_transport", "tcp",
-                "-timeout", "5000000", "-read_intervals", "%+8",
-                "-select_streams", "v:0", "-show_packets",
-                "-show_entries", "packet=flags", "-of", "json",
-                "rtsp://127.0.0.1:8554/camera_13_37",
-            ],
-            capture_output=True, text=True, timeout=20,
-        )
-        if probe.returncode != 0:
-            raise RuntimeError("Recording stream probe failed")
-        packets = json.loads(probe.stdout).get("packets", [])
-        if not any("K" in packet.get("flags", "") for packet in packets):
-            raise RuntimeError("Recording stream has no keyframes in 8 seconds")
+        if camera["record"]["enabled"]:
+            # Probe the shared local restream, never a second camera connection.
+            # No retained-file freshness check: motion-only recording can be idle.
+            probe = subprocess.run(
+                [
+                    FFPROBE_PATH, "-v", "error", "-rtsp_transport", "tcp",
+                    "-timeout", "5000000", "-read_intervals", "%+8",
+                    "-select_streams", "v:0", "-show_packets",
+                    "-show_entries", "packet=flags", "-of", "json",
+                    f"rtsp://127.0.0.1:8554/{name}",
+                ],
+                capture_output=True, text=True, timeout=20,
+            )
+            if probe.returncode != 0:
+                raise RuntimeError(f"{name}: recording stream probe failed")
+            packets = json.loads(probe.stdout).get("packets", [])
+            if not any("K" in packet.get("flags", "") for packet in packets):
+                raise RuntimeError(f"{name}: no recording keyframes in 8 seconds")
 
 
 if __name__ == "__main__":

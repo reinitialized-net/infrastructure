@@ -20,6 +20,18 @@ go2rtc:
   streams:
     camera_13_37:
       - "ffmpeg:{FRIGATE_CAMERA_13_37_URL}#input=rtsp/udp#video=copy"
+    # TP-Link Tapo cameras on the untrusted VLAN 14. Credentials are the
+    # per-camera "Camera Account" from the Tapo app, URL-encoded in the env
+    # file. RTSP over TCP: the stateful VLAN firewall has no RTSP helper, so
+    # camera-initiated UDP RTP would not pass. stream1 records, stream2 detects.
+    camera_14_2:
+      - "rtsp://{FRIGATE_CAMERA_14_2_USER}:{FRIGATE_CAMERA_14_2_PASSWORD}@10.1.14.2:554/stream1"
+    camera_14_2_sub:
+      - "rtsp://{FRIGATE_CAMERA_14_2_USER}:{FRIGATE_CAMERA_14_2_PASSWORD}@10.1.14.2:554/stream2"
+    camera_14_3:
+      - "rtsp://{FRIGATE_CAMERA_14_3_USER}:{FRIGATE_CAMERA_14_3_PASSWORD}@10.1.14.3:554/stream1"
+    camera_14_3_sub:
+      - "rtsp://{FRIGATE_CAMERA_14_3_USER}:{FRIGATE_CAMERA_14_3_PASSWORD}@10.1.14.3:554/stream2"
   ffmpeg:
     # IP Webcam delivers periodic keyframes over UDP but loses them over TCP.
     # Force UDP only on the camera leg; Frigate's local restream remains TCP.
@@ -39,13 +51,18 @@ detectors:
     device: CPU
     # Three inference workers leave capacity for capture and the shared host.
     num_threads: 3
+# One-class gecko detector trained on this installation's own night footage
+# (see docs/gecko-tracking.md). Frigate runs a single model, so every camera
+# that enables detection sees only the "gecko" label.
 model:
-  path: /openvino-model/ssdlite_mobilenet_v2.xml
-  labelmap_path: /openvino-model/coco_91cl_bkgr.txt
-  width: 300
-  height: 300
-  input_tensor: nhwc
-  input_pixel_format: bgr
+  path: /models/gecko.onnx
+  model_type: yolo-generic
+  labelmap_path: /models/gecko-labelmap.txt
+  width: 320
+  height: 320
+  input_tensor: nchw
+  input_pixel_format: rgb
+  input_dtype: float
 detect:
   enabled: true
 record:
@@ -64,8 +81,16 @@ record:
       mode: motion
 snapshots:
   enabled: false
+camera_groups:
+  geckos:
+    cameras: [camera_14_2, camera_14_3]
+    icon: LuBug
+    order: 0
 cameras:
   camera_13_37:
+    # Replaced by the VLAN 14 cameras on 2026-09-17. Disabled, not removed, so
+    # its retained recordings age out under the normal 30-day policy.
+    enabled: false
     motion:
       # The default 100-pixel height reduces this portrait view to 56x100,
       # losing small geckos. 180x320 motion analysis preserves the tested small
@@ -105,3 +130,78 @@ cameras:
       width: 360
       height: 640
       fps: 5
+  # Gecko enclosure template. Everything gecko-specific lives on this first
+  # camera and is merged into the others with "<<: *gecko_camera"; each of
+  # those overrides only its own streams. New gecko cameras copy camera_14_3.
+  camera_14_2: &gecko_camera
+    live:
+      streams:
+        "Full resolution": camera_14_2
+        "Sub stream": camera_14_2_sub
+    ffmpeg:
+      inputs:
+        # Detect from the 1440p stream: geckos are ~100 px there and ~25 px on
+        # the 640x360 sub stream. Decoding 1440p at 20 fps measured ~0.27 core.
+        - path: rtsp://127.0.0.1:8554/camera_14_2
+          input_args: preset-rtsp-restream
+          roles: [detect, record]
+    detect:
+      width: 1280
+      height: 720
+      fps: 5
+      stationary:
+        # 10 s without movement (at 5 fps) marks a gecko stationary, which ends
+        # its active_objects recording. The visual classifier ignores box jitter.
+        threshold: 50
+        classifier: true
+    motion:
+      # Motion only chooses where the detector looks. Half-resolution analysis
+      # keeps a resting gecko's small first movements visible.
+      frame_height: 360
+      threshold: 20
+      contour_area: 10
+      improve_contrast: true
+      mask:
+        timestamp:
+          friendly_name: Camera timestamp overlay
+          coordinates: "0,0,0.36,0,0.36,0.05,0,0.05"
+    objects:
+      track: [gecko]
+      filters:
+        gecko:
+          min_score: 0.45
+          threshold: 0.6
+    review:
+      alerts:
+        enabled: false
+      detections:
+        labels: [gecko]
+    record:
+      enabled: true
+      # Retain only footage where a tracked gecko is active (moving); no plain
+      # motion retention on gecko cameras. Stationary geckos are still tracked
+      # so their next movement records without waiting for a fresh detection.
+      continuous:
+        days: 0
+      motion:
+        days: 0
+      alerts:
+        retain:
+          days: 0
+      detections:
+        pre_capture: 5
+        post_capture: 5
+        retain:
+          days: 30
+          mode: active_objects
+  camera_14_3:
+    <<: *gecko_camera
+    live:
+      streams:
+        "Full resolution": camera_14_3
+        "Sub stream": camera_14_3_sub
+    ffmpeg:
+      inputs:
+        - path: rtsp://127.0.0.1:8554/camera_14_3
+          input_args: preset-rtsp-restream
+          roles: [detect, record]

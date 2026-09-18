@@ -1,9 +1,10 @@
 # Camera DVR
 
-The newer gecko-only recording requirement is assessed in
-[Gecko detection and recording](gecko-tracking.md). It is **not yet enabled**:
-the live policy remains general motion retention. Historical motion sensitivity
-and playback qualification below do not establish gecko-recognition accuracy.
+Since 2026-09-17 the two Tapo gecko cameras record only while a detected
+gecko is moving, using a locally trained one-class model; see
+[Gecko detection and recording](gecko-tracking.md) for the design, training
+data and results. The historical motion-only policy, motion sensitivity and
+playback qualification below describe the retired `camera_13_37`.
 
 ## Selection (2026-09-12)
 
@@ -38,10 +39,13 @@ Its unauthenticated API and go2rtc listeners bind container loopback so backend
 containers cannot use them to bypass authentication. WebRTC and RTSP are not
 published. Access requires the existing internal network or VPN path.
 
-The online device at `10.1.13.37:8080` identifies itself as IP Webcam, and
-advertises `rtsp://10.1.13.37:8080/h264.sdp`. The two offline cameras are not
-configured until their addresses and stream support are known. Assign DHCP
-reservations and provision read-only stream credentials on cameras that support
+Since 2026-09-17 the recorded cameras are two TP-Link Tapo units on the
+untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`), pulled over RTSP TCP with a
+dedicated camera account; see
+[the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md).
+The original IP Webcam device at `10.1.13.37` is offline and its camera entry is
+disabled, kept only until its retained footage expires. Assign DHCP
+reservations and provision dedicated stream credentials on cameras that support
 them; restrict camera network access to the recorder and administration clients.
 
 ## Recording and storage
@@ -529,7 +533,10 @@ to archive deliberately. Do not rely on the recorder as the only incident copy.
 start. UI configuration changes are temporary until reflected in that file.
 The root-owned mode-0600 `/var/lib/service-secrets/frigate.env` on apps3 contains
 `FRIGATE_CAMERA_13_37_URL`, `FRIGATE_CAMERA_13_37_SNAPSHOT_URL` (the camera's
-HTTP `/shot.jpg` endpoint), and a randomly generated `FRIGATE_JWT_SECRET`. Keep
+HTTP `/shot.jpg` endpoint), `FRIGATE_CAMERA_14_2_USER`, `FRIGATE_CAMERA_14_2_PASSWORD`,
+`FRIGATE_CAMERA_14_3_USER`, `FRIGATE_CAMERA_14_3_PASSWORD` (URL-encoded Tapo
+Camera Accounts; see [the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md)),
+and a randomly generated `FRIGATE_JWT_SECRET`. Keep
 credentials in runtime files, never in YAML, Nix values, CLI arguments or Git.
 On initial startup Frigate prints a generated admin password in privileged logs;
 change it through Settings after initial login. Never publish those logs.
