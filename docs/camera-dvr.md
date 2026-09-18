@@ -43,8 +43,12 @@ Since 2026-09-17 the recorded cameras are two TP-Link Tapo units on the
 untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`), pulled over RTSP TCP with a
 dedicated camera account; see
 [the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md).
-The original IP Webcam device at `10.1.13.37` is offline and its camera entry is
-disabled, kept only until its retained footage expires. Assign DHCP
+The original IP Webcam device at `10.1.13.37` is permanently offline; its camera
+entry stays disabled with a ten-year motion retention so its footage remains
+viewable (Frigate deletes recordings of cameras removed from the config). The
+Tapo cameras appear in the UI as `Geckos1` and `Geckos2`. On 2026-09-18 the
+02:30 fleet deploy reverted apps3 to `origin/indev` because the gecko commits
+were only local; a local `rebuildHost` is not durable until pushed. Assign DHCP
 reservations and provision dedicated stream credentials on cameras that support
 them; restrict camera network access to the recorder and administration clients.
 

@@ -82,15 +82,21 @@ record:
 snapshots:
   enabled: false
 camera_groups:
-  geckos:
+  Geckos:
     cameras: [camera_14_2, camera_14_3]
     icon: LuBug
     order: 0
 cameras:
   camera_13_37:
-    # Replaced by the VLAN 14 cameras on 2026-09-17. Disabled, not removed, so
-    # its retained recordings age out under the normal 30-day policy.
+    # Replaced by the VLAN 14 cameras on 2026-09-17. The device is permanently
+    # offline. Kept disabled (not removed) so its ~500 GB of retained footage
+    # stays viewable; Frigate deletes recordings of cameras missing from config.
     enabled: false
+    record:
+      motion:
+        days: 3650
+    objects:
+      track: [] # The gecko model has no "person"; silence the startup warning.
     motion:
       # The default 100-pixel height reduces this portrait view to 56x100,
       # losing small geckos. 180x320 motion analysis preserves the tested small
@@ -134,6 +140,7 @@ cameras:
   # camera and is merged into the others with "<<: *gecko_camera"; each of
   # those overrides only its own streams. New gecko cameras copy camera_14_3.
   camera_14_2: &gecko_camera
+    friendly_name: Geckos1
     live:
       streams:
         "Full resolution": camera_14_2
@@ -176,6 +183,15 @@ cameras:
         enabled: false
       detections:
         labels: [gecko]
+    # Snapshot of each tracked gecko with its labelled bounding box, shown in
+    # Explore/Review. Live boxes need no config: the camera Debug view and
+    # /api/<camera>/latest.jpg?bbox=1 draw them from the same tracker state.
+    snapshots:
+      enabled: true
+      bounding_box: true
+      timestamp: true
+      retain:
+        default: 30
     record:
       enabled: true
       # Retain only footage where a tracked gecko is active (moving); no plain
@@ -196,6 +212,7 @@ cameras:
           mode: active_objects
   camera_14_3:
     <<: *gecko_camera
+    friendly_name: Geckos2
     live:
       streams:
         "Full resolution": camera_14_3
