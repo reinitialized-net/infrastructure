@@ -1107,16 +1107,21 @@ in
 
       ${pkgs.coreutils}/bin/install -d -o rnetadmin -g wheel -m 0750 "$secrets_dir"
 
-      ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$token_file")"
+      # Only create a separate parent for the runtime copy. When the token
+      # lives inside $secrets_dir this would re-chown the secrets directory
+      # to root:rnetadmin and lock out wheel users evaluating the flake.
       if [ -r "$persistent_token" ]; then
         if [ "$persistent_token" != "$token_file" ]; then
+          ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$token_file")"
           ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_token" "$token_file"
         fi
       elif [ ! -r "$token_file" ]; then
         echo "warning: Infratainer token is not readable at $token_file or $persistent_token"
       fi
       ${lib.optionalString dashboardWebhookEnabled ''
-        ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$webhook_secret_file")"
+        if [ "$(${pkgs.coreutils}/bin/dirname "$webhook_secret_file")" != "$secrets_dir" ]; then
+          ${pkgs.coreutils}/bin/install -d -o root -g rnetadmin -m 0750 "$(${pkgs.coreutils}/bin/dirname "$webhook_secret_file")"
+        fi
         if [ -r "$persistent_webhook_secret" ]; then
           ${pkgs.coreutils}/bin/install -o root -g rnetadmin -m 0640 "$persistent_webhook_secret" "$webhook_secret_file"
         else
