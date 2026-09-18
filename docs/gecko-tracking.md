@@ -1,7 +1,8 @@
 # Gecko detection and recording
 
-**Status (2026-09-17): gecko-only recording is deployed on the two Tapo
-cameras (`camera_14_2` = Gecko1, `camera_14_3` = Gecko2).** The section
+**Status (2026-09-18): gecko-only recording is deployed on the three Tapo
+cameras (`camera_14_2` = Geckos1, `camera_14_3` = Geckos2, `camera_14_5` =
+Geckos3; the UI names are the cameras' Tapo device names).** The section
 directly below describes the deployed design. Everything from
 "[Assessment (2026-09-13)](#gecko-detection-and-recording-assessment-2026-09-13)"
 onward is the earlier investigation against the retired portrait camera
@@ -24,9 +25,10 @@ asked for once a gecko class exists, so no Frigate source is patched:
 - **Grouping.** The gecko-specific configuration is written once on
   `camera_14_2` as a YAML anchor (`&gecko_camera`) and merged into
   `camera_14_3` with `<<: *gecko_camera`, which overrides only its own streams.
-  A new gecko camera is added by copying the `camera_14_3` block. Frigate
+  A new gecko camera is added by copying the `camera_14_3` block
+  (`camera_14_5` = Geckos3 was added this way). Frigate
   rejects unknown top-level keys, so the anchor cannot live in an `x-` template.
-  `camera_groups.geckos` groups the two cameras in the UI.
+  `camera_groups.Geckos` groups the three cameras in the UI.
 - **Detection input.** The 2560x1440 main stream, decoded at 1280x720 and
   5 fps (measured 0.27 CPU-core per camera; the 640x360 sub stream costs the
   same to decode but shrinks a gecko to ~25 px). Frigate feeds 320 px regions
@@ -70,18 +72,25 @@ the deployed checksum are in the table below.
 
 | Item | Value |
 | --- | --- |
-| Deployed model | `hosts/apps3/gecko.onnx`, SHA-256 `46d7aa916648f4df28c526687a90cfe84fbb29699f5f5165fd0e1622a75c3fa0` (YOLO11n, 320x320, from checkpoint `b7b0e522…`) |
-| Training rounds | R1: 12k blob-labelled crops from V30 init, stopped at epoch 6. R2: 4.9k reviewed positives + 2.4k background + 2.0k hard-negative crops, 8 epochs. R3: +712 latch/corner hard negatives, 4 epochs |
-| Held-out split | Last 20% of each camera's segments by time (2,864 crops, 2,737 boxes) |
+| Deployed model | `hosts/apps3/gecko.onnx`, SHA-256 `1441fe86e006ccf721a2098798f6ec5684f88d7607f223dfad31b60ddf6da83f` (YOLO11n, 320x320, round 4, from checkpoint `c5a70bbc…`) |
+| Training rounds | R1–R3 (2026-09-17, night IR only, see below). R4 (2026-09-18): R3 fine-tuned 12 epochs on the night set plus a daylight set: 429 hand-verified colour gecko boxes from motion silhouettes (2 fps, 08:00–09:45 CDT), 1,241 hard-negative crops from 67 reviewed false-alarm zones (granite, floor glare, cork bark, timestamp digits, cables, a person), 1,340 clean background crops; colour augmentation (`hsv_s` 0.9) so one model serves IR and colour |
+| Why R4 was needed | Every R1–R3 frame was greyscale IR (HSV saturation 0). In daylight R3 fired on granite, glare, bark and the timestamp digits at 0.6–0.89 while boxing real geckos by the head only; 477 of 1,200 daytime frames had a confirmed hit |
+| R4 held-out daylight hour (10:00–11:00 CDT, 4,788 frames, never used for training or review) | 67 boxes ≥ 0.45 in 67 frames, all eight location clusters real geckos (max 0.63–0.87); the R3 paper-tag and bark clusters are gone |
+| R4 on the training day (3,600 frames, 40 clusters ≥ 0.45) | 36 clusters real geckos incl. one under the red heat lamp (0.78); the four non-gecko clusters are a hand, an arm and a shirt at 0.45–0.55, below the 0.6 confirmation threshold |
+| R4 on held-out night frames (428) | Same gecko clusters and scores as R3; no regression |
+| R4 mixed validation (ultralytics, night labels are fragments) | precision 0.76, recall 0.64, mAP50 0.70 |
 | R3 held-out metrics (ultralytics, 0.25 conf) | precision 0.84, recall 0.63, mAP50 0.74, mAP50-95 0.44 — measured against the semi-automatic labels, so recall is understated where labels are fragments |
-| Known false alarms after R3 | none at the door latch, frame hardware or watermark corner on 1,712 held-out frames at ≥0.45; residual weak hits on the hide texture stay below the 0.6 confirmation threshold |
-| Known misses | geckos lying belly-down on the mesh floor of Gecko2 and animals seen only through two glass layers are often below 0.45 |
-| PyTorch vs Frigate OpenVINO parity | identical boxes (<0.01 px) on six crops; Frigate's stock YOLO post-processing drops anything under 0.4 |
+| Known misses | geckos lying belly-down on the mesh floor of Geckos2 and animals seen only through two glass layers are often below 0.45; a gecko half hidden behind the Geckos2 wire label scored 0.57 |
+| PyTorch vs Frigate OpenVINO parity | identical boxes (<0.01 px) on six crops (R3 export path, unchanged for R4); Frigate's stock YOLO post-processing drops anything under 0.4 |
 | Live after deploy (2026-09-18 02:05) | model loaded, inference 26 ms, 12 gecko events with clips on both cameras in the first minute |
 
 The two `objects.filters.gecko` values (`min_score: 0.45`, `threshold: 0.6`)
 were chosen from these distributions: true geckos mostly score 0.7–0.9, the
 remaining texture hits 0.45–0.58.
+
+Interim retention (2026-09-18): the gecko cameras keep 3 days of continuous
+and 7 days of motion footage while dusk, IR-transition and heat-lamp footage is
+collected for round 5; restore both to 0 in `frigate.yml` afterwards.
 
 Retraining: the docker images and scripts are described in the memory note
 on devenv; new gecko cameras should contribute a night of footage through the

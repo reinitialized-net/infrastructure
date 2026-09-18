@@ -39,14 +39,15 @@ Its unauthenticated API and go2rtc listeners bind container loopback so backend
 containers cannot use them to bypass authentication. WebRTC and RTSP are not
 published. Access requires the existing internal network or VPN path.
 
-Since 2026-09-17 the recorded cameras are two TP-Link Tapo units on the
-untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`), pulled over RTSP TCP with a
-dedicated camera account; see
+Since 2026-09-17 the recorded cameras are TP-Link Tapo units on the
+untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`, and since 2026-09-18 `10.1.14.5`),
+pulled over RTSP TCP with a dedicated camera account; see
 [the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md).
 The original IP Webcam device at `10.1.13.37` is permanently offline; its camera
 entry stays disabled with a ten-year motion retention so its footage remains
 viewable (Frigate deletes recordings of cameras removed from the config). The
-Tapo cameras appear in the UI as `Geckos1` and `Geckos2`. On 2026-09-18 the
+Tapo cameras appear in the UI as `Geckos1`, `Geckos2` and `Geckos3`, their Tapo
+device names. On 2026-09-18 the
 02:30 fleet deploy reverted apps3 to `origin/indev` because the gecko commits
 were only local; a local `rebuildHost` is not durable until pushed. Assign DHCP
 reservations and provision dedicated stream credentials on cameras that support
@@ -538,7 +539,8 @@ start. UI configuration changes are temporary until reflected in that file.
 The root-owned mode-0600 `/var/lib/service-secrets/frigate.env` on apps3 contains
 `FRIGATE_CAMERA_13_37_URL`, `FRIGATE_CAMERA_13_37_SNAPSHOT_URL` (the camera's
 HTTP `/shot.jpg` endpoint), `FRIGATE_CAMERA_14_2_USER`, `FRIGATE_CAMERA_14_2_PASSWORD`,
-`FRIGATE_CAMERA_14_3_USER`, `FRIGATE_CAMERA_14_3_PASSWORD` (URL-encoded Tapo
+`FRIGATE_CAMERA_14_3_USER`, `FRIGATE_CAMERA_14_3_PASSWORD`, `FRIGATE_CAMERA_14_5_USER`,
+`FRIGATE_CAMERA_14_5_PASSWORD` (URL-encoded Tapo
 Camera Accounts; see [the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md)),
 and a randomly generated `FRIGATE_JWT_SECRET`. Keep
 credentials in runtime files, never in YAML, Nix values, CLI arguments or Git.
