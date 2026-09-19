@@ -1,7 +1,9 @@
 # Camera DVR
 
-Since 2026-09-17 the two Tapo gecko cameras record only while a detected
-gecko is moving, using a locally trained one-class model; see
+As of 2026-09-19 all four Tapo gecko cameras share a locally trained one-class
+model configuration, 5 fps analysis, boxed snapshots, and retention of 3 days continuous,
+7 days motion, and 30 days active-gecko events. Object detection is paused by
+owner request; continuous and motion recording remain enabled. See
 [Gecko detection and recording](gecko-tracking.md) for the design, training
 data and results. The historical motion-only policy, motion sensitivity and
 playback qualification below describe the retired `camera_13_37`.
@@ -40,18 +42,66 @@ containers cannot use them to bypass authentication. WebRTC and RTSP are not
 published. Access requires the existing internal network or VPN path.
 
 Since 2026-09-17 the recorded cameras are TP-Link Tapo units on the
-untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`, and since 2026-09-18 `10.1.14.5`),
+untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`, `10.1.14.4`, and `10.1.14.14`),
 pulled over RTSP TCP with a dedicated camera account; see
 [the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md).
 The original IP Webcam device at `10.1.13.37` is permanently offline; its camera
 entry stays disabled with a ten-year motion retention so its footage remains
 viewable (Frigate deletes recordings of cameras removed from the config). The
-Tapo cameras appear in the UI as `Geckos1`, `Geckos2` and `Geckos3`, their Tapo
-device names. On 2026-09-18 the
+Tapo cameras appear in the UI as `Geckos1` through `Geckos4`. Geckos3 moved
+from `.5` to `.4`; its `camera_14_5` ID and credential variable names remain
+stable to preserve history. Geckos4 uses `FRIGATE_CAMERA_14_14_USER` and
+`FRIGATE_CAMERA_14_14_PASSWORD` in the runtime environment file. On 2026-09-18 the
 02:30 fleet deploy reverted apps3 to `origin/indev` because the gecko commits
 were only local; a local `rebuildHost` is not durable until pushed. Assign DHCP
 reservations and provision dedicated stream credentials on cameras that support
 them; restrict camera network access to the recorder and administration clients.
+
+## Four-camera performance (2026-09-19)
+
+- Cameras are C120 (Geckos1/2) and C121 (Geckos3/4). Both advertise a
+  maximum of 2560x1440 at 20 fps, with frame rate adaptive to brightness:
+  [C120 specifications](https://www.tp-link.com/us/home-networking/cloud-camera/tapo-c120/),
+  [C121 specifications](https://www.tp-link.com/us/home-networking/cloud-camera/tapo-c121/).
+  ONVIF reports 20 fps on all four, but packet timestamps and recorded media
+  must be measured; the configured limit is not guaranteed delivered FPS.
+- Daytime retained clips from Geckos1–3 measured approximately 20 fps. Evening
+  direct RTSP probes measured approximately 14.5, 11.0, 15.4, and 15.1 fps,
+  respectively. Recent recordings similarly measured 13–15 fps. This places
+  the lower rate upstream of Frigate; brightness adaptation is consistent with
+  the documented camera behavior. ONVIF imaging options expose brightness,
+  saturation, contrast, and sharpness, but no shutter/exposure control.
+- The four-core E5-2690 v4 VM has no video-decoding accelerator. With Gecko
+  inference enabled, one serial detector took approximately 25–29 ms per region;
+  four views requested many regions per frame and analysis fell to roughly
+  0.8–2 fps. These are analysis skips, not evidence of lost recording frames.
+  Increasing `detect.fps` cannot create missing camera frames or inference capacity.
+- Keep detection disabled for now (`detect.enabled: false` in the shared anchor).
+  Continue main-stream recording/live video without transcoding, and retain at
+  least three days continuously. Motion and previews still use the 5 fps analysis
+  path. Do not interpret its FPS as the recording FPS.
+- The previous 2 GiB container limit registered thousands of memory-limit hits
+  without OOM kills. Raise it to 3 GiB on the 8 GiB host to leave startup and
+  four-camera headroom; preserve the four-CPU cap and 100 GiB storage guard.
+- At investigation time, roughly 173 GiB was free. Actual recent compressed
+  footage was about 25 GiB/day across four cameras, rather than the encoder's
+  maximum bitrate. Recheck growth as lighting and movement change. The new
+  camera cannot have three days of historical footage until it has recorded
+  for three days; the retention setting does not fill earlier gaps.
+
+Post-change verification: apps3 toplevel build and the pinned Frigate schema
+validator passed. Three live samples spanning 80 seconds showed approximately
+5 fps capture/processing, zero skipped analysis frames, detection disabled, and
+zero memory-limit hits or OOMs. The container health check passed. All four
+main-stream MP4 live feeds remained 2560x1440 H.264, at approximately 15.1,
+11.0, 15.1, and 15.1 fps in evening light. Recent database segments had no gap
+over one second (segment start timestamps have integer-second granularity),
+and fresh recordings were present for every camera. Sampled recordings decoded
+all 120–160 packets into the same number of frames with increasing timestamps.
+C121 streams emit malformed supplementary SEI metadata warnings, but no frame
+loss was observed in these samples; metadata was not stripped or video re-encoded.
+For variable-rate decode probes, use `-fps_mode passthrough -enc_time_base 1/90000`
+with the null sink to avoid diagnostic-output timestamp rounding warnings.
 
 ## Recording and storage
 

@@ -43,13 +43,15 @@ in
     extraOptions = [
       "--shm-size=256m"
       "--tmpfs=/tmp/cache:rw,size=536870912"
-      "--memory=2g"
+      # Four camera pipelines hit the previous 2 GiB limit during startup.
+      "--memory=3g"
       "--cpus=4"
       # API availability alone missed both capture and keyframe outages.
       # Mark unhealthy without introducing automatic camera restart loops.
       "--health-cmd=python3 /opt/frigate/check_camera.py"
       "--health-interval=60s"
-      "--health-timeout=30s"
+      # Four sequential recording probes each have a 20-second timeout.
+      "--health-timeout=90s"
       "--health-start-period=90s"
       "--health-start-interval=30s"
       "--health-retries=3"

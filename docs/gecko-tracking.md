@@ -1,8 +1,14 @@
 # Gecko detection and recording
 
-**Status (2026-09-18): gecko-only recording is deployed on the three Tapo
-cameras (`camera_14_2` = Geckos1, `camera_14_3` = Geckos2, `camera_14_5` =
-Geckos3; the UI names are the cameras' Tapo device names).** The section
+**Status (2026-09-19): four Tapo cameras share the gecko detector and recording
+settings (`camera_14_2` = Geckos1, `camera_14_3` = Geckos2, `camera_14_5` =
+Geckos3, `camera_14_14` = Geckos4).** Interim retention remains 3 days continuous,
+7 days motion, and 30 days active-gecko events. Geckos3 moved to `10.1.14.4`; its
+original camera ID and secret names remain stable to preserve recording history.
+Geckos4 is at `10.1.14.14`. Object detection is temporarily disabled on all four
+by owner request while continuous recording is qualified; re-enable it for later
+model testing. No new object events or boxed object snapshots are generated while
+detection is paused. The section
 directly below describes the deployed design. Everything from
 "[Assessment (2026-09-13)](#gecko-detection-and-recording-assessment-2026-09-13)"
 onward is the earlier investigation against the retired portrait camera
@@ -10,6 +16,22 @@ onward is the earlier investigation against the retired portrait camera
 deployed and do not transfer to the new infrared views (V30 fired only on
 static background there). The helper modules and patch bundle it produced are
 still in `hosts/apps3/` but are unused by the running configuration.
+
+## Four-camera connection verification (2026-09-19)
+
+The apps3 toplevel build and pinned Frigate configuration validation passed.
+After activation, all four effective detection, motion, object, review, snapshot,
+and recording settings matched. Main streams delivered 2560x1440 H.264 and sub
+streams 640x360 H.264, all with keyframes. Each camera produced a fresh recording
+that decoded successfully; the container and camera health check passed.
+Geckos3's live image and on-screen name matched its retained footage, confirming
+the address move. Its camera ID was deliberately preserved.
+
+Capture delivered approximately 5 fps per camera, but post-startup object analysis
+processed roughly 0.8–2 fps and skipped remaining analysis frames under load.
+This verification establishes connections and recording, not full-rate detection
+or gecko recognition accuracy on the additional view. The 90-second Docker health
+check timeout accommodates four sequential stream probes (up to 20 seconds each).
 
 ## Deployed design (2026-09-17)
 
@@ -28,7 +50,7 @@ asked for once a gecko class exists, so no Frigate source is patched:
   A new gecko camera is added by copying the `camera_14_3` block
   (`camera_14_5` = Geckos3 was added this way). Frigate
   rejects unknown top-level keys, so the anchor cannot live in an `x-` template.
-  `camera_groups.Geckos` groups the three cameras in the UI.
+  `camera_groups.Geckos` groups all four cameras in the UI.
 - **Detection input.** The 2560x1440 main stream, decoded at 1280x720 and
   5 fps (measured 0.27 CPU-core per camera; the 640x360 sub stream costs the
   same to decode but shrinks a gecko to ~25 px). Frigate feeds 320 px regions
