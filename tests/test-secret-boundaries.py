@@ -12,6 +12,8 @@ def main() -> None:
             "MONGO_INITDB_ROOT_PASSWORD",
             "FORGEJO_ADMIN_API_TOKEN",
             "RI_REDIS_PASSWORD1",
+            "JWT_SECRET",
+            "INITIAL_PASSWORD",
         ],
         "hosts/apps3.nix": [
             "IMMICH_OIDC_CLIENT_SECRET",

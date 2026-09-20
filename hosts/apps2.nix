@@ -271,6 +271,35 @@
       ];
     };
 
+    ### OmniRoute (AI gateway, public at ai.reinitialized.net via rp1)
+    omniroute = {
+      autoStart = true;
+      hostname = "omniroute";
+      image = "diegosouzapw/omniroute:3.8.50";
+      environment = builtins.removeAttrs config.secrets.omniroute.keys [
+        "JWT_SECRET"
+        "API_KEY_SECRET"
+        "STORAGE_ENCRYPTION_KEY"
+        "INITIAL_PASSWORD"
+      ];
+      environmentFiles = [ "/var/lib/service-secrets/omniroute.env" ];
+      networks = [
+        "backend"
+      ];
+      ports = [
+        "10.255.0.4:1041:20128/tcp" # Dashboard + OpenAI-compatible API
+        "10.255.0.4:1042:20132/tcp" # Live dashboard WebSocket
+      ];
+      volumes = [
+        "omniroute_data:/app/data"
+      ];
+      extraOptions = [
+        # ponytail: sized for dashboard/light chat; raise --memory and OMNIROUTE_MEMORY_MB for coding agents
+        "--memory=3g"
+        "--stop-timeout=40"
+      ];
+    };
+
     ### Cinny Matrix Web Client
     cinny = {
       autoStart = true;

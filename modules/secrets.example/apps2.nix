@@ -69,6 +69,36 @@
         RI_REDIS_ALIAS1 = "valkey1";
       };
     };
+    omniroute = {
+      # Provision /var/lib/service-secrets/omniroute.env as root:root 0600 with:
+      # JWT_SECRET=<openssl rand -base64 48>
+      # API_KEY_SECRET=<openssl rand -hex 32>
+      # STORAGE_ENCRYPTION_KEY=<openssl rand -hex 32>
+      # INITIAL_PASSWORD=<dashboard admin password; change it after first login>
+      description = "OmniRoute AI gateway configuration (secrets in runtime env file)";
+      keys = {
+        DATA_DIR = "/app/data";
+        PORT = "20128";
+        NEXT_PUBLIC_BASE_URL = "https://ai.reinitialized.net";
+        AUTH_COOKIE_SECURE = "true";
+        # Reject unauthenticated /v1 requests; keys are issued from the dashboard.
+        REQUIRE_API_KEY = "true";
+        ALLOW_API_KEY_REVEAL = "false";
+        # Live dashboard WebSocket is proxied by rp1 at /live-ws.
+        LIVE_WS_HOST = "0.0.0.0";
+        LIVE_WS_PORT = "20132";
+        LIVE_WS_ALLOWED_ORIGINS = "https://ai.reinitialized.net";
+        NEXT_PUBLIC_LIVE_WS_PUBLIC_URL = "wss://ai.reinitialized.net/live-ws";
+        # Allow RFC1918 provider URLs so the ai1 llama.cpp API can be added as a provider.
+        OMNIROUTE_ALLOW_PRIVATE_PROVIDER_URLS = "true";
+        # V8 heap; keep below the container --memory limit in hosts/apps2.nix.
+        OMNIROUTE_MEMORY_MB = "2048";
+        JWT_SECRET = "PLACE JWT SECRET HERE";
+        API_KEY_SECRET = "PLACE API KEY SECRET HERE";
+        STORAGE_ENCRYPTION_KEY = "PLACE STORAGE ENCRYPTION KEY HERE";
+        INITIAL_PASSWORD = "PLACE INITIAL DASHBOARD PASSWORD HERE";
+      };
+    };
     forgejoRunner = {
       # Provision /var/lib/service-secrets/forgejo-runner.env as root:root 0600.
       description = "Forgejo Runner CI/CD configuration";

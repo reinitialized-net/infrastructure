@@ -42,8 +42,10 @@ Next unused port after the highest current allocation: `1044`.
 | 1031 | `pgadmin4` | TCP | 80 | pgAdmin4 web UI |
 | 1032 | `redisInsight` | TCP | 5540 | Redis Insight web UI |
 | 1040 | `cinny` | TCP | 80 | Cinny Matrix web client |
+| 1041 | `omniroute` | TCP | 20128 | OmniRoute dashboard and OpenAI-compatible API |
+| 1042 | `omniroute` | TCP | 20132 | OmniRoute live dashboard WebSocket |
 
-Unused gap: `1033`-`1039`. Next unused port after the highest current allocation: `1041`.
+Unused gap: `1033`-`1039`. Next unused port after the highest current allocation: `1043`.
 
 ## apps3 (`10.255.0.5`)
 
@@ -118,6 +120,7 @@ Selected nginx routes from `hosts/rp1.nix`:
 | `access.reinitialized.net` | `http://10.255.0.3:1043` |
 | `cloud.reinitialized.net` | `http://ocis_backend`, currently `10.255.0.5:1028` |
 | `search.reinitialized.net` | `http://10.255.0.5:1029` |
+| `ai.reinitialized.net` | `http://10.255.0.4:1041`, `/live-ws` to `http://10.255.0.4:1042` |
 
 Mail protocols are proxied through nginx stream on `10.1.12.2` with PROXY protocol to Stalwart on apps1.
 

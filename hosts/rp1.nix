@@ -973,6 +973,29 @@ in
         };
       };
 
+      # OmniRoute AI gateway (on apps2). Public; OmniRoute enforces dashboard
+      # login and REQUIRE_API_KEY for /v1.
+      "ai.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [
+          "10.1.12.4"
+        ];
+
+        locations."/" = {
+          proxyPass = "http://10.255.0.4:1041";
+          proxyWebsockets = true;
+          # Streaming SSE completions: no buffering, long inactivity timeout.
+          extraConfig = largeTransfer "600s";
+        };
+        locations."/live-ws" = {
+          proxyPass = "http://10.255.0.4:1042";
+          proxyWebsockets = true;
+          extraConfig = "proxy_read_timeout 3600s;";
+        };
+      };
+
       # SearXNG (Privacy-respecting Metasearch Engine)
       "search.reinitialized.net" = {
         forceSSL = true;

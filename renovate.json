@@ -478,6 +478,23 @@
       "automerge": false
     },
     {
+      "description": "Label OmniRoute image updates by service.",
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "diegosouzapw/omniroute"
+      ],
+      "addLabels": [
+        "container",
+        "service:omniroute"
+      ],
+      "automerge": false
+    },
+    {
       "description": "Label Matrix homeserver image updates by service.",
       "matchManagers": [
         "custom.regex"
