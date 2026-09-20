@@ -32,6 +32,10 @@ Documentation for the Reinitialized Infrastructure NixOS flake.
 
 ### Operations
 
+- [Infrastructure access discovery — September 19, 2026](infrastructure-access-discovery-2026-09-19.md) - Verified access and remaining credentials/trust
+
+- [Harness-independent infrastructure access](infrastructure-access.md) - Inventory, credentials, CLI and access qualification
+
 - [Production Audit — September 4, 2026](production-audit-2026-09-04.md) - Findings, prepared fixes, validation, and rollout prerequisites
 - [Mesh Network Port Reference](mesh-network-ports.md)
 - [Bash Script Tools](bash-script-tools.md)

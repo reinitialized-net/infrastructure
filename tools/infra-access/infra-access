@@ -1,0 +1,429 @@
+#!/usr/bin/env python3
+"""Harness-independent infrastructure access. Python standard library + OpenSSH."""
+import argparse
+import base64
+import concurrent.futures
+import getpass
+import hashlib
+import http.cookiejar
+import ipaddress
+import datetime
+import xml.etree.ElementTree as ET
+import json
+import os
+from pathlib import Path
+import re
+import shlex
+import socket
+import ssl
+import stat
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+ROOT = Path(__file__).resolve().parents[2]
+SECRET_DIR = Path(os.environ.get('INFRA_ACCESS_SECRETS', '~/.config/infra-access')).expanduser()
+
+
+def private_read(path):
+    path = Path(path).expanduser()
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    with os.fdopen(fd) as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
+            raise ValueError('Credential files must be owned by the caller and mode 0600 or 0400')
+        return stream.read()
+
+
+def private_write(path, content):
+    path = Path(path).expanduser()
+    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write(content)
+
+
+def credential_path(name):
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', name):
+        raise ValueError('Invalid credential name')
+    directory = SECRET_DIR.resolve()
+    if directory == ROOT or ROOT in directory.parents:
+        raise ValueError('Credentials must live outside the repository, including ignored directories')
+    return directory / (name + '.json')
+
+
+def scrub(value, secrets=()):
+    if isinstance(value, dict):
+        return {k: '[REDACTED]' if re.search(r'password|secret|token|api.?key|authorization|cookie|private.?key', k, re.I)
+                else scrub(v, secrets) for k, v in value.items()}
+    if isinstance(value, list):
+        return [scrub(v, secrets) for v in value]
+    if isinstance(value, str):
+        for secret in sorted(secrets, key=len, reverse=True):
+            if secret:
+                value = value.replace(secret, '[REDACTED]')
+    return value
+
+
+class NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+def request_url(base, path):
+    parts = urllib.parse.urlsplit(base)
+    if parts.scheme != 'https' or not parts.hostname or parts.username or parts.password or parts.query or parts.fragment:
+        raise ValueError('API base_url must be HTTPS without credentials, query or fragment')
+    target = urllib.parse.urlsplit(path)
+    if not path.startswith('/') or path.startswith('//') or target.scheme or target.netloc or target.fragment:
+        raise ValueError('API path must be relative to the configured host and begin with /')
+    return base.rstrip('/') + path
+
+
+class ExcludedDevice(ValueError):
+    pass
+
+
+def ensure_allowed(device):
+    if device.get('excluded'):
+        raise ExcludedDevice('Device excluded by network access policy')
+    # Refuse tailnet addresses even if a new inventory entry omits the flag.
+    def inspect(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key in ('host', 'base_url', 'endpoint') and isinstance(item, str):
+                    host = urllib.parse.urlsplit(item).hostname if '://' in item else item
+                    try:
+                        address = ipaddress.ip_address(host)
+                    except ValueError:
+                        if host and host.rstrip('.').endswith('.ts.net'):
+                            raise ExcludedDevice('Tailscale endpoint excluded')
+                    else:
+                        if address in ipaddress.ip_network('100.64.0.0/10') or address in ipaddress.ip_network('fd7a:115c:a1e0::/48'):
+                            raise ExcludedDevice('Tailscale endpoint excluded')
+                inspect(item)
+        elif isinstance(value, list):
+            for item in value:
+                inspect(item)
+    inspect(device)
+
+
+def api_request(device, method, path, body=None):
+    ensure_allowed(device)
+    config = device['api']
+    url = request_url(config['base_url'], path)
+    credential = json.loads(private_read(credential_path(config['credential'])))
+    auth = credential['type']
+    secrets = [v for k, v in credential.items() if k != 'type' and isinstance(v, str)]
+    headers = {'Accept': 'application/json'}
+    if auth == 'basic':
+        encoded = base64.b64encode((credential['username'] + ':' + credential['password']).encode()).decode()
+        headers['Authorization'] = 'Basic ' + encoded
+        secrets.append(encoded)
+    elif auth == 'header':
+        header = credential['header']
+        if header.lower() not in ('authorization', 'x-api-key'):
+            raise ValueError('Supported credential headers: Authorization, X-API-Key')
+        headers[header] = credential['value']
+    elif auth == 'proxmox-backup':
+        headers['Authorization'] = 'PBSAPIToken=' + credential['token_id'] + ':' + credential['secret']
+    elif auth == 'unifi-session':
+        pass  # Session is scoped to this invocation and never written to disk.
+    elif auth == 'proxmox':
+        headers['Authorization'] = 'PVEAPIToken=' + credential['token_id'] + '=' + credential['secret']
+    else:
+        raise ValueError('Unsupported authentication type')
+    if any('\r' in v or '\n' in v for v in headers.values()):
+        raise ValueError('Invalid credential header')
+    if body is not None:
+        headers['Content-Type'] = 'application/json'
+    ca = config.get('ca_file')
+    if config.get('verify_tls', True):
+        context = ssl.create_default_context(cafile=str(Path(ca).expanduser()) if ca else None)
+    else:
+        context = ssl._create_unverified_context()
+    cookies = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=context), urllib.request.HTTPCookieProcessor(cookies))
+    if auth == 'unifi-session':
+        login = urllib.request.Request(request_url(config['base_url'], '/api/login'),
+            data=json.dumps({'username': credential['username'], 'password': credential['password']}).encode(),
+            headers={'Content-Type': 'application/json'}, method='POST')
+        with opener.open(login, timeout=20) as response:
+            raw = response.read(1024 * 1024 + 1)
+            if len(raw) > 1024 * 1024 or json.loads(raw).get('meta', {}).get('rc') != 'ok':
+                raise ValueError('UniFi session authentication failed')
+            csrf = response.headers.get('X-CSRF-Token')
+            if csrf:
+                headers['X-CSRF-Token'] = csrf
+                secrets.append(csrf)
+        secrets.extend(cookie.value for cookie in cookies)
+    req = urllib.request.Request(url, data=body, headers=headers, method=method)
+    with opener.open(req, timeout=20) as response:
+        raw = response.read(16 * 1024 * 1024 + 1)
+        if len(raw) > 16 * 1024 * 1024:
+            raise ValueError('API response exceeds 16 MiB limit')
+        if response.status == 204 or method == 'HEAD':
+            return response.status, None, secrets
+        try:
+            value = json.loads(raw)
+        except (ValueError, UnicodeError):
+            raise ValueError('Non-JSON response withheld; verify the API endpoint') from None
+        return response.status, value, secrets
+
+
+
+def onvif_request(device, operation_xml):
+    ensure_allowed(device)
+    config = device['onvif']
+    endpoint = config['endpoint']
+    parsed = urllib.parse.urlsplit(endpoint)
+    if parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username or parsed.password or parsed.fragment:
+        raise ValueError('Invalid ONVIF endpoint')
+    credential = json.loads(private_read(credential_path(config['credential'])))
+    if credential['type'] != 'basic':
+        raise ValueError('ONVIF requires a basic username/password profile')
+    operation = ET.fromstring(operation_xml)
+    if not operation.tag.startswith('{http://www.onvif.org/'):
+        raise ValueError('Expected ONVIF operation element')
+    namespace, action = operation.tag[1:].split('}', 1)
+    soap = 'http://www.w3.org/2003/05/soap-envelope'
+    wsse = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-secext-1.0.xsd'
+    wsu = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd'
+    profile = 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-username-token-profile-1.0'
+    nonce = os.urandom(20)
+    created = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+    digest = base64.b64encode(hashlib.sha1(nonce + created.encode() + credential['password'].encode()).digest()).decode()
+    envelope = ET.Element('{' + soap + '}Envelope')
+    header = ET.SubElement(envelope, '{' + soap + '}Header')
+    security = ET.SubElement(header, '{' + wsse + '}Security')
+    token = ET.SubElement(security, '{' + wsse + '}UsernameToken')
+    ET.SubElement(token, '{' + wsse + '}Username').text = credential['username']
+    ET.SubElement(token, '{' + wsse + '}Password', {'Type': profile + '#PasswordDigest'}).text = digest
+    ET.SubElement(token, '{' + wsse + '}Nonce', {'EncodingType': 'http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-soap-message-security-1.0#Base64Binary'}).text = base64.b64encode(nonce).decode()
+    ET.SubElement(token, '{' + wsu + '}Created').text = created
+    ET.SubElement(envelope, '{' + soap + '}Body').append(operation)
+    context = ssl.create_default_context() if config.get('verify_tls', True) else ssl._create_unverified_context()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect(), urllib.request.HTTPSHandler(context=context))
+    req = urllib.request.Request(endpoint, data=ET.tostring(envelope), headers={'Content-Type': 'application/soap+xml; charset=utf-8; action="' + namespace + '/' + action + '"'}, method='POST')
+    with opener.open(req, timeout=15) as response:
+        raw = response.read(1024 * 1024 + 1)
+        if len(raw) > 1024 * 1024:
+            raise ValueError('ONVIF response exceeds 1 MiB')
+        value = ET.fromstring(raw)
+        if value.find('.//{' + soap + '}Fault') is not None:
+            raise ValueError('ONVIF SOAP fault')
+        return response.status, value, [credential['username'], credential['password'], digest]
+
+
+def xml_value(element):
+    if not len(element):
+        return element.text or ''
+    result = {}
+    for child in element:
+        name = child.tag.split('}')[-1]
+        value = xml_value(child)
+        result.setdefault(name, []).append(value)
+    return result
+
+
+def ssh_args(device, command):
+    ensure_allowed(device)
+    config = device['ssh']
+    host, user = config['host'], config['user']
+    if not re.fullmatch(r'[a-zA-Z0-9_.:-]+', host) or host.startswith('-') or not re.fullmatch(r'[a-zA-Z0-9_.-]+', user) or user.startswith('-'):
+        raise ValueError('Invalid SSH host or user')
+    policy = config.get('host_key_policy', 'yes')
+    if policy not in ('yes', 'accept-new'):
+        raise ValueError('Unsupported SSH host key policy')
+    args = ['ssh', '-F', '/dev/null', '-o', 'BatchMode=no' if config.get('credential') else 'BatchMode=yes', '-o', 'StrictHostKeyChecking=' + policy,
+            '-o', 'IdentitiesOnly=yes', '-o', 'ConnectTimeout=5', '-o', 'ForwardAgent=no',
+            '-o', 'ClearAllForwardings=yes', '-p', str(int(config.get('port', 22))),
+            '-i', str(Path(config['identity_file']).expanduser())]
+    if config.get('credential'):
+        args += ['-o', 'PreferredAuthentications=password', '-o', 'NumberOfPasswordPrompts=1']
+    if config.get('proxy_jump'):
+        jump = config['proxy_jump']
+        if jump.get('proxy_jump') or jump.get('credential'):
+            raise ValueError('Proxy jump requires a single key-authenticated SSH endpoint')
+        prefix = ssh_args({'ssh': jump}, '')[:-2]
+        args += ['-o', 'ProxyCommand=' + shlex.join(prefix + ['-W', '%h:%p', jump['user'] + '@' + jump['host']])]
+    if config.get('known_hosts_file'):
+        args += ['-o', 'UserKnownHostsFile=' + str(Path(config['known_hosts_file']).expanduser())]
+    return args + [user + '@' + host, command]
+
+
+def guest_args(devices, device, command):
+    ensure_allowed(device)
+    config = device['guest']
+    vmid = int(config['vmid'])
+    if vmid < 100 or not command:
+        raise ValueError('Valid VM ID and guest program required')
+    prefix = ['sudo', '-n'] if devices[config['hypervisor']].get('guest_sudo') else []
+    remote = shlex.join(prefix + ['qm', 'guest', 'exec', str(vmid), '--'] + command)
+    return ssh_args(devices[config['hypervisor']], remote)
+
+
+def discover(item, devices=None):
+    name, device = item
+    result = {'device': name, 'ports': {}}
+    try:
+        ensure_allowed(device)
+    except ValueError:
+        return {**result, 'excluded': True}
+    endpoints = [(p['host'], int(p['port'])) for p in device.get('probes', [])]
+    if 'ssh' in device:
+        endpoints.append((device['ssh']['host'], device['ssh'].get('port', 22)))
+    if 'api' in device:
+        u = urllib.parse.urlsplit(device['api']['base_url'])
+        endpoints.append((u.hostname, u.port or 443))
+    if device.get('onvif'):
+        endpoint = urllib.parse.urlsplit(device['onvif']['endpoint'])
+        endpoints.append((endpoint.hostname, endpoint.port or (443 if endpoint.scheme == 'https' else 80)))
+    endpoints = list(dict.fromkeys(endpoints))
+    if device.get('probe_via'):
+        if devices is None:
+            raise ValueError('Remote discovery requires full inventory')
+        script = "import socket,json\nresults={}\nfor host,port in " + repr(endpoints) + ":\n try:\n  with socket.create_connection((host,port),timeout=3): results[f'{host}:{port}']='reachable'\n except OSError: results[f'{host}:{port}']='unreachable'\nprint(json.dumps(results))"
+        command = 'python3 -c ' + shlex.quote('import base64;exec(base64.b64decode(' + repr(base64.b64encode(script.encode()).decode()) + '))')
+        try:
+            response = subprocess.run(ssh_args(devices[device['probe_via']], command), capture_output=True, text=True, timeout=10 + 3 * len(endpoints))
+            result['ports'] = json.loads(response.stdout) if response.returncode == 0 else {f'{h}:{p}': 'probe-path-failed' for h,p in endpoints}
+        except (subprocess.TimeoutExpired, ValueError):
+            result['ports'] = {f'{h}:{p}': 'probe-path-failed' for h,p in endpoints}
+        result['via'] = device['probe_via']
+        return result
+    for host, port in endpoints:
+        try:
+            with socket.create_connection((host, port), timeout=3):
+                result['ports'][f'{host}:{port}'] = 'reachable'
+        except OSError:
+            result['ports'][f'{host}:{port}'] = 'unreachable'
+    return result
+
+
+def audit(device, operation, outcome):
+    # Deliberately omit API paths, shell commands, payloads and responses.
+    directory = Path(os.environ.get('INFRA_ACCESS_STATE', '~/.local/state/infra-access')).expanduser()
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    fd = os.open(directory / 'audit.jsonl', os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    info = os.fstat(fd)
+    if info.st_mode & 0o077 or info.st_uid != os.getuid() or not stat.S_ISREG(info.st_mode):
+        os.close(fd)
+        raise ValueError('Audit file must be private and owned by caller')
+    with os.fdopen(fd, 'a') as stream:
+        stream.write(json.dumps({'time': time.time(), 'device': device, 'operation': operation, 'outcome': outcome}) + '\n')
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--inventory', type=Path, default=Path(__file__).with_name('inventory.json'))
+    sub = parser.add_subparsers(dest='action', required=True)
+    sub.add_parser('list')
+    sub.add_parser('discover', help='Probe only inventory endpoints; no subnet scan or authentication')
+    put = sub.add_parser('credential', help='Create a credential through hidden terminal prompts')
+    put.add_argument('name')
+    put.add_argument('type', choices=['basic', 'header', 'proxmox', 'proxmox-backup', 'ssh-password', 'unifi-session'])
+    ssh = sub.add_parser('ssh', help='Execute an exact remote shell command; output is unfiltered')
+    ssh.add_argument('device')
+    ssh.add_argument('command')
+    onvif = sub.add_parser('onvif', help='Authenticated ONVIF SOAP operation from XML file')
+    onvif.add_argument('device')
+    onvif.add_argument('body_file', type=Path)
+    guest = sub.add_parser('guest', help='Execute a program through the Proxmox guest agent; output is unfiltered')
+    guest.add_argument('device')
+    guest.add_argument('program', nargs=argparse.REMAINDER)
+    api = sub.add_parser('api', help='Authenticated API call; writes are available without extra approval')
+    api.add_argument('device')
+    api.add_argument('method', choices=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE'])
+    api.add_argument('path')
+    api.add_argument('--body-file', type=Path, help='JSON file, or - for stdin; avoid secrets in argv')
+    api.add_argument('--output', type=Path, help='Write original JSON to a new mode-0600 file instead of stdout')
+    args = parser.parse_args()
+    if args.action == 'credential':
+        if not sys.stdin.isatty():
+            raise ValueError('Credential enrollment requires a terminal')
+        fields = {'unifi-session': ['username', 'password'], 'basic': ['username', 'password'], 'header': ['header', 'value'], 'proxmox': ['token_id', 'secret'], 'proxmox-backup': ['token_id', 'secret'], 'ssh-password': ['username', 'password']}[args.type]
+        value = {'type': args.type, **{f: getpass.getpass(f + ': ') for f in fields}}
+        private_write(credential_path(args.name), json.dumps(value) + '\n')
+        print('Credential saved outside repository')
+        return
+    devices = json.loads(args.inventory.read_text())['devices']
+    if args.action == 'list':
+        print(json.dumps(devices, indent=2))
+        return
+    if args.action == 'discover':
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+            print(json.dumps(list(pool.map(lambda item: discover(item, devices), devices.items())), indent=2))
+        return
+    if args.action == 'api' and args.output:
+        output = args.output.expanduser().resolve()
+        if output == ROOT or ROOT in output.parents:
+            raise ValueError('Unredacted API output must be stored outside the repository')
+        if output.exists():
+            raise ValueError('Output file already exists')
+    device = devices[args.device]
+    operation = args.action + (':' + args.method if args.action == 'api' else '')
+    audit(args.device, operation, 'started')
+    try:
+        if args.action == 'onvif':
+            status, value, secrets = onvif_request(device, args.body_file.read_bytes())
+            print(json.dumps({'status': status, 'body': scrub(xml_value(value), secrets)}, indent=2))
+            audit(args.device, operation, 'http:' + str(status))
+            return
+        if args.action == 'guest':
+            program = args.program[1:] if args.program[:1] == ['--'] else args.program
+            result = subprocess.run(guest_args(devices, device, program), capture_output=True, text=True)
+            if result.returncode:
+                print(result.stderr, file=sys.stderr, end='')
+                audit(args.device, operation, 'transport-failed')
+                return result.returncode
+            value = json.loads(result.stdout)
+            print(json.dumps(value, indent=2))
+            audit(args.device, operation, 'exit:' + str(value.get('exitcode', 'pending')))
+            return int(value.get('exitcode', 2)) if value.get('exited') else 2
+        if args.action == 'ssh':
+            env = os.environ.copy()
+            if device['ssh'].get('credential'):
+                path = credential_path(device['ssh']['credential'])
+                credential = json.loads(private_read(path))
+                if credential['type'] != 'ssh-password' or credential['username'] != device['ssh']['user']:
+                    raise ValueError('SSH credential does not match inventory user')
+                env.update(SSH_ASKPASS=str(Path(__file__).resolve().with_name('ssh-askpass')),
+                           SSH_ASKPASS_REQUIRE='force', DISPLAY='infra-access',
+                           INFRA_ACCESS_SSH_CREDENTIAL_FILE=str(path))
+            result = subprocess.run(ssh_args(device, args.command), env=env, stdin=subprocess.DEVNULL)
+            audit(args.device, operation, 'exit:' + str(result.returncode))
+            return result.returncode
+        body = None
+        if args.body_file:
+            body = sys.stdin.buffer.read() if str(args.body_file) == '-' else args.body_file.read_bytes()
+            json.loads(body)
+        status, value, secrets = api_request(device, args.method, args.path, body)
+        if args.output:
+            private_write(args.output, json.dumps(value, indent=2) + '\n')
+            print(json.dumps({'status': status, 'saved': True}))
+        else:
+            print(json.dumps({'status': status, 'body': scrub(value, secrets)}, indent=2))
+        audit(args.device, operation, 'http:' + str(status))
+    except Exception:
+        audit(args.device, operation, 'failed')
+        raise
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main() or 0)
+    except urllib.error.HTTPError as error:
+        error.close()
+        print(json.dumps({'error': 'HTTP request rejected', 'status': error.code}), file=sys.stderr)
+        sys.exit(1)
+    except ExcludedDevice:
+        print(json.dumps({'error': 'Device excluded by Tailscale access policy'}), file=sys.stderr)
+        sys.exit(1)
+    except (OSError, ValueError, KeyError, ssl.SSLError, ET.ParseError) as error:
+        # Exceptions may embed URLs, response bodies or credentials. Never echo them.
+        print(json.dumps({'error': type(error).__name__, 'hint': 'Check inventory, private credential files, endpoint and certificate trust'}), file=sys.stderr)
+        sys.exit(1)

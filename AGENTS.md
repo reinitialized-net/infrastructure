@@ -261,3 +261,11 @@ UPDATE_INFRA_SKIP_HOSTS
 - [ ] No live secrets, generated `result/`, tokens, or credentials committed.
 - [ ] Narrow Nix build or syntax check run and result noted.
 - [ ] Broader exported-host build run for shared module/library changes, or explicitly skipped with reason.
+
+## Harness-independent infrastructure access
+
+For live network operations, read `docs/infrastructure-access.md` and use
+`./tools/infra-access/infra-access` with `tools/infra-access/inventory.json`.
+Credentials belong outside the repository in protected files; never print them
+or place them in command arguments. Inventory reachability does not establish
+authentication or write permission. Track qualification per device.

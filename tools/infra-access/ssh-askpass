@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""OpenSSH-only password callback; emits a protected credential into SSH's pipe."""
+import json
+import os
+from pathlib import Path
+import runpy
+import sys
+try:
+    helpers = runpy.run_path(str(Path(__file__).with_name('infra-access')))
+    data = json.loads(helpers['private_read'](os.environ['INFRA_ACCESS_SSH_CREDENTIAL_FILE']))
+    if data['type'] != 'ssh-password' or '\n' in data['password'] or '\r' in data['password']:
+        raise ValueError('Invalid SSH password profile')
+    sys.stdout.write(data['password'] + '\n')
+except Exception:
+    sys.exit(1)
