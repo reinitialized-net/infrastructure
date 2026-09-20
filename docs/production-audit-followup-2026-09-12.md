@@ -31,7 +31,6 @@ or unauthorized data access was demonstrated.
 | --- | --- | --- |
 | Medium: privileged `develop` account has a fixed plaintext initial password | `hosts/devenv.nix` passes `initialPassword` through `makeUser` | Replace it with `hashedPassword = "!"`; retain SSH key/groups. Effective locked status must be checked after activation without printing shadow data. |
 | Medium, conditional: Forgejo jobs can control apps2's production Docker daemon | Runner manager mounts the host socket and enables job automount | Dedicated disposable CI VM is required for full isolation. Runner stop/retention decision is pending; current socket exposure remains. |
-| Low: add-host instructions put live files into a `path:` source snapshot | `.agents/workflows/add-host.md` | Safe replacement guide is `docs/host-onboarding.md`. Environment denied editing the old workflow; exact patch is provided separately. The stale workflow remains a residual issue. |
 | Low: migration checksum output follows an attacker-planted symlink | Export final sidecar redirection in `migrate-volumes.sh` | Private export staging now defaults to `/mnt/data/docker-volume-backups`, outside SFTP roots; safe publication and race regressions pass offline. Native build/runtime verification remains blocked. |
 | Low: first-use migration accepts an unverified destination key | `containerTools.nix` uses `accept-new` | Require strict host-key checking and administrator-owned trust. Provision verified keys before migration; old user-owned learned caches are not trusted automatically. |
 | Operational: promotion validates without the intended synthetic metadata | `validate_pr` copies templates into a path no longer imported by `makeConfiguration` | Add explicit pure synthetic `checks.x86_64-linux.<host>` and build those. Preserve credential unsets and restricted evaluation; live `nixosConfigurations` remain external-overlay configurations. |
@@ -133,7 +132,7 @@ Migration review identified a missing-directory creation race; the final patch
 rechecks canonical identity and full ancestry after creation, before staging.
 
 Final `python3 modules/profiles/containers/tests/check_migration.py`, migration
-Bash syntax and `git diff --check` passed. The harness confirms outside sentinels
+Bash syntax and `git diff --check` passed. The tests confirm outside sentinels
 remain unchanged for archive/checksum symlinks, rejects shared paths and four
 injected directory-creation races before downtime, preserves normal export/import/
 transfer behavior and cleanup, and rejects unknown/changed SSH keys before stops.
@@ -141,12 +140,6 @@ It also checks effective SSH options with `ssh -G` without connecting and exerci
 trust-file provisioning using temporary files with ownership operations mocked.
 This proves the synthetic trigger no longer reproduces, not a real production
 migration or activated trust-file state.
-
-The environment denied writes to `.agents/workflows/add-host.md`; its exact
-unapplied correction is `/tmp/infrastructure-add-host.patch`. The new onboarding
-guide and README link are applied, but the old instruction is still present.
-The root AGENTS guide also retains stale descriptions of in-tree imports and VMA
-password generation; current source and the new guide should inform remediation.
 
 All seven synthetic host builds were requested from an explicit tracked-source
 copy under `/tmp`, with the denied secrets path excluded before any source copy.
@@ -164,17 +157,3 @@ mesh namespace and built transfer-sandbox tests also remain unrun because their
 required evaluated/built artifacts and runtime permissions are unavailable.
 Synthetic/mocked tests do not establish activation or live network controls, and
 synthetic host checks must never be deployed.
-
-## Scan artifacts and usage
-
-The sealed scan artifacts are in
-`/tmp/codex-security-scans-L5kZOa/infrastructure/e78def31661eb3523051f72d3a43493fdb00daef_20260912T203903Z_ojh8yo68/`:
-`report.md`, `scan-manifest.json`, `findings.json`, and `coverage.json`.
-They record the baseline findings, not remediation verification.
-
-The coordinator reports 93,744,931 total tokens, 93,306,598 input tokens and
-87,260,160 cached input tokens, with measurement source `codex_rollout` and usage
-coverage `complete`. These are coordinator-provided measurements; this parent
-has not independently reconciled the 56-thread accounting. They are not a
-measurement of live audit coverage.
-

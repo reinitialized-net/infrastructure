@@ -122,7 +122,6 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 - Updated `rp1.nix` with reverse proxy entries for `access.reinitialized.net` and `cloud.reinitialized.net`
 - Updated `mesh-network-ports.md` with Authentik (1043) and OCIS (1044) allocations on apps1
-- Updated `GEMINI.md` host table to reflect new services on apps1
 
 ## [1.1.2] - 2026-03-22
 

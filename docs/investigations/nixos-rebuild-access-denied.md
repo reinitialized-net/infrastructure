@@ -281,6 +281,5 @@ The issue has been **COMPLETELY RESOLVED**. The fix:
 
 ---
 
-**Investigation by:** GitHub Copilot (Claude Sonnet 4.5)  
 **Test Environment:** apps1 (10.1.11.2), devenv (10.1.200.2)  
 **NixOS Version:** 25.11.20260117.72ac591

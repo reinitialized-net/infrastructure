@@ -103,5 +103,3 @@ When changing repository behavior:
 2. Update examples only when they remain valid against source.
 3. Update `modules/secrets.example/<host>.nix` when a host consumes a new or renamed secret.
 4. Keep historical investigation notes as history; add a superseding note instead of rewriting incident timelines.
-
-Verified against source on May 26, 2026.
