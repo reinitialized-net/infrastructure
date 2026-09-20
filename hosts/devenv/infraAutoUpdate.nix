@@ -1091,6 +1091,8 @@ in
     "d ${secretsDir} 0750 rnetadmin wheel -"
     "d ${logDir} 0750 rnetadmin rnetadmin -"
     "d ${runDir} 0700 rnetadmin rnetadmin -"
+    # Editing convenience: ~/secrets points at the external overlay (outside the flake snapshot).
+    "L+ /home/develop/projects/reinitialized.net/infrastructure/modules/secrets - - - - ${secretsDir}"
   ];
 
   system.activationScripts.infratainerSecrets = {
