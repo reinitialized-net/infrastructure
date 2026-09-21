@@ -478,7 +478,7 @@
       "automerge": false
     },
     {
-      "description": "Label OmniRoute image updates by service.",
+      "description": "Label CLIProxyAPI image updates by service.",
       "matchManagers": [
         "custom.regex"
       ],
@@ -486,11 +486,11 @@
         "docker"
       ],
       "matchPackageNames": [
-        "diegosouzapw/omniroute"
+        "eceasy/cli-proxy-api"
       ],
       "addLabels": [
         "container",
-        "service:omniroute"
+        "service:cliproxyapi"
       ],
       "automerge": false
     },

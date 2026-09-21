@@ -36,7 +36,7 @@ PUBLIC = (
 # Configured ingress plus common accidental datastore/daemon/management ports.
 # This is deliberately bounded, not an all-port or UDP scan.
 PORTS = (22, 25, 53, 80, 143, 443, 465, 587, 993, 995, 1024, 1025,
-         1027, 1028, 1029, 1031, 1032, 1037, 1039, 1040, 1041, 1042, 1043, 1044,
+         1027, 1028, 1029, 1031, 1032, 1037, 1039, 1040, 1041, 1043, 1044,
          2375, 2376, 3000, 3306, 4003, 4006, 4007, 4190, 5432, 6379,
          8080, 8096, 8443, 9000, 9090, 9200, 27017, 53443)
 

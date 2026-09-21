@@ -271,32 +271,31 @@
       ];
     };
 
-    ### OmniRoute (AI gateway, public at ai.reinitialized.net via rp1)
-    omniroute = {
+    ### CLIProxyAPI (AI gateway + bundled management UI at /management.html,
+    ### public at ai.reinitialized.net via rp1)
+    cliproxyapi = {
       autoStart = true;
-      hostname = "omniroute";
-      image = "diegosouzapw/omniroute:3.8.50";
-      environment = builtins.removeAttrs config.secrets.omniroute.keys [
-        "JWT_SECRET"
-        "API_KEY_SECRET"
-        "STORAGE_ENCRYPTION_KEY"
-        "INITIAL_PASSWORD"
+      hostname = "cliproxyapi";
+      image = "eceasy/cli-proxy-api:v7.3.10";
+      cmd = [
+        "./CLIProxyAPI"
+        "-config"
+        "/CLIProxyAPI/config/config.yaml"
       ];
-      environmentFiles = [ "/var/lib/service-secrets/omniroute.env" ];
       networks = [
         "backend"
       ];
       ports = [
-        "10.255.0.4:1041:20128/tcp" # Dashboard + OpenAI-compatible API
-        "10.255.0.4:1042:20132/tcp" # Live dashboard WebSocket
+        "10.255.0.4:1041:8317/tcp" # OpenAI/Claude/Gemini-compatible API + management UI
       ];
       volumes = [
-        "omniroute_data:/app/data"
+        # config.yaml holds api-keys and the management secret; the management UI
+        # writes it back, so it is a bind-mounted directory, not an env file.
+        "/var/lib/service-secrets/cliproxyapi:/CLIProxyAPI/config"
+        "cliproxyapi_auth:/root/.cli-proxy-api"
       ];
       extraOptions = [
-        # ponytail: sized for dashboard/light chat; raise --memory and OMNIROUTE_MEMORY_MB for coding agents
-        "--memory=3g"
-        "--stop-timeout=40"
+        "--memory=1g"
       ];
     };
 
