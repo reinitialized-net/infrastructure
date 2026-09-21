@@ -5,7 +5,8 @@ settings (`camera_14_2` = Geckos1, `camera_14_3` = Geckos2, `camera_14_5` =
 Geckos3, `camera_14_14` = Geckos4).** Interim retention remains 3 days continuous,
 7 days motion, and 30 days active-gecko events. Geckos3 moved to `10.1.14.4`; its
 original camera ID and secret names remain stable to preserve recording history.
-Geckos4 is at `10.1.14.14`. Object detection is temporarily disabled on all four
+Geckos4 is at DHCP-reserved `10.1.14.5`; its historical `camera_14_14` ID remains
+stable to preserve recording history. Object detection is temporarily disabled on all four
 by owner request while continuous recording is qualified; re-enable it for later
 model testing. No new object events or boxed object snapshots are generated while
 detection is paused. The section

@@ -42,7 +42,7 @@ containers cannot use them to bypass authentication. WebRTC and RTSP are not
 published. Access requires the existing internal network or VPN path.
 
 Since 2026-09-17 the recorded cameras are TP-Link Tapo units on the
-untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`, `10.1.14.4`, and `10.1.14.14`),
+untrusted VLAN 14 (`10.1.14.2`, `10.1.14.3`, `10.1.14.4`, and `10.1.14.5`),
 pulled over RTSP TCP with a dedicated camera account; see
 [the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md).
 The original IP Webcam device at `10.1.13.37` is permanently offline; its camera
@@ -50,12 +50,15 @@ entry stays disabled with a ten-year motion retention so its footage remains
 viewable (Frigate deletes recordings of cameras removed from the config). The
 Tapo cameras appear in the UI as `Geckos1` through `Geckos4`. Geckos3 moved
 from `.5` to `.4`; its `camera_14_5` ID and credential variable names remain
-stable to preserve history. Geckos4 uses `FRIGATE_CAMERA_14_14_USER` and
-`FRIGATE_CAMERA_14_14_PASSWORD` in the runtime environment file. On 2026-09-18 the
+stable to preserve history. On 2026-09-20 Geckos4 moved from `.14` to its
+DHCP-reserved `.5`; its `camera_14_14` ID and `FRIGATE_CAMERA_14_14_USER` /
+`FRIGATE_CAMERA_14_14_PASSWORD` names remain stable in the runtime environment
+file to preserve history and the existing camera credential. On 2026-09-18 the
 02:30 fleet deploy reverted apps3 to `origin/indev` because the gecko commits
-were only local; a local `rebuildHost` is not durable until pushed. Assign DHCP
-reservations and provision dedicated stream credentials on cameras that support
-them; restrict camera network access to the recorder and administration clients.
+were only local; a local `rebuildHost` is not durable until pushed. As verified
+on 2026-09-20, Technitium reserves Geckos1–4 at `10.1.14.2` through `10.1.14.5`
+respectively. Preserve those reservations and the dedicated stream credentials;
+restrict camera network access to the recorder and administration clients.
 
 ## Four-camera performance (2026-09-19)
 

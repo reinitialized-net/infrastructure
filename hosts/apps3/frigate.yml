@@ -38,9 +38,9 @@ go2rtc:
     camera_14_5_sub:
       - "rtsp://{FRIGATE_CAMERA_14_5_USER}:{FRIGATE_CAMERA_14_5_PASSWORD}@10.1.14.4:554/stream2"
     camera_14_14:
-      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.14:554/stream1"
+      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream1"
     camera_14_14_sub:
-      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.14:554/stream2"
+      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream2"
   ffmpeg:
     # IP Webcam delivers periodic keyframes over UDP but loses them over TCP.
     # Force UDP only on the camera leg; Frigate's local restream remains TCP.

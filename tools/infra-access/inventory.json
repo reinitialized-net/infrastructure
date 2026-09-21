@@ -289,31 +289,32 @@
       },
       "model": "Tapo C121"
     },
-    "camera-10-1-14-14": {
+    "camera-10-1-14-5": {
       "kind": "camera",
       "probes": [
         {
-          "host": "10.1.14.14",
+          "host": "10.1.14.5",
           "port": 443
         },
         {
-          "host": "10.1.14.14",
+          "host": "10.1.14.5",
           "port": 554
         },
         {
-          "host": "10.1.14.14",
+          "host": "10.1.14.5",
           "port": 2020
         }
       ],
       "qualification": {
-        "checked": "2026-09-19",
-        "access": "ONVIF Administrator account authenticated; SetHostname with original value accepted and readback preserved; media access remains working"
+        "checked": "2026-09-20",
+        "access": "ONVIF Administrator account authenticated at DHCP-reserved 10.1.14.5; device identified as the expected Tapo C121"
       },
       "onvif": {
-        "endpoint": "http://10.1.14.14:2020/onvif/device_service",
+        "endpoint": "http://10.1.14.5:2020/onvif/device_service",
         "credential": "camera-10-1-14-14"
       },
-      "model": "Tapo C121"
+      "model": "Tapo C121",
+      "notes": "Geckos4 moved from 10.1.14.14 to DHCP-reserved 10.1.14.5; the credential profile name is retained from the previous address."
     },
     "hv1": {
       "kind": "proxmox",
