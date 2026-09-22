@@ -46,6 +46,9 @@ in
       # Four camera pipelines hit the previous 2 GiB limit during startup.
       "--memory=3g"
       "--cpus=4"
+      # Frigate's recommended grace period; the default 10 s SIGKILLed it
+      # mid-shutdown and left docker-frigate failed (exit 137).
+      "--stop-timeout=30"
       # API availability alone missed both capture and keyframe outages.
       # Mark unhealthy without introducing automatic camera restart loops.
       "--health-cmd=python3 /opt/frigate/check_camera.py"

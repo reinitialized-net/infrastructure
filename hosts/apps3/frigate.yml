@@ -12,14 +12,8 @@ networking:
   listen:
     internal: "127.0.0.1:5000"
 go2rtc:
-  # Share one camera connection and copy H.264 without encoding. IP Webcam's
-  # RTSP SDP advertises stale landscape SPS for portrait video. Reading MPEG-TS
-  # lets go2rtc derive live dimensions from the actual in-band video headers.
-  # Separate on-demand connections were faster but failed camera recovery
-  # qualification. Do not reintroduce connection churn without retesting it.
+  # Share one camera connection per stream and copy H.264 without encoding.
   streams:
-    camera_13_37:
-      - "ffmpeg:{FRIGATE_CAMERA_13_37_URL}#input=rtsp/udp#video=copy"
     # TP-Link Tapo cameras on the untrusted VLAN 14. Credentials are the
     # per-camera "Camera Account" from the Tapo app, URL-encoded in the env
     # file. RTSP over TCP: the stateful VLAN firewall has no RTSP helper, so
@@ -41,11 +35,6 @@ go2rtc:
       - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream1"
     camera_14_14_sub:
       - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream2"
-  ffmpeg:
-    # IP Webcam delivers periodic keyframes over UDP but loses them over TCP.
-    # Force UDP only on the camera leg; Frigate's local restream remains TCP.
-    rtsp/udp: -fflags nobuffer -flags low_delay -timeout {timeout} -user_agent go2rtc/ffmpeg -rtsp_transport udp -i {input}
-    output: -f mpegts -
   api:
     listen: "127.0.0.1:1984"
   rtsp:
@@ -96,55 +85,6 @@ camera_groups:
     icon: LuBug
     order: 0
 cameras:
-  camera_13_37:
-    # Replaced by the VLAN 14 cameras on 2026-09-17. The device is permanently
-    # offline. Kept disabled (not removed) so its ~500 GB of retained footage
-    # stays viewable; Frigate deletes recordings of cameras missing from config.
-    enabled: false
-    record:
-      motion:
-        days: 3650
-    objects:
-      track: [] # The gecko model has no "person"; silence the startup warning.
-    motion:
-      # The default 100-pixel height reduces this portrait view to 56x100,
-      # losing small geckos. 180x320 motion analysis preserves the tested small
-      # targets with much less processing time than using the full 360x640.
-      frame_height: 320
-      # Requalified against the current enclosure: 15/5 still missed two of
-      # five small, low-contrast synthetic targets. Watch reflection noise.
-      threshold: 10
-      contour_area: 3
-      improve_contrast: true
-    live:
-      streams:
-        "Full resolution": camera_13_37
-    ffmpeg:
-      output_args:
-        # Smaller files also bound Frigate's HLS playback chunks, reducing the
-        # data fetched for each seek. Cut only at source keyframes; never encode.
-        record: -f segment -segment_time 5 -segment_format mp4 -reset_timestamps 1 -strftime 1 -c copy -an
-      inputs:
-        - path: rtsp://127.0.0.1:8554/camera_13_37
-          input_args: preset-rtsp-restream
-          roles: [record]
-        - path: "{FRIGATE_CAMERA_13_37_SNAPSHOT_URL}"
-          # IP Webcam serves a fresh JPEG per request. Pace requests before
-          # decoding: output fps alone still decodes every H.264 source frame.
-          # Keep image2's 1/5-second timestamps. Wall-clock timestamps caused
-          # this looped input to deliver bursts that overflowed capture.
-          input_args: -re -loop 1 -framerate 5 -f image2
-          roles: [detect]
-    detect:
-      # Keep motion analysis small; live view uses the original go2rtc stream.
-      # Only five camera snapshots per second are decoded; recording and live
-      # viewing copy the independent original H.264 stream at its source FPS.
-      # COCO has no gecko class. Motion is evaluated independently and still
-      # controls recording; avoid blocking its frames on unrelated inference.
-      enabled: false
-      width: 360
-      height: 640
-      fps: 5
   # Gecko enclosure template. Everything gecko-specific lives on this first
   # camera and is merged into the others with "<<: *gecko_camera"; each of
   # those overrides only its own streams. New gecko cameras copy camera_14_3.
@@ -156,16 +96,22 @@ cameras:
         "Sub stream": camera_14_2_sub
     ffmpeg:
       inputs:
-        # Detect from the 1440p stream: geckos are ~100 px there and ~25 px on
-        # the 640x360 sub stream. Decoding 1440p at 20 fps measured ~0.27 core.
+        # Record the 2560x1440 main stream by copy: full quality, no decode.
         - path: rtsp://127.0.0.1:8554/camera_14_2
           input_args: preset-rtsp-restream
-          roles: [detect, record]
+          roles: [record]
+        # Frigate requires a detect input; the sub stream keeps capture and the
+        # health check alive for ~0.04 core versus ~0.28 core for the 1440p stream
+        # (measured 2026-09-22 on apps3; four 1440p decodes starved the 4 vCPUs).
+        # Gecko detection needs the main stream at 1280x720 (geckos ~100 px there,
+        # ~25 px here): move detect back to it before re-enabling detection.
+        - path: rtsp://127.0.0.1:8554/camera_14_2_sub
+          input_args: preset-rtsp-restream
+          roles: [detect]
     detect:
-      # Paused for four-camera recording qualification; re-enable for model tests.
       enabled: false
-      width: 1280
-      height: 720
+      width: 640
+      height: 360
       fps: 5
       stationary:
         # 10 s without movement (at 5 fps) marks a gecko stationary, which ends
@@ -173,6 +119,9 @@ cameras:
         threshold: 50
         classifier: true
     motion:
+      # Off since 2026-09-22: recording is continuous, so motion analysis only
+      # cost CPU. Settings below are for when gecko detection returns.
+      enabled: false
       # Motion only chooses where the detector looks. Half-resolution analysis
       # keeps a resting gecko's small first movements visible.
       frame_height: 360
@@ -205,12 +154,10 @@ cameras:
         default: 30
     record:
       enabled: true
-      # Retain only footage where a tracked gecko is active (moving); no plain
-      # motion retention on gecko cameras. Stationary geckos are still tracked
-      # so their next movement records without waiting for a fresh detection.
-      # Interim (2026-09-22): keep one week of everything while the gecko model is
-      # rebuilt on day and night footage; ~6 GB/day/camera (~170 GB/week for four
-      # cameras). Restore both to 0 afterwards.
+      # Required: record 24/7 and keep at least one week of everything.
+      # Measured ~7 GB/day/camera, ~200 GB/week for four cameras; the storage
+      # guard in frigate.nix stops Frigate below 100 GiB free, so recheck
+      # capacity before raising retention or adding cameras.
       continuous:
         days: 7
       motion:
@@ -235,7 +182,10 @@ cameras:
       inputs:
         - path: rtsp://127.0.0.1:8554/camera_14_3
           input_args: preset-rtsp-restream
-          roles: [detect, record]
+          roles: [record]
+        - path: rtsp://127.0.0.1:8554/camera_14_3_sub
+          input_args: preset-rtsp-restream
+          roles: [detect]
   camera_14_5:
     <<: *gecko_camera
     friendly_name: Geckos3
@@ -247,7 +197,10 @@ cameras:
       inputs:
         - path: rtsp://127.0.0.1:8554/camera_14_5
           input_args: preset-rtsp-restream
-          roles: [detect, record]
+          roles: [record]
+        - path: rtsp://127.0.0.1:8554/camera_14_5_sub
+          input_args: preset-rtsp-restream
+          roles: [detect]
   camera_14_14:
     <<: *gecko_camera
     friendly_name: Geckos4
@@ -259,4 +212,7 @@ cameras:
       inputs:
         - path: rtsp://127.0.0.1:8554/camera_14_14
           input_args: preset-rtsp-restream
-          roles: [detect, record]
+          roles: [record]
+        - path: rtsp://127.0.0.1:8554/camera_14_14_sub
+          input_args: preset-rtsp-restream
+          roles: [detect]

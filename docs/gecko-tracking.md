@@ -2,8 +2,8 @@
 
 **Status (2026-09-19): four Tapo cameras share the gecko detector and recording
 settings (`camera_14_2` = Geckos1, `camera_14_3` = Geckos2, `camera_14_5` =
-Geckos3, `camera_14_14` = Geckos4).** Interim retention remains 7 days continuous,
-7 days motion, and 30 days active-gecko events. Geckos3 moved to `10.1.14.4`; its
+Geckos3, `camera_14_14` = Geckos4).** Retention is 7 days continuous (required
+24/7 recording) and 30 days active-gecko events; motion detection is off. Geckos3 moved to `10.1.14.4`; its
 original camera ID and secret names remain stable to preserve recording history.
 Geckos4 is at DHCP-reserved `10.1.14.5`; its historical `camera_14_14` ID remains
 stable to preserve recording history. Object detection is temporarily disabled on all four
@@ -43,8 +43,7 @@ asked for once a gecko class exists, so no Frigate source is patched:
   opset 17, no built-in NMS) loaded by the existing `openvino_cpu` plugin, which
   now accepts `yolo-generic` in addition to SSD and still only overrides the
   CPU thread scheduling. Frigate runs one model, so every camera with
-  detection enabled sees only the `gecko` label; the disabled `camera_13_37`
-  logs a harmless "person not supported" warning.
+  detection enabled sees only the `gecko` label.
 - **Grouping.** The gecko-specific configuration is written once on
   `camera_14_2` as a YAML anchor (`&gecko_camera`) and merged into
   `camera_14_3` with `<<: *gecko_camera`, which overrides only its own streams.
@@ -111,9 +110,10 @@ The two `objects.filters.gecko` values (`min_score: 0.45`, `threshold: 0.6`)
 were chosen from these distributions: true geckos mostly score 0.7–0.9, the
 remaining texture hits 0.45–0.58.
 
-Interim retention (2026-09-22): the gecko cameras keep 7 days of continuous
-and 7 days of motion footage while dusk, IR-transition and heat-lamp footage is
-collected for round 5; restore both to 0 in `frigate.yml` afterwards.
+Retention (2026-09-22): the gecko cameras keep 7 days of continuous footage.
+This is now an owner requirement, so do not restore it to 0 when detection
+returns. Re-enabling detection also requires moving the detect role back to
+the main stream at 1280x720 and re-enabling motion.
 
 Retraining: the docker images and scripts are described in the memory note
 on devenv; new gecko cameras should contribute a night of footage through the

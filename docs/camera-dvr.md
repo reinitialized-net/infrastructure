@@ -1,12 +1,14 @@
 # Camera DVR
 
-As of 2026-09-19 all four Tapo gecko cameras share a locally trained one-class
-model configuration, 5 fps analysis, boxed snapshots, and retention of 7 days continuous,
-7 days motion, and 30 days active-gecko events. Object detection is paused by
-owner request; continuous and motion recording remain enabled. See
-[Gecko detection and recording](gecko-tracking.md) for the design, training
-data and results. The historical motion-only policy, motion sensitivity and
-playback qualification below describe the retired `camera_13_37`.
+As of 2026-09-22 the four Tapo gecko cameras record 24/7: the 2560x1440 main
+stream is copied without re-encoding and kept for 7 days continuous (a
+requirement, not an interim setting), plus 30 days of active-gecko events.
+Object detection and motion detection are off by owner request; detect reads
+the 640x360 sub stream only because Frigate requires a detect input. See
+[Gecko detection and recording](gecko-tracking.md) for the detector design,
+training data and results. The historical motion-only policy, motion
+sensitivity and playback qualification below describe `camera_13_37`, which
+was removed from the configuration together with its footage on 2026-09-22.
 
 ## Selection (2026-09-12)
 
@@ -81,8 +83,13 @@ restrict camera network access to the recorder and administration clients.
   Increasing `detect.fps` cannot create missing camera frames or inference capacity.
 - Keep detection disabled for now (`detect.enabled: false` in the shared anchor).
   Continue main-stream recording/live video without transcoding, and retain at
-  least three days continuously. Motion and previews still use the 5 fps analysis
-  path. Do not interpret its FPS as the recording FPS.
+  least seven days continuously. Since 2026-09-22 motion is disabled and the
+  detect role reads the sub stream: decoding the 1440p main stream measured
+  ~0.28 core per camera against ~0.04 for the sub stream, and the four 1440p
+  decodes held Frigate at ~2.1 of the 4 vCPUs with ~27% CPU pressure and
+  "high FFmpeg CPU usage" warnings (the UI threshold is 20% of a core).
+  Move detect back to the main stream at 1280x720 before re-enabling gecko
+  detection. Do not interpret the 5 fps analysis rate as the recording FPS.
 - The previous 2 GiB container limit registered thousands of memory-limit hits
   without OOM kills. Raise it to 3 GiB on the 8 GiB host to leave startup and
   four-camera headroom; preserve the four-CPU cap and 100 GiB storage guard.
@@ -582,6 +589,17 @@ free space. This protects other services and preserves existing footage rather
 than silently deleting recordings earlier than the requested window. If it
 trips, expand/free storage, investigate growth, and start `docker-frigate` again.
 The guard cannot reserve capacity against other services writing concurrently.
+
+On 2026-09-22 at 15:57 the guard tripped (99.9 GiB free) and the camera site
+returned 502 until 16:57. Raising gecko continuous retention to 7 days needs
+~200 GB at ~7 GB/day/camera, which the remaining space above the reserve could
+not hold. The owner chose to delete the retired `camera_13_37` footage
+(~512 GB, 64,118 recording rows) rather than grow the disk; afterwards 601 GB
+was free. The pre-deletion database is root-only under
+`/var/lib/frigate-deployment/20260922-retire-camera_13_37/`. Recalculate
+capacity before raising retention or adding cameras. Growing the `coldData`
+disk on hv1 (`qm resize 207 scsi1`, then `resize2fs /dev/sda` online) is the
+non-destructive alternative.
 Exports are not automatically expired by Frigate retention; remove/export them
 to archive deliberately. Do not rely on the recorder as the only incident copy.
 
@@ -590,8 +608,7 @@ to archive deliberately. Do not rely on the recorder as the only incident copy.
 `hosts/apps3/frigate.yml` is authoritative and is installed at every service
 start. UI configuration changes are temporary until reflected in that file.
 The root-owned mode-0600 `/var/lib/service-secrets/frigate.env` on apps3 contains
-`FRIGATE_CAMERA_13_37_URL`, `FRIGATE_CAMERA_13_37_SNAPSHOT_URL` (the camera's
-HTTP `/shot.jpg` endpoint), `FRIGATE_CAMERA_14_2_USER`, `FRIGATE_CAMERA_14_2_PASSWORD`,
+`FRIGATE_CAMERA_14_2_USER`, `FRIGATE_CAMERA_14_2_PASSWORD`,
 `FRIGATE_CAMERA_14_3_USER`, `FRIGATE_CAMERA_14_3_PASSWORD`, `FRIGATE_CAMERA_14_5_USER`,
 `FRIGATE_CAMERA_14_5_PASSWORD` (URL-encoded Tapo
 Camera Accounts; see [the VLAN 14 investigation](investigations/frigate-untrusted-vlan-cameras.md)),
