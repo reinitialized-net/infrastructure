@@ -35,6 +35,12 @@ There is no implemented centralized certificate distribution service in the curr
 
 See [Mesh Network Port Reference](../mesh-network-ports.md) for the full allocation table.
 
+DHCP scopes and reserved leases are not replicated between the two nodes. OPNsense
+relays each client request to both, and whichever offer arrives first wins, so a
+reservation present on only one node is unreliable: on 2026-09-22 `dnsTwo` had no
+`untrusted` reservations and leased the Geckos1 camera `10.1.14.9` instead of its
+reserved `10.1.14.2`. Add or change reservations on both nodes.
+
 ## ACME Certificates
 
 `apps1.nix` and `apps2.nix` both configure `security.acme`:

@@ -59,8 +59,12 @@ file to preserve history and the existing camera credential. On 2026-09-18 the
 02:30 fleet deploy reverted apps3 to `origin/indev` because the gecko commits
 were only local; a local `rebuildHost` is not durable until pushed. As verified
 on 2026-09-20, Technitium reserves Geckos1–4 at `10.1.14.2` through `10.1.14.5`
-respectively. Preserve those reservations and the dedicated stream credentials;
-restrict camera network access to the recorder and administration clients.
+respectively. Both `dnsOne` and `dnsTwo` answer VLAN 14 DHCP independently, so
+the reservations must exist on both nodes; on 2026-09-22 `dnsTwo` had none, won
+the DISCOVER race and leased Geckos1 `10.1.14.9`, taking it out of Frigate for
+hours. Preserve those reservations on both nodes and the dedicated stream
+credentials; restrict camera network access to the recorder and administration
+clients.
 
 ## Four-camera performance (2026-09-19)
 
