@@ -2,7 +2,7 @@
 
 **Status (2026-09-19): four Tapo cameras share the gecko detector and recording
 settings (`camera_14_2` = Geckos1, `camera_14_3` = Geckos2, `camera_14_5` =
-Geckos3, `camera_14_14` = Geckos4).** Interim retention remains 3 days continuous,
+Geckos3, `camera_14_14` = Geckos4).** Interim retention remains 7 days continuous,
 7 days motion, and 30 days active-gecko events. Geckos3 moved to `10.1.14.4`; its
 original camera ID and secret names remain stable to preserve recording history.
 Geckos4 is at DHCP-reserved `10.1.14.5`; its historical `camera_14_14` ID remains
@@ -111,7 +111,7 @@ The two `objects.filters.gecko` values (`min_score: 0.45`, `threshold: 0.6`)
 were chosen from these distributions: true geckos mostly score 0.7–0.9, the
 remaining texture hits 0.45–0.58.
 
-Interim retention (2026-09-18): the gecko cameras keep 3 days of continuous
+Interim retention (2026-09-22): the gecko cameras keep 7 days of continuous
 and 7 days of motion footage while dusk, IR-transition and heat-lamp footage is
 collected for round 5; restore both to 0 in `frigate.yml` afterwards.
 

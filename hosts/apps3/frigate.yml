@@ -208,10 +208,11 @@ cameras:
       # Retain only footage where a tracked gecko is active (moving); no plain
       # motion retention on gecko cameras. Stationary geckos are still tracked
       # so their next movement records without waiting for a fresh detection.
-      # Interim (2026-09-18): keep everything while the gecko model is rebuilt on
-      # day and night footage; ~6 GB/day/camera. Restore both to 0 afterwards.
+      # Interim (2026-09-22): keep one week of everything while the gecko model is
+      # rebuilt on day and night footage; ~6 GB/day/camera (~170 GB/week for four
+      # cameras). Restore both to 0 afterwards.
       continuous:
-        days: 3
+        days: 7
       motion:
         days: 7
       alerts:

@@ -1,7 +1,7 @@
 # Camera DVR
 
 As of 2026-09-19 all four Tapo gecko cameras share a locally trained one-class
-model configuration, 5 fps analysis, boxed snapshots, and retention of 3 days continuous,
+model configuration, 5 fps analysis, boxed snapshots, and retention of 7 days continuous,
 7 days motion, and 30 days active-gecko events. Object detection is paused by
 owner request; continuous and motion recording remain enabled. See
 [Gecko detection and recording](gecko-tracking.md) for the design, training
