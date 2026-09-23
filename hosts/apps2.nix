@@ -276,7 +276,7 @@
     cliproxyapi = {
       autoStart = true;
       hostname = "cliproxyapi";
-      image = "eceasy/cli-proxy-api:v7.3.12";
+      image = "eceasy/cli-proxy-api:v7.3.15";
       cmd = [
         "./CLIProxyAPI"
         "-config"
