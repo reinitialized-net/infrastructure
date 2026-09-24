@@ -95,7 +95,7 @@
     hudu1 = {
       autoStart = true;
       hostname = "hudu1";
-      image = "hududocker/hudu:2.46.0";
+      image = "hududocker/hudu:2.46.1";
       environmentFiles = [ "/var/lib/service-secrets/hudu.env" ];
       networks = [
         "backend"
@@ -112,7 +112,7 @@
     hudu2 = {
       autoStart = true;
       hostname = "hudu2";
-      image = "hududocker/hudu:2.46.0";
+      image = "hududocker/hudu:2.46.1";
       environmentFiles = [ "/var/lib/service-secrets/hudu.env" ];
       cmd = [
         "bundle"
