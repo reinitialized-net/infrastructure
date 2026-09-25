@@ -3,7 +3,7 @@
 **Status (2026-09-19): four Tapo cameras share the gecko detector and recording
 settings (`camera_14_2` = Geckos1, `camera_14_3` = Geckos2, `camera_14_5` =
 Geckos3, `camera_14_14` = Geckos4).** Retention is 7 days continuous (required
-24/7 recording) and 30 days active-gecko events; motion detection is off. Geckos3 moved to `10.1.14.4`; its
+24/7 recording) and 30 days active-gecko events; motion detection drives the timeline only. Geckos3 moved to `10.1.14.4`; its
 original camera ID and secret names remain stable to preserve recording history.
 Geckos4 is at DHCP-reserved `10.1.14.5`; its historical `camera_14_14` ID remains
 stable to preserve recording history. Object detection is temporarily disabled on all four

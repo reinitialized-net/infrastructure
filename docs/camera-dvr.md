@@ -3,8 +3,13 @@
 As of 2026-09-22 the four Tapo gecko cameras record 24/7: the 2560x1440 main
 stream is copied without re-encoding and kept for 7 days continuous (a
 requirement, not an interim setting), plus 30 days of active-gecko events.
-Object detection and motion detection are off by owner request; detect reads
-the 640x360 sub stream only because Frigate requires a detect input. See
+Object detection is off by owner request. Motion detection runs on the
+640x360 sub stream (the detect input) to drive the timeline's motion bars; its
+thresholds were retuned on 2026-09-24 so still enclosures register nothing
+(see `hosts/apps3/frigate.yml`). The go2rtc camera sources use `#timeout=30`:
+with go2rtc's 5 s default, the brief Wi-Fi blips that hit all four cameras at
+once left ~105 s recording holes until Frigate's fixed 120 s record watchdog
+restarted ffmpeg. See
 [Gecko detection and recording](gecko-tracking.md) for the detector design,
 training data and results. The historical motion-only policy, motion
 sensitivity and playback qualification below describe `camera_13_37`, which
@@ -62,7 +67,13 @@ on 2026-09-20, Technitium reserves Geckos1–4 at `10.1.14.2` through `10.1.14.5
 respectively. Both `dnsOne` and `dnsTwo` answer VLAN 14 DHCP independently, so
 the reservations must exist on both nodes; on 2026-09-22 `dnsTwo` had none, won
 the DISCOVER race and leased Geckos1 `10.1.14.9`, taking it out of Frigate for
-hours. Preserve those reservations on both nodes and the dedicated stream
+hours. Later that evening Geckos1 kept `.2` but twice stopped answering for
+about three minutes (17:57, 21:22–21:25 CDT) while still associated to `wap1`,
+then recovered without intervention. It is the weakest camera link (−68 dBm,
+39 Mbps PHY versus −62 dBm and 52–72 Mbps for the others on 2.4 GHz channel 6)
+and the only one that disconnected from Wi-Fi that day (eight times); an ARP probe
+found no duplicate address. Improve its placement or signal before suspecting
+Frigate. Preserve those reservations on both nodes and the dedicated stream
 credentials; restrict camera network access to the recorder and administration
 clients.
 

@@ -18,23 +18,27 @@ go2rtc:
     # per-camera "Camera Account" from the Tapo app, URL-encoded in the env
     # file. RTSP over TCP: the stateful VLAN firewall has no RTSP helper, so
     # camera-initiated UDP RTP would not pass. stream1 records, stream2 detects.
+    # timeout=30 replaces go2rtc's 5 s read deadline: shared Wi-Fi blips of
+    # 5-15 s dropped all four producers at once, and Frigate's record ffmpeg then
+    # sat on the dead restream until its fixed 120 s watchdog (~105 s holes).
+    # TCP rides out the blip instead. Fragment params also disable backchannel.
     camera_14_2:
-      - "rtsp://{FRIGATE_CAMERA_14_2_USER}:{FRIGATE_CAMERA_14_2_PASSWORD}@10.1.14.2:554/stream1"
+      - "rtsp://{FRIGATE_CAMERA_14_2_USER}:{FRIGATE_CAMERA_14_2_PASSWORD}@10.1.14.2:554/stream1#timeout=30"
     camera_14_2_sub:
-      - "rtsp://{FRIGATE_CAMERA_14_2_USER}:{FRIGATE_CAMERA_14_2_PASSWORD}@10.1.14.2:554/stream2"
+      - "rtsp://{FRIGATE_CAMERA_14_2_USER}:{FRIGATE_CAMERA_14_2_PASSWORD}@10.1.14.2:554/stream2#timeout=30"
     camera_14_3:
-      - "rtsp://{FRIGATE_CAMERA_14_3_USER}:{FRIGATE_CAMERA_14_3_PASSWORD}@10.1.14.3:554/stream1"
+      - "rtsp://{FRIGATE_CAMERA_14_3_USER}:{FRIGATE_CAMERA_14_3_PASSWORD}@10.1.14.3:554/stream1#timeout=30"
     camera_14_3_sub:
-      - "rtsp://{FRIGATE_CAMERA_14_3_USER}:{FRIGATE_CAMERA_14_3_PASSWORD}@10.1.14.3:554/stream2"
+      - "rtsp://{FRIGATE_CAMERA_14_3_USER}:{FRIGATE_CAMERA_14_3_PASSWORD}@10.1.14.3:554/stream2#timeout=30"
     # Stable camera ID preserves Geckos3 history after its move from .5 to .4.
     camera_14_5:
-      - "rtsp://{FRIGATE_CAMERA_14_5_USER}:{FRIGATE_CAMERA_14_5_PASSWORD}@10.1.14.4:554/stream1"
+      - "rtsp://{FRIGATE_CAMERA_14_5_USER}:{FRIGATE_CAMERA_14_5_PASSWORD}@10.1.14.4:554/stream1#timeout=30"
     camera_14_5_sub:
-      - "rtsp://{FRIGATE_CAMERA_14_5_USER}:{FRIGATE_CAMERA_14_5_PASSWORD}@10.1.14.4:554/stream2"
+      - "rtsp://{FRIGATE_CAMERA_14_5_USER}:{FRIGATE_CAMERA_14_5_PASSWORD}@10.1.14.4:554/stream2#timeout=30"
     camera_14_14:
-      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream1"
+      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream1#timeout=30"
     camera_14_14_sub:
-      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream2"
+      - "rtsp://{FRIGATE_CAMERA_14_14_USER}:{FRIGATE_CAMERA_14_14_PASSWORD}@10.1.14.5:554/stream2#timeout=30"
   api:
     listen: "127.0.0.1:1984"
   rtsp:
@@ -100,8 +104,8 @@ cameras:
         - path: rtsp://127.0.0.1:8554/camera_14_2
           input_args: preset-rtsp-restream
           roles: [record]
-        # Frigate requires a detect input; the sub stream keeps capture and the
-        # health check alive for ~0.04 core versus ~0.28 core for the 1440p stream
+        # Frigate requires a detect input; the sub stream feeds motion and keeps
+        # capture and the health check alive for ~0.04 core versus ~0.28 core for the 1440p stream
         # (measured 2026-09-22 on apps3; four 1440p decodes starved the 4 vCPUs).
         # Gecko detection needs the main stream at 1280x720 (geckos ~100 px there,
         # ~25 px here): move detect back to it before re-enabling detection.
@@ -119,14 +123,18 @@ cameras:
         threshold: 50
         classifier: true
     motion:
-      # Off since 2026-09-22: recording is continuous, so motion analysis only
-      # cost CPU. Settings below are for when gecko detection returns.
-      enabled: false
-      # Motion only chooses where the detector looks. Half-resolution analysis
-      # keeps a resting gecko's small first movements visible.
-      frame_height: 360
-      threshold: 20
-      contour_area: 10
+      # Drives the review timeline's motion bars. Tuned 2026-09-24 with Frigate's
+      # own detector on 640x360 sub-stream and downscaled recordings (night and
+      # day, all four cameras): gecko movement on branches/decor registers,
+      # still enclosures stay at zero. The previous 360/20/10 fired in 83-100% of
+      # segments on IR/compression noise. People in view, the IR/colour switch
+      # and the first seconds after a restart still register. Do not set
+      # skip_motion_threshold: in 0.18 it never relearns the background and
+      # suppresses all motion from startup.
+      enabled: true
+      frame_height: 180
+      threshold: 40
+      contour_area: 30
       improve_contrast: true
       mask:
         timestamp:
