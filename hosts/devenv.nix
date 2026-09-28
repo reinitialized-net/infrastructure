@@ -10,6 +10,27 @@ let
     inherit system;
     config = pkgs.config;
   };
+
+  # Stdio GitHub MCP server shared by Claude Code and Codex. The PAT stays in a
+  # user-owned file outside the flake and out of both clients' config files.
+  githubMcp = pkgs.writeShellApplication {
+    name = "github-mcp";
+    runtimeInputs = [ pkgsUnstable.github-mcp-server ];
+    text = ''
+      token_file="''${GITHUB_MCP_TOKEN_FILE:-''${XDG_CONFIG_HOME:-$HOME/.config}/github-mcp/token}"
+      if [ ! -r "$token_file" ]; then
+        echo "github-mcp: token file not readable: $token_file" >&2
+        exit 1
+      fi
+      GITHUB_PERSONAL_ACCESS_TOKEN="$(head -n 1 "$token_file" | tr -d '\r\n')"
+      if [ -z "$GITHUB_PERSONAL_ACCESS_TOKEN" ]; then
+        echo "github-mcp: token file is empty: $token_file" >&2
+        exit 1
+      fi
+      export GITHUB_PERSONAL_ACCESS_TOKEN
+      exec github-mcp-server stdio "$@"
+    '';
+  };
 in
 {
   imports = [
@@ -90,6 +111,7 @@ in
     pinentry-curses
 
     pkgsUnstable.codex
+    githubMcp
     pkgsUnstable.nodejs_22
     pkgsUnstable.python3
   ];
