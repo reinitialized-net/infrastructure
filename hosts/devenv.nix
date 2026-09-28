@@ -112,6 +112,7 @@ in
 
     pkgsUnstable.codex
     githubMcp
+    pkgsUnstable.gh
     pkgsUnstable.nodejs_22
     pkgsUnstable.python3
   ];
