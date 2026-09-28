@@ -31,6 +31,19 @@ let
       exec github-mcp-server stdio "$@"
     '';
   };
+
+  # Roblox Studio's built-in MCP is a stdio bridge that must run beside Studio,
+  # so run it over SSH on the Windows workstation. Host, user, and key come from
+  # the `roblox-studio` alias in ~/.ssh/config (override: ROBLOX_STUDIO_SSH_HOST).
+  robloxStudioMcp = pkgs.writeShellApplication {
+    name = "roblox-studio-mcp";
+    runtimeInputs = [ pkgs.openssh ];
+    text = ''
+      exec ssh -T -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=30 \
+        "''${ROBLOX_STUDIO_SSH_HOST:-roblox-studio}" \
+        'cmd.exe /c "%LOCALAPPDATA%\Roblox\mcp.bat"'
+    '';
+  };
 in
 {
   imports = [
@@ -112,6 +125,7 @@ in
 
     pkgsUnstable.codex
     githubMcp
+    robloxStudioMcp
     pkgsUnstable.gh
     pkgsUnstable.nodejs_22
     pkgsUnstable.python3
