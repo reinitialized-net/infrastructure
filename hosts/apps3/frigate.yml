@@ -67,6 +67,13 @@ model:
   input_dtype: float
 detect:
   enabled: true
+ffmpeg:
+  output_args:
+    # preset-record-generic-audio-aac plus a lossless SEI strip. The C121
+    # cameras (Geckos3/4) emit malformed SEI ("type 764 size 34 truncated")
+    # that made Chromium's decoder fail on recorded playback (2026-10-02);
+    # SEI carries nothing playback needs, and the video is still copied.
+    record: -f segment -segment_time 10 -segment_format mp4 -reset_timestamps 1 -strftime 1 -c:v copy -bsf:v filter_units=remove_types=6 -c:a aac
 record:
   enabled: true
   continuous:
@@ -162,14 +169,15 @@ cameras:
         default: 30
     record:
       enabled: true
-      # Required: record 24/7 and keep at least one week of everything.
-      # Measured ~7 GB/day/camera, ~200 GB/week for four cameras; the storage
-      # guard in frigate.nix stops Frigate below 100 GiB free, so recheck
-      # capacity before raising retention or adding cameras.
+      # Required: record 24/7 and keep at least 30 days of everything.
+      # Measured ~26 GiB/day for four cameras (~800 GiB for 30 days) on the
+      # 1500G /mnt/data disk (grown 2026-10-02); the storage guard in
+      # frigate.nix stops Frigate below 100 GiB free, so recheck capacity
+      # before raising retention or adding cameras.
       continuous:
-        days: 7
+        days: 30
       motion:
-        days: 7
+        days: 30
       alerts:
         retain:
           days: 0

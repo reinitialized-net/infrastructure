@@ -1,8 +1,9 @@
 # Camera DVR
 
 As of 2026-09-22 the four Tapo gecko cameras record 24/7: the 2560x1440 main
-stream is copied without re-encoding and kept for 7 days continuous (a
-requirement, not an interim setting), plus 30 days of active-gecko events.
+stream is copied without re-encoding. Since 2026-10-02 continuous and motion
+recordings are kept for 30 days (a requirement, not an interim setting; ~26
+GiB/day, so `/mnt/data` was grown to 1500G), plus 30 days of active-gecko events.
 Object detection is off by owner request. Motion detection runs on the
 640x360 sub stream (the detect input) to drive the timeline's motion bars; its
 thresholds were retuned on 2026-09-24 so still enclosures register nothing
@@ -124,7 +125,10 @@ over one second (segment start timestamps have integer-second granularity),
 and fresh recordings were present for every camera. Sampled recordings decoded
 all 120–160 packets into the same number of frames with increasing timestamps.
 C121 streams emit malformed supplementary SEI metadata warnings, but no frame
-loss was observed in these samples; metadata was not stripped or video re-encoded.
+loss was observed in these samples. On 2026-10-02 the same SEI was found to make
+Chromium's decoder fail on recorded Geckos4 playback (Geckos1 played cleanly);
+removing SEI units losslessly fixed it, so the global record output args now
+add `-bsf:v filter_units=remove_types=6`. Video is still copied, not re-encoded.
 For variable-rate decode probes, use `-fps_mode passthrough -enc_time_base 1/90000`
 with the null sink to avoid diagnostic-output timestamp rounding warnings.
 
