@@ -87,6 +87,25 @@ class ExcludedDevice(ValueError):
     pass
 
 
+TAILNET = (ipaddress.ip_network('100.64.0.0/10'), ipaddress.ip_network('fd7a:115c:a1e0::/48'))
+
+
+def ensure_text_allowed(device, text):
+    # ponytail: accident guard for in-scope devices with excluded parts (OPNsense Tailscale), not a sandbox;
+    # arbitrary shell can still evade it.
+    lowered = text.lower()
+    if '.ts.net' in lowered or any(term.lower() in lowered for term in device.get('forbidden_terms', [])):
+        raise ExcludedDevice('Tailscale operation excluded')
+    networks = TAILNET + tuple(ipaddress.ip_network(n) for n in device.get('forbidden_networks', []))
+    for token in re.findall(r'[0-9A-Fa-f:.]{3,}', text):
+        try:
+            address = ipaddress.ip_address(token.strip('.:'))
+        except ValueError:
+            continue
+        if any(address in network for network in networks):
+            raise ExcludedDevice('Tailscale operation excluded')
+
+
 def ensure_allowed(device):
     if device.get('excluded'):
         raise ExcludedDevice('Device excluded by network access policy')
@@ -102,7 +121,7 @@ def ensure_allowed(device):
                         if host and host.rstrip('.').endswith('.ts.net'):
                             raise ExcludedDevice('Tailscale endpoint excluded')
                     else:
-                        if address in ipaddress.ip_network('100.64.0.0/10') or address in ipaddress.ip_network('fd7a:115c:a1e0::/48'):
+                        if any(address in network for network in TAILNET):
                             raise ExcludedDevice('Tailscale endpoint excluded')
                 inspect(item)
         elif isinstance(value, list):
@@ -113,6 +132,7 @@ def ensure_allowed(device):
 
 def api_request(device, method, path, body=None):
     ensure_allowed(device)
+    ensure_text_allowed(device, path + (body or b'').decode(errors='replace'))
     config = device['api']
     url = request_url(config['base_url'], path)
     credential = json.loads(private_read(credential_path(config['credential'])))
@@ -231,6 +251,7 @@ def xml_value(element):
 
 def ssh_args(device, command):
     ensure_allowed(device)
+    ensure_text_allowed(device, command)
     config = device['ssh']
     host, user = config['host'], config['user']
     if not re.fullmatch(r'[a-zA-Z0-9_.:-]+', host) or host.startswith('-') or not re.fullmatch(r'[a-zA-Z0-9_.-]+', user) or user.startswith('-'):

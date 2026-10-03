@@ -306,6 +306,21 @@ class AccessTests(unittest.TestCase):
                 connect.assert_not_called()
                 read.assert_not_called()
 
+    def test_forbidden_operations_on_partially_scoped_device(self):
+        router = {'forbidden_terms': ['tailscale', 'opt8'], 'forbidden_networks': ['192.168.1.0/24'],
+                  'ssh': {'host': '10.1.10.1', 'user': 'root', 'identity_file': '~/.ssh/test'},
+                  'api': {'base_url': 'https://10.1.10.1', 'credential': 'router'}}
+        self.assertEqual(app.ssh_args(router, 'id')[-1], 'id')
+        with patch.object(app, 'private_read') as read:
+            for command in ('service TailScale status', 'pfctl -sr | grep opt8', 'ssh 100.120.1.3',
+                            'curl http://192.168.1.93/', 'ping peer.example.ts.net', 'ping fd7a:115c:a1e0::1'):
+                with self.assertRaises(app.ExcludedDevice):
+                    app.ssh_args(router, command)
+            for path, body in (('/api/tailscale/settings/get', None), ('/api/firewall/filter/addRule', b'{"interface":"opt8"}')):
+                with self.assertRaises(app.ExcludedDevice):
+                    app.api_request(router, 'POST', path, body)
+            read.assert_not_called()
+
     def test_guest_sudo_and_excluded_hypervisor(self):
         host = {'guest_sudo': True, 'ssh': {'host': '10.1.10.21', 'user': 'infraaccess', 'identity_file': '~/.ssh/test'}}
         guest = {'guest': {'hypervisor': 'hv1', 'vmid': 208}}

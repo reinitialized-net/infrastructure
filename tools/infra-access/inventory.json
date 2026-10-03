@@ -111,8 +111,14 @@
         "known_hosts_file": "~/.config/infra-access/known_hosts"
       },
       "hostname": "router1.core.reinitialized.net",
-      "excluded": true,
-      "exclusion_reason": "Tailscale gateway itself; conservatively excluded under all Tailscale devices instruction. Existing access retained but not used."
+      "forbidden_terms": [
+        "tailscale",
+        "opt8"
+      ],
+      "forbidden_networks": [
+        "192.168.1.0/24"
+      ],
+      "restriction": "In scope since 2026-10-01 except Tailscale: no Tailscale plugin/API/service, tailscale0 (opt8) interface or rules, tailnet peers, or the 192.168.1.0/24 subnet route. CLI refuses commands/API requests naming these."
     },
     "unifi": {
       "kind": "unifi",

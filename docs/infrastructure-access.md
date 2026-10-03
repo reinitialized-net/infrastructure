@@ -9,8 +9,13 @@ records which identities actually authenticated and accepted administrative writ
 
 Leave Tailscale devices alone. Inventory entries marked `excluded` cannot be used
 for discovery, SSH, APIs, ONVIF or guest execution. This includes known LAN aliases
-of Tailscale peers and the OPNsense Tailscale gateway itself. Raw tailnet IPv4/IPv6
-addresses and `.ts.net` endpoints are also refused. Preserve these exclusions when
+of Tailscale peers. Raw tailnet IPv4/IPv6 addresses and `.ts.net` endpoints are also
+refused, including inside SSH commands and API paths/bodies.
+
+OPNsense is in scope except for Tailscale: its plugin, API and service, the
+`tailscale0` (`opt8`) interface and its rules, tailnet peers, and the
+`192.168.1.0/24` subnet route. Its inventory `forbidden_terms` and
+`forbidden_networks` make the CLI refuse commands and requests naming them. Preserve these exclusions when
 extending inventory. This is an inventory guard, not a sandbox around arbitrary
 remote shell commands; do not tunnel or invoke commands against excluded devices.
 
