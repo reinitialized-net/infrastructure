@@ -2,6 +2,15 @@
 
 Reference for container services bound on WireGuard mesh IPs (`10.255.0.0/24`). Physical services such as DNS on port 53 and mail ingress through `rp1` are noted separately where relevant.
 
+## devenv (`10.255.0.1`)
+
+| Port | Service | Protocol | Target | Description |
+|------|---------|----------|--------|-------------|
+| 1044 | `infra-renovate-dashboard-webhook` | TCP | host | Renovate Dependency Dashboard webhook |
+| 1045 | `llm-api-mesh` | TCP | `127.0.0.1:8080` | llama.cpp OpenAI-compatible API (API key required); see [devenv LLM](devenv-llm.md) |
+
+Next unused port: `1046`.
+
 ## apps1 (`10.255.0.3`)
 
 | Port | Service | Protocol | Container port | Description |
@@ -111,6 +120,7 @@ Selected nginx routes from `hosts/rp1.nix`:
 | `jaeger.in.reinitialized.net` | `http://10.255.0.3:1039` |
 | `grafana.in.reinitialized.net` | `http://10.255.0.3:1040` |
 | `prometheus.in.reinitialized.net` | `http://10.255.0.11:1029` |
+| `llm.in.reinitialized.net` (`/v1/` only) | `http://10.255.0.1:1045` |
 | `photos.reinitialized.me` | `http://10.255.0.5:1001` |
 | `chat.reinitialized.me` | `http://10.255.0.4:1040` |
 | `reinitialized.me` Matrix paths | `http://10.255.0.5:1025` |

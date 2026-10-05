@@ -22,6 +22,7 @@ PRIVATE = (
     "redisadmin.in.reinitialized.net", "jaeger.in.reinitialized.net",
     "grafana.in.reinitialized.net", "prometheus.in.reinitialized.net",
     "gs.admin.reinitialized.net", "search.reinitialized.net",
+    "llm.in.reinitialized.net",
 )
 PUBLIC = (
     "mail.reinitialized.net", "docs.reinitialized.net",

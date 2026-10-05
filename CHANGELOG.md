@@ -9,6 +9,11 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Added
 
+- Run Qwen3.8-Flash-Next on devenv as a declarative llama.cpp service with MTP
+  speculative decoding (about +25% decode), an API-key-protected OpenAI-compatible
+  endpoint at `llm.in.reinitialized.net` and mesh port 1045, and working
+  reasoning-effort levels in the API and web UI.
+
 - Add Frigate on apps3 with internal HTTPS access through rp1, 30-day motion
   retention, runtime credentials, and a shared-storage free-space cutoff.
 

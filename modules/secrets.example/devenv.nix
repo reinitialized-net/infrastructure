@@ -42,6 +42,10 @@
         dashboardWebhookPort = 1044;
       };
     };
+    llmApi = {
+      description = "llama-server API keys, one per line (# comments allowed)";
+      file = lib.mkDefault "/var/lib/service-secrets/llm-api-keys";
+    };
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
       file = lib.mkDefault "/var/lib/service-secrets/docker-volume-migration.key";

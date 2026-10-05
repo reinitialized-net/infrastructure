@@ -762,6 +762,24 @@ in
         };
       };
 
+      # Qwen3.8 llama.cpp OpenAI-compatible API on devenv (API key required).
+      # Only /v1/ is proxied; the agent UI and /tools stay on devenv loopback.
+      "llm.in.reinitialized.net" = {
+        forceSSL = true;
+        enableACME = true;
+        acmeRoot = null;
+        listenAddresses = [ "10.1.12.4" ];
+        locations."/".return = "404";
+        locations."/v1/" = {
+          proxyPass = "http://10.255.0.1:1045";
+          # Streamed completions and long prompts on a CPU model.
+          extraConfig = ''
+            ${internalOnly}
+            ${largeTransfer "3600s"}
+          '';
+        };
+      };
+
       "photos.reinitialized.me" = {
         forceSSL = true;
         enableACME = true;
