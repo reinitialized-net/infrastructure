@@ -9,10 +9,13 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Added
 
-- Run Qwen3.8-Flash-Next on devenv as a declarative llama.cpp service with MTP
-  speculative decoding (about +25% decode), an API-key-protected OpenAI-compatible
-  endpoint at `llm.in.reinitialized.net` and mesh port 1045, and working
-  reasoning-effort levels in the API and web UI.
+- Run Qwen3.8-Flash-Next on devenv with Strata on the passed-through GTX 1070
+  (MTP speculative decoding, 131072-token context, two requests at once), MCP
+  agent tools in a separate sandboxed unit, and an API-key-protected
+  OpenAI-compatible endpoint at `llm.in.reinitialized.net` and mesh port 1045.
+  A local engine patch (`hosts/devenv/strata-performance.patch`) reads the
+  hyper-connection weights natively, drafts in batch windows, and pipelines
+  them; with the tuned flags, decode went from 21 to about 33 tokens/s.
 
 - Add Frigate on apps3 with internal HTTPS access through rp1, 30-day motion
   retention, runtime credentials, and a shared-storage free-space cutoff.

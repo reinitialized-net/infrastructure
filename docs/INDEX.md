@@ -41,7 +41,7 @@ Documentation for the Reinitialized Infrastructure NixOS flake.
 - [Bash Script Tools](bash-script-tools.md)
 - [Automatic Updates](architecture/automatic-updates.md)
 - [ai1 Workstation Installation](ai1-installation.md)
-- [devenv LLM Service](devenv-llm.md) - Qwen3.8 llama.cpp API, reasoning effort, tuning, GPU plan
+- [devenv LLM Service](devenv-llm.md) - Qwen3.8 API: Strata on the GTX 1070 with agent tools, tuning
 - [Release Process](release-process.md)
 - [Using makeUser](examples/makeUser.md)
 

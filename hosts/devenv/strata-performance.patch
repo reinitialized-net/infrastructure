@@ -1,0 +1,1649 @@
+diff --git a/include/strata/core/conversation_snapshot.hpp b/include/strata/core/conversation_snapshot.hpp
+index 1a56680..8eae7bb 100644
+--- a/include/strata/core/conversation_snapshot.hpp
++++ b/include/strata/core/conversation_snapshot.hpp
+@@ -24,6 +24,15 @@ bool conversation_kv_validate(const ConversationKv& image, const QsaState& state
+                               int64_t upto, bool include_index, std::string& error);
+ bool conversation_kv_restore(const ConversationKv& image, const QsaState& state, const ModelGeometry& g,
+                              int64_t upto, bool include_index, std::string& error);
++// One layer's K/V (and indexer rows) up to `upto` straight from one state into another carved alike - what a
++// save into an image and a restore from it do, without the image (device to device, pinned host copy to pinned
++// host copy).  Caller synchronizes the device before, as for a save, and after all layers, as for a restore.
++bool conversation_kv_copy(const QsaState& from, const QsaState& to, const ModelGeometry& g, int64_t upto,
++                          bool include_index, std::string& error);
++/// conversation_checkpoint_save(from) + conversation_checkpoint_restore(into `to`) for the tokens `ids`, without
++/// the host image: the running state copied on the device (both sessions on one GPU, carved alike).
++bool conversation_state_copy(const SessionState& from, SessionState& to, const ModelGeometry& g,
++                             const std::vector<int32_t>& ids, std::string& error);
+ // Diagnostic read-back after a synchronized restore. Uses 64 KiB of stack
+ // workspace, compares authoritative bytes and resident draft-ring pages, and
+ // fingerprints the authoritative payload only. Never changes model state.
+diff --git a/include/strata/core/mtp.hpp b/include/strata/core/mtp.hpp
+index bfb6ee0..169bb9f 100644
+--- a/include/strata/core/mtp.hpp
++++ b/include/strata/core/mtp.hpp
+@@ -25,6 +25,7 @@
+ 
+ #include <cuda_runtime.h>
+ 
++#include <chrono>
+ #include <cstdint>
+ #include <string>
+ #include <vector>
+@@ -44,6 +45,14 @@ public:
+     /// Call before the VRAM expert tier is sized: this takes ~0.9 GB.
+     bool load(const std::string& rt_dir, const ModelGeometry& g, SessionState& ss, int max_t, std::string& err,
+               int64_t window = 32768);
++    /// A drafter for another sequence (a --batch slot) on `base`'s weights (`base` loaded): its own K/V, buffers,
++    /// stream and graphs (~50 MiB of VRAM), the PLE prefetches from `ss`, and its own copy of the verify window's final
++    /// rows (`window_R`: max_t rows of hc * n_embd floats, filled by the caller before draft()).  Then bind_shared once
++    /// `base` is bound: its head and draft head (its own logits).
++    bool load_shared(const MtpDrafter& base, SessionState& ss, const float* window_R, std::string& err);
++    bool bind_shared(const MtpDrafter& base, std::string& err);
++    /// This drafter's K/V up to `cells` from `from` (the drafter that read the prompt): a batch slot's admission.
++    bool copy_kv_from(const MtpDrafter& from, int64_t cells, std::string& err);
+     /// The prompt's length: prefill() skips the cells the attention window can never reach again.
+     void set_prompt_len(int64_t n) { prompt_len_ = n; }
+     /// At most this many drafts per round (below max_t - 1): a window longer than the MTP's comes from elsewhere.
+@@ -70,6 +79,12 @@ public:
+     bool draft(int T, const int32_t* tokens, int64_t p, int a, int32_t* drafts, std::string& err,
+                float* probs = nullptr, float min_p = 0.0f, int* n_drafts = nullptr);
+ 
++    /// draft() as two halves (min_p 0: every draft step), so several drafters run at once on their own streams:
++    /// launch stages the round and queues its graphs (after anything already on stream()), collect waits for them.
++    bool draft_launch(int T, const int32_t* tokens, int64_t p, int a, std::string& err);
++    bool draft_collect(int32_t* drafts, float* probs, int* n_drafts, std::string& err);
++    cudaStream_t stream() const { return cs_; }
++
+     /// The first round: one cell (`cell`) from `R_row` (device) and `token` -> T-1 drafts.
+     bool draft_first(int T, const float* R_row, int32_t token, int64_t cell, int32_t* drafts, std::string& err,
+                      float* probs = nullptr, float min_p = 0.0f, int* n_drafts = nullptr);
+@@ -111,6 +126,12 @@ private:
+     // coupled draft sampling: its own round/step graphs (the argmax ones stay as they were), the request's
+     // parameters and the penalty ring (mapped staging + device copies), the split scratch, token id -> subset index
+     bool setup_coupled(std::string& err);
++    bool alloc_state(const ModelGeometry& g, SessionState& ss, int64_t window, std::string& err);
++    bool owns_weights_ = true;   ///< false: dense_, experts_, dhead_, dvocab_ are another drafter's (load_shared)
++    int launched_steps_ = 0;     ///< draft_launch: the drafts it queued (0: nothing in flight)
++    int32_t launched_tok_ = -1;  ///< ... and the window's accepted token they follow (PLE prefetch)
++    std::chrono::steady_clock::time_point launched_at_{};
++    uint64_t state_bytes_ = 0;   ///< the K/V state arena (copy_kv_from)
+     cudaGraphExec_t round_exec_c_[9] = {};
+     cudaGraphExec_t step_exec_c_[9] = {};
+     bool coupled_ok_ = false, coupled_active_ = false;
+diff --git a/include/strata/core/verify.hpp b/include/strata/core/verify.hpp
+index e68f7b3..1f942d6 100644
+--- a/include/strata/core/verify.hpp
++++ b/include/strata/core/verify.hpp
+@@ -149,8 +149,15 @@ public:
+     /// listed are not touched, so an idle slot keeps its state (a finished conversation it may continue later).
+     bool run_slot_rows(const int* rows, int S, const int32_t* tokens, const int64_t* pos, PoolMultiFn pool, void* user,
+                        int32_t* out, std::string& err);
+-    /// Keep every row of the last batch window: each slot's state advances by its one token.
++    /// Keep every row of the last batch window: each slot's state advances by its rows.
+     bool commit_slots(std::string& err);
++    /// DRAFTS IN BATCH WINDOWS: a slot may take several CONSECUTIVE rows - its token and its MTP drafts at consecutive
++    /// positions (`rows` = 0 0 0 0 1 1 1 1, ...); its GDN rows then run as one span from its own state, exactly as a
++    /// solo window's.  Keep the first `n_keep[slot]` (1 .. its rows) of each slot's rows of the last batch window.
++    bool commit_slots_keep(const int* n_keep, std::string& err);
++    /// With --spec-split, a batch window of exactly two slots is cut between them: the CPU experts of one slot's rows
++    /// run while the GPU works on the other slot's (the split solo window's pipeline, with no shared span).
++    static int batch_cut(const int* rows, int S, bool split);
+ 
+     // ---- The stages of a layer split as a PIPELINE.  A batch window over the slot GROUP
+     // [base, base + S) is launched on ONE stage with its commit right behind it on the stage's stream (a batch window
+@@ -220,7 +227,8 @@ private:
+     bool batch_rec_ = false;               ///< record_window is capturing a batch window
+     int row_base_ = 0;                     ///< ... its hand-off rows start here (a pipeline group's own rows)
+     int brow_[8] = {};                     ///< ... and row t is slot brow_[t]
+-    bool last_batch_ = false;              ///< the last run was a batch window (set_plan_slot: one group)
++    bool last_batch_ = false;              ///< the last run was a batch window (set_plan_slot: its groups)
++    int bgroups_ = 1;                      ///< ... and how many groups it ran in (batch_cut)
+     std::map<uint64_t, cudaGraphExec_t> exec_bm_, commit_bm_;   ///< key: batch_key(rows, S, hand-off base)
+     int last_rows_[8] = {};                ///< the slots of the last batch window's rows
+     static uint64_t batch_key(const int* rows, int S, int hbase) {
+diff --git a/include/strata/kernels/cpu/iq_avx2.hpp b/include/strata/kernels/cpu/iq_avx2.hpp
+index a9628d3..9399419 100644
+--- a/include/strata/kernels/cpu/iq_avx2.hpp
++++ b/include/strata/kernels/cpu/iq_avx2.hpp
+@@ -18,6 +18,11 @@ void iq256_gu_rows(int ggml_type, const uint8_t* blob, size_t gu_row, size_t up_
+ void iq256_rows(int ggml_type, const uint8_t* w, size_t row_bytes, int n, const void* const* act, int nt,
+                 float* const* out, int r0, int r1);
+ 
++/// ff[r] = silu(gate_r . a) * (up_r . a) for ONE token of IQ4_XS (type 23) rows: both rows in one pass, two sub-blocks
++/// per register (ggml-cpu's single-token dot takes one row and 16 values at a time).  Another summation order.
++void iq4xs256_gu1_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* act, float* ff,
++                       int r0, int r1);
++
+ /// out[t][r] = w_r . h[t] for IQ4_NL (type 20) rows against Q8_0 activations (ggml's block_q8_0).
+ /// IQ4_NL is a 32-value-block format, so this does not go through iq256_rows (QK_K blocks, Q8_K acts).
+ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
+diff --git a/include/strata/kernels/fused_gr.hpp b/include/strata/kernels/fused_gr.hpp
+index b5f95fc..ed6f86b 100644
+--- a/include/strata/kernels/fused_gr.hpp
++++ b/include/strata/kernels/fused_gr.hpp
+@@ -36,8 +36,20 @@ struct FusedGrArgs {
+     float* rs = nullptr;               ///< workspace, hc floats
+     float* inject_out = nullptr;       ///< hc floats (when w_inject)
+     float* mixed = nullptr;            ///< n_embd
++    /// The GGUF's own 4-bit forms instead of w_down / w_up (both set, or neither): IQ4_XS [hc_lr][hc*n_embd] and
++    /// IQ4_NL [hc*n_embd][hc_lr], dequantized in the kernel (exact FP32 weights; the BF16 copies were 3.7x the
++    /// bytes).  w_inject stays BF16.  Multi-token reads only.
++    const void* q_down = nullptr;
++    const void* q_up = nullptr;
+ };
+ 
++/// GGUF types the native hyper-connection read takes: down IQ4_XS (23), up IQ4_NL (20).
++constexpr int kGrNativeDownType = 23;
++constexpr int kGrNativeUpType = 20;
++/// IQ4 (q_down / q_up) bytes -> BF16 (round to nearest even), as tools/iq_pack.py --compat-bf16 writes them: the
++/// prompt path's BF16 projections read this.  `type` 23 or 20, `n` elements (a multiple of the block).
++void gr_dequant_bf16(int type, const void* q, uint16_t* out, int64_t n, void* stream);
++
+ bool fused_gr_supported(int64_t n_embd, int64_t hc, int64_t hc_lr);
+ void fused_gr_read(const FusedGrArgs& a, void* stream);
+ 
+@@ -49,6 +61,11 @@ constexpr int kFusedGrMaxT = 8;
+ void fused_gr_read_multi(const FusedGrArgs* a, int n_tok, float* xn_scratch, void* stream,
+                          unsigned long long* stamp_buf = nullptr, int stamp_i0 = 0);
+ 
++/// The multi-token read on the 4-bit weights (a[t].q_down / q_up, see FusedGrArgs): the default read's outputs
++/// (lo, rs, inject_out, mixed, R_out), another summation order.  False when q_down / q_up are not set.
++bool fused_gr_read_native(const FusedGrArgs* a, int n_tok, float* xn_scratch, void* stream,
++                          unsigned long long* stamp_buf = nullptr, int stamp_i0 = 0);
++
+ /// The bench only: the AMD latency-hidden kernels on (1) or off (0); -1 = STRATA_GR_FAST.
+ void fused_gr_set_fast(int on);
+ /// The multi read's variants (#315; not main's opt-in STRATA_GR_V3 read, which sums in another order), all computing
+diff --git a/src/core/conversation_snapshot.cpp b/src/core/conversation_snapshot.cpp
+index 759daa6..ab95e32 100644
+--- a/src/core/conversation_snapshot.cpp
++++ b/src/core/conversation_snapshot.cpp
+@@ -176,6 +176,38 @@ bool conversation_kv_save(ConversationKv& image, const QsaState& st, const Model
+     return true;
+ }
+ 
++bool conversation_kv_copy(const QsaState& from, const QsaState& to, const ModelGeometry& g, int64_t upto,
++                          bool index, std::string& error) {
++    Layout a{}, b{};
++    if (!layout(from, g, upto, index, a, error) || !valid(from, a, upto, error) ||
++        !layout(to, g, upto, index, b, error) || !valid(to, b, upto, error)) return false;
++    if (a.format != b.format || a.cells != b.cells || a.pooled_rows != b.pooled_rows || a.data != b.data ||
++        a.scales != b.scales || a.pooled != b.pooled || a.value_data != b.value_data || from.kv_mode != to.kv_mode) {
++        error = "conversation snapshot: K/V copy between states of different layouts";
++        return false;
++    }
++    const auto src = pools(from), dst = pools(to);
++    const std::array<size_t,5> sizes = {a.data, a.value_data, a.scales, a.value_scales, a.pooled};
++    for (size_t i = 0; i < sizes.size(); ++i) {
++        if (!sizes[i]) continue;
++        if (!src[i] || !dst[i]) { error = "conversation snapshot: missing state buffer"; return false; }
++        if (!transfer(dst[i], src[i], sizes[i], error)) return false;
++    }
++    // as conversation_kv_restore: the target's VRAM slots still hold its outgoing conversation
++    if (to.kv_mode == 1) strata::kernels::kv_stream_reset(to.map, nullptr);
++    if (to.kv_mode == 2 && upto > 0) {
++        auto shapes = strata::kernels::qsa_real_shapes();
++        shapes.n_head_kv = g.n_head_kv; shapes.head_dim = g.head_dim;
++        const int64_t end = (upto + shapes.page_size - 1) / shapes.page_size;
++        strata::kernels::kv_ring_restore(qsa_attn_pools(to), to.host, qsa_kv_format(to),
++                                        std::max<int64_t>(0, end - to.n_slots), end, to.n_slots, shapes, nullptr);
++    }
++    const auto status = cudaGetLastError();
++    if (status == cudaSuccess) return true;
++    error = std::string("conversation snapshot residency copy: ") + cudaGetErrorString(status);
++    return false;
++}
++
+ bool conversation_kv_validate(const ConversationKv& image, const QsaState& st, const ModelGeometry& g,
+                               int64_t upto, bool index, std::string& error) {
+     Layout l{};
+diff --git a/src/core/conversation_state.cpp b/src/core/conversation_state.cpp
+index 981beca..dc06bc3 100644
+--- a/src/core/conversation_state.cpp
++++ b/src/core/conversation_state.cpp
+@@ -192,6 +192,31 @@ bool conversation_checkpoint_restore(const ConversationCheckpoint& c, SessionSta
+     return sync(error);
+ }
+ 
++bool conversation_state_copy(const SessionState& from, SessionState& to, const ModelGeometry& g,
++                             const std::vector<int32_t>& ids, std::string& error) {
++    ConversationStateSizes za, zb;
++    if (!checkpoint_targets(from, g, ids.size(), za, error) || !checkpoint_targets(to, g, ids.size(), zb, error))
++        return false;
++    if (za.gdn != zb.gdn || owned_qsa(from) != owned_qsa(to) || (from.ple_hist != nullptr) != (to.ple_hist != nullptr))
++        return fail(error, "state copy between sessions carved differently");
++    if (!copy(to.gdn_state, from.gdn_state, za.gdn, error) ||
++        !copy(to.ple_hist, from.ple_hist, from.ple_hist ? za.ple : 0, error)) return false;
++    for (size_t j = 0; j < owned_qsa(from); ++j) {
++        const auto& a = owned(from, j);
++        const auto& b = owned(to, j);
++        if (!copy(b.idx_tail, a.idx_tail, za.tail, error) || !copy(b.idx_dead, a.idx_dead, za.dead, error) ||
++            !copy(b.idx_block_pos, a.idx_block_pos, za.block_pos, error)) return false;
++        if (!ids.empty()) {   // as the restore: the spare row at the prefix's end holds the dead key
++            const size_t row = ids.size() / strata::kernels::qsa_real_shapes().idx_block;
++            if (!copy(b.idx_pooled + row * g.idx_key_dim, b.idx_dead, za.dead, error)) return false;
++        }
++    }
++    const size_t tokens = ids.size();
++    to.ple_prev[0] = tokens >= 2 ? ids[tokens - 2] : -1;
++    to.ple_prev[1] = tokens >= 1 ? ids[tokens - 1] : -1;
++    return sync(error);
++}
++
+ bool conversation_snapshot_bytes(const ConversationView& view, const SessionState& ss,
+                                  const ModelGeometry& g, const QsaState* draft, size_t& bytes, std::string& error) {
+     bytes = 0;
+diff --git a/src/core/mtp.cpp b/src/core/mtp.cpp
+index e9953e3..e43b56e 100644
+--- a/src/core/mtp.cpp
++++ b/src/core/mtp.cpp
+@@ -123,13 +123,13 @@ MtpDrafter::~MtpDrafter() {
+     if (h_cparams_) cudaFreeHost(h_cparams_);
+     if (h_chist_) cudaFreeHost(h_chist_);
+     if (cs_) cudaStreamDestroy(cs_);
+-    if (dense_) cudaFree(dense_);
+-    if (experts_) cudaFree(experts_);
++    if (dense_ && owns_weights_) cudaFree(dense_);
++    if (experts_ && owns_weights_) cudaFree(experts_);
+     if (state_arena_) cudaFree(state_arena_);
+     if (arena_) cudaFree(arena_);
+     if (head_logits_) cudaFree(head_logits_);
+-    if (dhead_) cudaFree(dhead_);
+-    if (dvocab_) cudaFree(dvocab_);
++    if (dhead_ && owns_weights_) cudaFree(dhead_);
++    if (dvocab_ && owns_weights_) cudaFree(dvocab_);
+     void* hosts[] = {h_tok_, h_step_, h_pos_, h_row_, h_out_, h_prob_};
+     for (void* h : hosts) if (h) cudaFreeHost(h);
+ }
+@@ -211,7 +211,18 @@ bool MtpDrafter::load(const std::string& rt_dir, const ModelGeometry& g, Session
+                               "self_attn.v_proj.weight", "self_attn.o_proj.weight", "mlp.shared_expert.gate_proj.weight",
+                               "mlp.shared_expert.up_proj.weight", "mlp.shared_expert.down_proj.weight"};
+     for (const char* n : required) if (!q8(n)) { err = std::string("mtp: ") + n + " is missing (q8_0)"; return false; }
++    if (!alloc_state(g, ss, window, err)) return false;
++    const double files_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t_files).count();
++    std::fprintf(stderr, "strata mtp: draft layer loaded, %.0f MiB of VRAM (experts %.0f, dense %.0f), files read in %.2f s (%.0f MiB/s)\n",
++                 (double) vram_ / 1048576.0, (double) g.n_expert * strata::kernels::cpu::BLOB / 1048576.0,
++                 (double) tensors_.back().off / 1048576.0, files_s,
++                 files_s > 0 ? ((double) g.n_expert * strata::kernels::cpu::BLOB + (double) tensors_.back().off) /
++                                   1048576.0 / files_s : 0.0);
++    return true;
++}
+ 
++bool MtpDrafter::alloc_state(const ModelGeometry& g, SessionState& ss, int64_t window, std::string& err) {
++    const int max_t = max_t_;
+     // ---- the layer's own K/V (dense attention: no indexer state is read)
+     const strata::kernels::QsaShapes s = shapes_of(g);
+     const int64_t max_cells = ss.qsa_states[ss.qsa_primary()].max_cells;
+@@ -243,6 +254,7 @@ bool MtpDrafter::load(const std::string& rt_dir, const ModelGeometry& g, Session
+     qsa_state_zero(st_, g, nullptr);
+     cudaDeviceSynchronize();
+     vram_ += sb;
++    state_bytes_ = sb;
+ 
+     // ---- buffers
+     window_ = (window > 0 && window < max_cells) ? window : 0;
+@@ -301,12 +313,75 @@ bool MtpDrafter::load(const std::string& rt_dir, const ModelGeometry& g, Session
+         cudaMemcpy(ident_, id.data(), id.size() * 4, cudaMemcpyHostToDevice);
+     }
+     if (cudaStreamCreateWithFlags(&cs_, cudaStreamNonBlocking) != cudaSuccess) { err = "mtp: stream"; return false; }
+-    const double files_s = std::chrono::duration<double>(std::chrono::steady_clock::now() - t_files).count();
+-    std::fprintf(stderr, "strata mtp: draft layer loaded, %.0f MiB of VRAM (experts %.0f, dense %.0f), files read in %.2f s (%.0f MiB/s)\n",
+-                 (double) vram_ / 1048576.0, (double) g.n_expert * strata::kernels::cpu::BLOB / 1048576.0,
+-                 (double) tensors_.back().off / 1048576.0, files_s,
+-                 files_s > 0 ? ((double) g.n_expert * strata::kernels::cpu::BLOB + (double) tensors_.back().off) /
+-                                   1048576.0 / files_s : 0.0);
++    return true;
++}
++
++bool MtpDrafter::load_shared(const MtpDrafter& base, SessionState& ss, const float* window_R, std::string& err) {
++    device_ = base.device_;
++    const OnDevice on_device(device_);
++    if (base.dense_ == nullptr) { err = "mtp: load_shared needs a loaded drafter"; return false; }
++    g_ = base.g_;
++    ss_ = &ss;
++    ple_ss_ = &ss;
++    max_t_ = base.max_t_;
++    max_drafts_ = base.max_drafts_;
++    rt_dir_ = base.rt_dir_;
++    tensors_ = base.tensors_;
++    dense_ = base.dense_;
++    experts_ = base.experts_;
++    owns_weights_ = false;
++    window_R_ = window_R;
++    return alloc_state(*g_, ss, base.window_, err);
++}
++
++bool MtpDrafter::bind_shared(const MtpDrafter& base, std::string& err) {
++    const OnDevice on_device(device_);
++    if (base.head_ == nullptr) { err = "mtp: bind_shared needs a bound drafter"; return false; }
++    wt_ = base.wt_;
++    head_ = base.head_;
++    max_drafts_ = base.max_drafts_;
++    n_vocab_ = base.n_vocab_;
++    dhead_ = base.dhead_;
++    dvocab_ = base.dvocab_;
++    n_dvocab_ = base.n_dvocab_;
++    if (cudaMalloc((void**) &head_logits_, (size_t) max_t_ * (size_t) n_vocab_ * sizeof(float)) != cudaSuccess) {
++        err = "mtp: a slot drafter's logits do not fit";
++        return false;
++    }
++    vram_ += (uint64_t) max_t_ * (uint64_t) n_vocab_ * sizeof(float);
++    return true;
++}
++
++bool MtpDrafter::copy_kv_from(const MtpDrafter& from, int64_t cells, std::string& err) {
++    const OnDevice on_device(device_);
++    if (from.state_bytes_ != state_bytes_ || from.st_.kv_mode != st_.kv_mode || from.st_.n_slots != st_.n_slots) {
++        err = "mtp: copy_kv_from between drafters of different K/V layouts";
++        return false;
++    }
++    // the same carving (qsa_state_init on equal sizes): the device arena byte for byte, the host copy up to `cells`
++    if (cudaStreamSynchronize(from.cs_) != cudaSuccess || cudaStreamSynchronize(cs_) != cudaSuccess ||
++        cudaMemcpy(state_arena_, from.state_arena_, state_bytes_, cudaMemcpyDeviceToDevice) != cudaSuccess) {
++        err = "mtp: the draft K/V copy failed";
++        return false;
++    }
++    // the host copy (a ring's authoritative K/V): the first pages of every plane hold cells [0, cells)
++    const strata::kernels::KvHostPools& a = from.st_.host;
++    const strata::kernels::KvHostPools& b = st_.host;
++    if (a.present() != b.present()) { err = "mtp: copy_kv_from: one drafter has a host K/V copy, the other not"; return false; }
++    if (a.present()) {
++        const strata::kernels::QsaShapes s = shapes_of(*g_);
++        const uint64_t pages = (uint64_t) ((std::min<int64_t>(cells, st_.max_cells) + s.page_size - 1) / s.page_size);
++        const uint64_t rows = pages * (uint64_t) s.n_head_kv * (uint64_t) s.page_size;
++        auto cp = [&](void* dst, const void* src, uint64_t bytes) {
++            return dst == nullptr || bytes == 0 || cudaMemcpy(dst, src, bytes, cudaMemcpyDefault) == cudaSuccess;
++        };
++        const uint64_t dim = (uint64_t) s.head_dim, sc = dim / strata::kernels::KV_Q8_GROUP;
++        bool ok = cp(b.k_q, a.k_q, a.k_q ? rows * dim : 0) && cp(b.v_q, a.v_q, a.v_q ? rows * dim : 0) &&
++                  cp(b.k_scale, a.k_scale, a.k_scale ? rows * sc * 2 : 0) &&
++                  cp(b.v_scale, a.v_scale, a.v_scale ? rows * sc * 2 : 0) &&
++                  cp(b.k_pool, a.k_pool, a.k_pool ? rows * dim * 2 : 0) && cp(b.v_pool, a.v_pool, a.v_pool ? rows * dim * 2 : 0);
++        if (!ok || a.k_q4 != nullptr) { err = "mtp: the draft K/V host copy failed"; return false; }
++    }
+     return true;
+ }
+ 
+@@ -975,6 +1050,81 @@ bool MtpDrafter::draft(int T, const int32_t* tokens, int64_t p, int a, int32_t*
+     return true;
+ }
+ 
++bool MtpDrafter::draft_launch(int T, const int32_t* tokens, int64_t p, int a, std::string& err) {
++    const OnDevice on_device(device_);
++    if (T < 1 || T > max_t_ || a < 0 || a >= T || coupled_active_) { err = "mtp: draft_launch arguments out of range"; return false; }
++    if (!capture_round(T, false, err)) return false;
++    const int max_steps = std::min(max_t_ - 1, max_drafts_);
++    for (int j = 1; j < max_steps; ++j)
++        if (!capture_step(j, false, err)) return false;
++    const int64_t NH = g_->n_head;
++    auto put = [&](int row, int64_t cell) {
++        h_step_[row * 4 + 0] = (int32_t) cell;
++        h_step_[row * 4 + 1] = (int32_t) (cell + 1);
++        h_step_[row * 4 + 2] = (int32_t) ((cell + 1) / 4);
++        h_step_[row * 4 + 3] = (int32_t) (cell + 1);
++        for (int64_t h = 0; h < NH; ++h) h_pos_[row * NH + h] = (int32_t) cell;
++    };
++    for (int t = 0; t < T; ++t) {
++        h_tok_[t] = tokens[t];
++        put(t, p + t);
++    }
++    put(2 * max_t_ - 1, coupled_draft_cell(p, a, 0));
++    for (int j = 1; j < max_steps; ++j) put(max_t_ + j - 1, coupled_draft_cell(p, a, j));
++    for (int j = 0; j < max_steps; ++j) ((volatile int32_t*) h_out_)[j] = -1;
++    h_row_[0] = a;
++    h_row_[1] = 0;
++    std::atomic_thread_fence(std::memory_order_seq_cst);
++    launched_at_ = std::chrono::steady_clock::now();
++    if (max_steps > 0) {
++        if (cudaGraphLaunch(round_exec_[T], cs_) != cudaSuccess) {
++            err = std::string("mtp draft: ") + cudaGetErrorString(cudaGetLastError());
++            return false;
++        }
++        for (int j = 1; j < max_steps; ++j)
++            if (cudaGraphLaunch(step_exec_[j], cs_) != cudaSuccess) {
++                err = std::string("mtp draft step: ") + cudaGetErrorString(cudaGetLastError());
++                return false;
++            }
++        (void) cudaStreamQuery(cs_);
++    }
++    launched_steps_ = max_steps;
++    launched_tok_ = tokens[a];
++    return true;
++}
++
++bool MtpDrafter::draft_collect(int32_t* drafts, float* probs, int* n_drafts, std::string& err) {
++    const OnDevice on_device(device_);
++    const int n = launched_steps_;
++    launched_steps_ = 0;
++    if (n > 0 && cudaStreamSynchronize(cs_) != cudaSuccess) {
++        err = std::string("mtp draft: ") + cudaGetErrorString(cudaGetLastError());
++        return false;
++    }
++    SessionState* const pss = ple_ss_ ? ple_ss_ : ss_;   // the next window's PLE rows, as draft() hints them
++    const bool do_ple = pss != nullptr && pss->ple.ready() && pss->ple.table != nullptr;
++    int32_t ple_prev[2] = {do_ple ? pss->ple_prev[0] : 0, do_ple ? pss->ple_prev[1] : 0};
++    auto prefetch_ple = [&](int32_t tok) {
++        if (!do_ple || tok < 0) return;
++        uint32_t rows16[strata::kernels::PLE_N_HEADS];
++        strata::kernels::ngram_rows(&tok, ple_prev, 1, pss->ple.consts, rows16);
++        ple_prev[0] = ple_prev[1];
++        ple_prev[1] = tok;
++        pss->ple.table->prefetch_rows(rows16);
++    };
++    prefetch_ple(launched_tok_);
++    for (int j = 0; j < n; ++j) {
++        drafts[j] = ((volatile int32_t*) h_out_)[j];
++        if (probs) probs[j] = ((volatile float*) h_prob_)[j];
++        prefetch_ple(drafts[j]);
++    }
++    for (int j = n; j < max_t_ - 1; ++j) { drafts[j] = 0; if (probs) probs[j] = 0.0f; }
++    if (n_drafts) *n_drafts = n;
++    ms_draft += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - launched_at_).count();
++    ++rounds;
++    return true;
++}
++
+ bool MtpDrafter::draft_first(int T, const float* R_row, int32_t token, int64_t cell, int32_t* drafts, std::string& err,
+                              float* probs, float min_p, int* n_drafts) {
+     const OnDevice on_device(device_);
+diff --git a/src/core/native_dense.cpp b/src/core/native_dense.cpp
+index e0609fd..978b339 100644
+--- a/src/core/native_dense.cpp
++++ b/src/core/native_dense.cpp
+@@ -3,6 +3,7 @@
+ #include "strata/core/weights.hpp"
+ #include "strata/artifact/gguf_reader.hpp"
+ #include "strata/kernels/native_mmvq.hpp"
++#include "strata/kernels/fused_gr.hpp"
+ 
+ #include <cuda_runtime.h>
+ #include <algorithm>
+@@ -21,9 +22,22 @@ bool in_range(const std::string& name) {
+     const int l = std::atoi(name.c_str() + 4);
+     return l >= g_layer_lb && l < g_layer_le;
+ }
++// The hyper-connection projections in the GGUF's 4-bit forms (fused_gr's native read: down IQ4_XS, up IQ4_NL)
++// instead of the pack's --compat-bf16 copies, which are 3.7x the bytes.  STRATA_HC_NATIVE=0 keeps the copies.
++bool hc_native(const strata::TensorInfo& tensor) {
++    static const bool on = [] { const char* v = std::getenv("STRATA_HC_NATIVE"); return v == nullptr || v[0] != '0'; }();
++    if (!on) return false;
++    const auto& name = tensor.name;
++    if (name.ends_with(".hc_attn_down.weight") || name.ends_with(".hc_ffn_down.weight"))
++        return tensor.type == (uint32_t) strata::kernels::kGrNativeDownType;
++    if (name.ends_with(".hc_attn_up.weight") || name.ends_with(".hc_ffn_up.weight"))
++        return tensor.type == (uint32_t) strata::kernels::kGrNativeUpType;
++    return false;
++}
+ bool eligible(const strata::TensorInfo& tensor, bool include_ple_key) {
+     const auto& name = tensor.name;
+     if (name.rfind("blk.", 0) != 0) return false;
++    if (hc_native(tensor)) return true;
+     // Match the native PLE kernel: Q2_0, IQ3_XXS, IQ4_XS and Q8_0 (UD-Q4_K_XL). Other keys retain the packed BF16
+     // fallback.
+     if (name == "blk.1.ple_key.weight")
+@@ -166,7 +180,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
+                 if (!strata::kernels::native_mmvq_supported(tensor.type)) continue;
+                 // #326: the pack keeps an unquantized (--compat-bf16) key, which the PLE reads from the arena
+                 if (tensor.name == "blk.1.ple_key.weight" && !ref.quantized()) continue;
+-                if (!ref.quantized() || tensor.shape.size() != 2 ||
++                if ((!ref.quantized() && !hc_native(tensor)) || tensor.shape.size() != 2 ||
+                     ref.ne0 <= 0 || ref.ne0 > INT_MAX || ref.ne1 <= 0 || ref.ne1 > INT_MAX ||
+                     tensor.shape[0] != (uint64_t) ref.ne0 || tensor.shape[1] != (uint64_t) ref.ne1) {
+                     err = "native dense: incompatible matrix " + tensor.name; return false;
+diff --git a/src/core/verify.cpp b/src/core/verify.cpp
+index dd5362b..1a8a89b 100644
+--- a/src/core/verify.cpp
++++ b/src/core/verify.cpp
+@@ -558,13 +558,16 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+     const int64_t TS = (s.idx_block - 1) * ID;
+     const bool ple_on = ss.ple.ready() && ple_stage();
+     auto Rt = [&](int t) { return R_ + (size_t) t * HC * N; };
+-    const int G = (split_ && T >= 2 && !batch_rec_) ? 2 : 1;   // a batch window is one group
++    // a batch window is one group, or (--spec-split, two slots) one group per slot: never a slot's span cut in two
++    const int bcut = batch_rec_ ? batch_cut(brow_, T, split_) : 0;
++    const int G = batch_rec_ ? (bcut > 0 ? 2 : 1) : ((split_ && T >= 2) ? 2 : 1);
+     static const bool dec_batch = [] { const char* v = std::getenv("STRATA_DEC_BATCH"); return v == nullptr || std::atoi(v) != 0; }();
+     auto stamp = [&](int64_t l, int i, int grp) {
+         if (prof_on_ && grp == 0) gpu_stamp(prof_, (int) (l * kProfPer + i), cs);
+         if (trace_m_ != nullptr) gpu_stamp(trace_m_, (int) ((l * kProfPer + i) * 2 + grp), cs);   // #649
+     };
+-    const int tb_[2] = {0, (T + 1) / 2}, te_[2] = {G == 2 ? (T + 1) / 2 : T, T};
++    const int cut = batch_rec_ ? bcut : (T + 1) / 2;
++    const int tb_[2] = {0, cut}, te_[2] = {G == 2 ? cut : T, T};
+     if (!batch_rec_) groups_[T] = G;
+     const int64_t nQall = g.n_qsa_layers();
+     // a batch window: row t is slot t, whose state lives in its own session
+@@ -681,17 +684,21 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+         }
+         auto gr_read_group = [&](int half, bool apply, float* inj_prev, float* inj_out) {
+             FusedGrArgs fa[kFusedGrMaxT];
++            const bool native = wd[half]->native_data != nullptr && wu[half]->native_data != nullptr;
+             for (int t = tb; t < te; ++t) {
+                 FusedGrArgs& a = fa[t - tb];
+                 a.R = Rt(t); a.R_out = Rt(t); a.apply = apply;
+                 a.bo_prev = bo_ + t * N; a.inj_prev = inj_prev + t * HC;
+                 a.w_norm = (const float*) wn[half]->data; a.w_down = (const uint16_t*) wd[half]->data;
+                 a.w_up = (const uint16_t*) wu[half]->data; a.w_inject = (const uint16_t*) wi[half]->data;
++                if (native) { a.q_down = wd[half]->native_data; a.q_up = wu[half]->native_data; }
+                 a.eps = EPS; a.lo = lo_ + t * g.hc_lr; a.rs = rs_ + t * HC;
+                 a.inject_out = inj_out + t * HC; a.mixed = mixed_ + t * N;
+             }
+-            fused_gr_read_multi(fa, n, xn_ + (size_t) tb * HC * N, cs, (prof_on_ && grp == 0) ? prof_ : nullptr,
+-                                (int) (l * kProfPer + (half == 0 ? 27 : 30)));
++            unsigned long long* sb = (prof_on_ && grp == 0) ? prof_ : nullptr;
++            const int si = (int) (l * kProfPer + (half == 0 ? 27 : 30));
++            if (native) fused_gr_read_native(fa, n, xn_ + (size_t) tb * HC * N, cs, sb, si);
++            else fused_gr_read_multi(fa, n, xn_ + (size_t) tb * HC * N, cs, sb, si);
+         };
+         gr_read_group(0, pending, inj2_, inj_);
+         stamp(l, 1, grp);
+@@ -718,13 +725,17 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+                 native_quantize_q8_1(xm, xq_, (int) N, n, cs);
+                 native_mmvq(wqkv->native_type, wqkv->native_data, xq_, qkv + (size_t) tb * C, (int) N, (int) C, n, cs);
+                 stamp(l, 2, grp);
+-                if (batch_rec_) {   // each row from its own slot's conv history, one row each
+-                    for (int t = tb; t < te; ++t) {
++                if (batch_rec_) {   // each slot's rows (its token and drafts) as one span from its own conv history
++                    for (int t = tb; t < te;) {
++                        int t1 = t + 1, r0 = t;
++                        while (t1 < te && brow_[t1] == brow_[t]) ++t1;
++                        while (r0 > 0 && brow_[r0 - 1] == brow_[t]) --r0;   // a span the cut splits: from its start
+                         SessionState& sx = slot_ss(t);
+                         const float* cx = sx.gdn_state + (size_t) (gi - sx.gdn_ord0) * gdn_floats +
+                                           (uint64_t) g.ssm_state_size * g.ssm_v_heads * g.ssm_state_size;
+-                        gdn_conv_l2_multi(cx, qkv + (size_t) t * C, (const float*) wc->data, hb + (size_t) t * C, (int) C,
+-                                          (int) (2 * HK), EPS, 1, cs, 0);
++                        gdn_conv_l2_multi(cx, qkv + (size_t) r0 * C, (const float*) wc->data, hb + (size_t) r0 * C, (int) C,
++                                          (int) (2 * HK), EPS, t1 - t, cs, t - r0);
++                        t = t1;
+                     }
+                 } else
+                 gdn_conv_l2_multi(conv, qkv, (const float*) wc->data, hb, (int) C, (int) (2 * HK), EPS, n, cs, tb);
+@@ -736,13 +747,17 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+                 native_mmvq(wg->native_type, wg->native_data, xq_, z_ + (size_t) tb * ZV, (int) N, (int) ZV, n, cs);
+                 stamp(l, 5, grp);
+                 // the recurrence from the untouched state over tokens [0, te); outputs only for this group's
+-                if (batch_rec_) {   // each row's recurrence from its own slot's state, one token
+-                    for (int t = tb; t < te; ++t) {
++                if (batch_rec_) {   // each slot's span from its own (untouched) state, outputs for this group's rows
++                    for (int t = tb; t < te;) {
++                        int t1 = t + 1, r0 = t;
++                        while (t1 < te && brow_[t1] == brow_[t]) ++t1;
++                        while (r0 > 0 && brow_[r0 - 1] == brow_[t]) --r0;
+                         SessionState& sx = slot_ss(t);
+                         float* stx = sx.gdn_state + (size_t) (gi - sx.gdn_ord0) * gdn_floats;
+-                        gdn_step_norm_multi(stx, hb + (size_t) t * C, (int) C, gate + (size_t) t * HV, beta + (size_t) t * HV,
+-                                            z_ + (size_t) t * ZV, (const float*) wnm->data, EPS, y_ + (size_t) t * ZV,
+-                                            (int) HK, (int) HV, 1, nullptr, cs, 0);
++                        gdn_step_norm_multi(stx, hb + (size_t) r0 * C, (int) C, gate + (size_t) r0 * HV, beta + (size_t) r0 * HV,
++                                            z_ + (size_t) r0 * ZV, (const float*) wnm->data, EPS, y_ + (size_t) r0 * ZV,
++                                            (int) HK, (int) HV, t1 - r0, nullptr, cs, t - r0);
++                        t = t1;
+                     }
+                 } else
+                 gdn_step_norm_multi(state, hb, (int) C, gate, beta, z_, (const float*) wnm->data, EPS, y_, (int) HK,
+@@ -789,10 +804,11 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+                     fwht256_inplace_cuda(vcur_ + tb * NKV * HD, (int64_t) n * NKV, cs);
+                 }
+                 stamp(l, 8, grp);
+-                if (batch_rec_) {   // every slot's indexer tail, restored by its commit
++                if (batch_rec_) {   // every slot's indexer tail, restored by its commit (once per span)
+                     for (int t = tb; t < te; ++t)
+-                        copy_from_mapped(tail_snap_b_ + ((size_t) brow_[t] * nQall + qi) * TS, slot_ss(t).qsa_states[qi].idx_tail,
+-                                         TS, cs);
++                        if (t == 0 || brow_[t - 1] != brow_[t])
++                            copy_from_mapped(tail_snap_b_ + ((size_t) brow_[t] * nQall + qi) * TS,
++                                             slot_ss(t).qsa_states[qi].idx_tail, TS, cs);
+                 } else
+                 if (grp == 0) copy_from_mapped(tail_snap_ + (size_t) qi * TS, st.idx_tail, TS, cs);
+                 for (int t = tb; t < te; ++t) {
+@@ -1593,7 +1609,7 @@ void Verifier::set_plan_slot(int grp) {
+     sink_.ptr = (unsigned long long*) (base + ptr_off);
+     sink_.ptr2 = sink_.ptr + cap;
+     sink_.start2 = base + ptr_off + 4 * cap;
+-    const int G = last_batch_ ? 1 : (groups_[last_t_] > 0 ? groups_[last_t_] : 1);
++    const int G = last_batch_ ? bgroups_ : (groups_[last_t_] > 0 ? groups_[last_t_] : 1);
+     const int64_t per = G == 2 ? kStagingBlobs / 2 : kStagingBlobs;
+     sink_.staging = (unsigned long long) (staging_ + (size_t) (grp * per) * strata::kernels::cpu::expert_layout().max_blob);
+     sink_.staging_cap = per;
+@@ -1798,9 +1814,18 @@ bool Verifier::capture_batch(const int* rows, int S, int hbase, std::string& err
+         err = !ok ? rerr : std::string("verify: end batch capture: ") + cudaGetErrorString(ce);
+         return false;
+     }
++    size_t nn = 0;
++    cudaGraphGetNodes(graph, nullptr, &nn);
+     const cudaError_t ie = cudaGraphInstantiate(&ex, graph, 0);
+     cudaGraphDestroy(graph);
+-    if (ie != cudaSuccess) { err = std::string("verify: batch instantiate: ") + cudaGetErrorString(ie); return false; }
++    if (ie != cudaSuccess) {
++        cudaGetLastError();
++        size_t fb = 0, tb = 0;
++        cudaMemGetInfo(&fb, &tb);
++        err = std::string("verify: batch instantiate: ") + cudaGetErrorString(ie) + " (" + std::to_string(nn) +
++              " nodes, " + std::to_string(fb >> 20) + " MiB free)";
++        return false;
++    }
+     cudaGraphUpload(ex, cs_);
+     cudaStreamSynchronize(cs_);
+     std::string list;
+@@ -1827,8 +1852,16 @@ bool Verifier::capture_commit_batch(const int* rows, int S, int hbase, std::stri
+     }
+     bool ok = true;
+     try {
+-        for (int t = 0; t < S; ++t)
+-            copy_i32_from_mapped(commitb_ + (size_t) rows[t] * CB, m_commitb_ + (size_t) rows[t] * CB, CB, cs_);
++        // a slot's rows are one span [t0, t1): its record holds how many of them stay
++        std::vector<std::pair<int, int>> spans;
++        for (int t = 0; t < S;) {
++            int t1 = t + 1;
++            while (t1 < S && rows[t1] == rows[t]) ++t1;
++            spans.push_back({t, t1});
++            t = t1;
++        }
++        for (const auto& sp : spans)
++            copy_i32_from_mapped(commitb_ + (size_t) rows[sp.first] * CB, m_commitb_ + (size_t) rows[sp.first] * CB, CB, cs_);
+         int64_t qsa_index = 0, gdn_index = 0;
+         for (int64_t l = 0; l < lb_; ++l) (is_qsa_layer(g, l) ? qsa_index : gdn_index) += 1;
+         for (int64_t l = lb_; l < le_ && ok; ++l) {
+@@ -1836,7 +1869,8 @@ bool Verifier::capture_commit_batch(const int* rows, int S, int hbase, std::stri
+             if (!is_qsa_layer(g, l)) {
+                 const WeightRef* wnm = need(v, "ssm_norm.weight", err);
+                 if (!wnm) { ok = false; break; }
+-                for (int t = 0; t < S; ++t) {
++                for (const auto& sp : spans) {
++                    const int t = sp.first, n = sp.second - sp.first;
+                     SessionState& sx = *slots_[(size_t) rows[t]];
+                     const int32_t* keep = commitb_ + (size_t) rows[t] * CB;
+                     float* state = sx.gdn_state + (size_t) (gdn_index - sx.gdn_ord0) * gdn_floats;
+@@ -1846,26 +1880,29 @@ bool Verifier::capture_commit_batch(const int* rows, int S, int hbase, std::stri
+                                         gate_L_ + (size_t) gdn_index * MT * HV + (size_t) t * HV,
+                                         beta_L_ + (size_t) gdn_index * MT * HV + (size_t) t * HV, z_ + (size_t) t * ZV,
+                                         (const float*) wnm->data, EPS, y_dummy_ + (size_t) t * ZV, (int) g.ssm_k_heads,
+-                                        (int) HV, 1, keep, cs_);
++                                        (int) HV, n, keep, cs_);
+                 }
+                 ++gdn_index;
+             } else {
+                 const WeightRef* wikn = need(v, "indexer.k_norm.weight", err);
+                 if (!wikn) { ok = false; break; }
+-                for (int t = 0; t < S; ++t) {
+-                    const QsaState& st = slots_[(size_t) rows[t]]->qsa_states[qsa_index];
+-                    copy_from_mapped(st.idx_tail, tail_snap_b_ + ((size_t) rows[t] * nQ + qsa_index) * TS, TS, cs_);
++                for (const auto& sp : spans) {
++                    const int t0 = sp.first;
++                    const QsaState& st = slots_[(size_t) rows[t0]]->qsa_states[qsa_index];
++                    copy_from_mapped(st.idx_tail, tail_snap_b_ + ((size_t) rows[t0] * nQ + qsa_index) * TS, TS, cs_);
+                     const QsaIndexerBuffers ib{st.idx_tail, st.idx_dead, st.idx_pooled, st.idx_block_pos};
+-                    native_qsa_indexer_append(idx_raw_L_ + (size_t) (qsa_index * MT + t) * ID, commitb_ + (size_t) rows[t] * CB + 2,
+-                                              0, (const float*) wikn->data, EPS, ib, s, st.max_cells, rope_scaling(), cs_);
++                    for (int t = t0; t < sp.second; ++t)   // the kept rows' keys (a dropped row's position is -1)
++                        native_qsa_indexer_append(idx_raw_L_ + (size_t) (qsa_index * MT + t) * ID,
++                                                  commitb_ + (size_t) rows[t0] * CB + 2 + (t - t0), 0,
++                                                  (const float*) wikn->data, EPS, ib, s, st.max_cells, rope_scaling(), cs_);
+                 }
+                 ++qsa_index;
+             }
+         }
+         if (ok && ss_->ple.ready() && ple_stage())
+-            for (int t = 0; t < S; ++t)
+-                copy_indexed(slots_[(size_t) rows[t]]->ple_hist, hist_snap_ + (size_t) t * HS, HS,
+-                             commitb_ + (size_t) rows[t] * CB + 1, HS, cs_);
++            for (const auto& sp : spans)   // the history after the span's last kept row
++                copy_indexed(slots_[(size_t) rows[sp.first]]->ple_hist, hist_snap_ + (size_t) sp.first * HS, HS,
++                             commitb_ + (size_t) rows[sp.first] * CB + 1, HS, cs_);
+     } catch (const std::exception& e) {
+         err = std::string("verify batch commit: ") + e.what();
+         ok = false;
+@@ -1888,14 +1925,19 @@ bool Verifier::capture_commit_batch(const int* rows, int S, int hbase, std::stri
+ bool Verifier::stage_batch(const int* rows, int S, int hbase, const int32_t* tokens, const int64_t* pos,
+                            std::string& err) {
+     using namespace strata::kernels;
+-    if (S < 1 || S > max_t_ || hbase < 0 || hbase + S > (int) slots_.size()) {
++    // (rows may repeat a slot - its drafts - so the hand-off base is checked against the slots, the rows below)
++    if (S < 1 || S > max_t_ || hbase < 0 || hbase >= (int) slots_.size()) {
+         err = "verify: batch rows out of range (init_slots)";
+         return false;
+     }
+-    for (int t = 0; t < S; ++t) {
++    for (int t = 0; t < S; ++t) {   // a slot's rows are one span at consecutive positions (its token and drafts)
++        const bool cont = t > 0 && rows[t - 1] == rows[t];
+         bool dup = false;
+-        for (int u = 0; u < t; ++u) dup = dup || rows[u] == rows[t];
+-        if (rows[t] < 0 || rows[t] >= (int) slots_.size() || dup) { err = "verify: a batch row's slot is out of range or twice"; return false; }
++        for (int u = 0; u < t && !cont; ++u) dup = dup || rows[u] == rows[t];
++        if (rows[t] < 0 || rows[t] >= (int) slots_.size() || dup || (cont && pos[t] != pos[t - 1] + 1)) {
++            err = "verify: a batch row's slot is out of range, twice, or its rows are not consecutive";
++            return false;
++        }
+     }
+     if (released_.load()) { err = "verify: an earlier window never finished on the GPU (#267); restart the engine"; return false; }
+     const ModelGeometry& g = *g_;
+@@ -1918,22 +1960,21 @@ bool Verifier::stage_batch(const int* rows, int S, int hbase, const int32_t* tok
+     }
+     if (ss_->ple.ready() && ple_stage()) {
+         uint32_t ple_rows[kVerifyMaxT * PLE_N_HEADS];   // (not `rows`: that is the slots of the window's rows)
++        int32_t prev[2] = {0, 0};
+         for (int t = 0; t < S; ++t) {
+-            const SessionState& sx = *slots_[(size_t) rows[t]];
+-            int32_t prev[2] = {sx.ple_prev[0], sx.ple_prev[1]};
++            if (t == 0 || rows[t - 1] != rows[t]) {   // a span starts from its slot's last two tokens
++                const SessionState& sx = *slots_[(size_t) rows[t]];
++                prev[0] = sx.ple_prev[0];
++                prev[1] = sx.ple_prev[1];
++            }
+             ngram_rows(&tokens[t], prev, 1, ss_->ple.consts, ple_rows + t * PLE_N_HEADS);
++            prev[0] = prev[1];
++            prev[1] = tokens[t];
+         }
+         if (!ss_->ple.table->gather_batch(ple_rows, (size_t) S, h_ple_, err)) return false;
+     }
+-    // the commit's rows (a batch window keeps every row): [1, 0, position, -1 ..] per slot
+-    const int64_t CB = 2 + max_t_;
+-    for (int t = 0; t < S; ++t) {
+-        int32_t* c = h_commitb_ + (size_t) rows[t] * CB;
+-        c[0] = 1;
+-        c[1] = 0;
+-        c[2] = (int32_t) pos[t];
+-        for (int64_t j = 3; j < CB; ++j) c[j] = -1;
+-    }
++    // (the commit's records are written once the window is done - commit_slots_keep, or batch_launch's keep-all ones:
++    // an asynchronous commit of the previous window may not have read its records yet)
+     *(volatile uint32_t*) h_seq_ = 0;
+     *(volatile uint32_t*) h_flag_ = 0;
+     *(volatile uint32_t*) h_flagA_ = 0;
+@@ -1943,6 +1984,7 @@ bool Verifier::stage_batch(const int* rows, int S, int hbase, const int32_t* tok
+     for (int t = 0; t < S; ++t) last_rows_[t] = rows[t];
+     row_base_ = hbase;   // the graphs' key (and nothing else) reads it until the next stage_batch
+     last_batch_ = true;
++    bgroups_ = batch_cut(rows, S, split_) > 0 ? 2 : 1;
+     for (int t = 0; t < S; ++t) { last_tokens_[t] = tokens[t]; last_pos_b_[t] = pos[t]; }
+     ms_host += ms_since(t0);
+     return true;
+@@ -1966,9 +2008,12 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
+     (void) cudaStreamQuery(cs_);
+     volatile uint32_t* const seq = h_seq_;
+     volatile uint32_t* const flag = h_flag_;
+-    const int64_t steps = le_ - lb_;
++    const int G = bgroups_, cut = batch_cut(rows, S, split_);
++    const int gtb[2] = {0, cut}, gte[2] = {G == 2 ? cut : S, S};
++    const int64_t steps = (le_ - lb_) * G;
+     for (int64_t k = 0; k < steps; ++k) {
+-        const int64_t l = lb_ + k;
++        const int64_t l = lb_ + k / G;
++        const int grp = (int) (k % G);
+         const uint32_t want = (uint32_t) (k + 1);
+         const Clock::time_point a = Clock::now();
+         auto last_flush = a;
+@@ -1994,9 +2039,12 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
+         }
+         const Clock::time_point b = Clock::now();
+         cur_layer_ = want - 1;
+-        set_plan_slot(0);
++        set_plan_slot(grp);
+         progress_at("verify batch: the CPU experts of layer", l);
+-        if (pool != nullptr) pool(user, h_x_, h_ids_, S, ss_->k, h_ymiss_, l);
++        const int tb = gtb[grp], nt = gte[grp] - gtb[grp];
++        if (pool != nullptr)
++            pool(user, h_x_ + (size_t) tb * g.n_embd, h_ids_ + (size_t) tb * ss_->k, nt, ss_->k,
++                 h_ymiss_ + (size_t) tb * ss_->k * g.n_embd, l);
+         progress_tick();
+         std::atomic_thread_fence(std::memory_order_seq_cst);
+         _mm_sfence();
+@@ -2027,24 +2075,62 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
+     return true;
+ }
+ 
++int Verifier::batch_cut(const int* rows, int S, bool split) {
++    if (!split || S < 2) return 0;
++    int spans = 1, cut = 0;
++    for (int t = 1; t < S; ++t)
++        if (rows[t] != rows[t - 1]) { ++spans; cut = t; }
++    if (spans == 1) return (S + 1) / 2;   // a slot alone: cut like a solo window (its span split, GDN from its start)
++    return spans == 2 ? cut : 0;
++}
++
+ bool Verifier::commit_slots(std::string& err) {
++    int keep[16];
++    for (int& k : keep) k = strata::kernels::kVerifyMaxT;   // every row (clamped to each slot's rows)
++    return commit_slots_keep(keep, err);
++}
++
++bool Verifier::commit_slots_keep(const int* n_keep, std::string& err) {
+     const OnDevice on_device(device_);
+     if (!last_batch_ || last_t_ < 1) { err = "verify: commit_slots without a batch window"; return false; }
+     const int S = last_t_;
+     const Clock::time_point t0 = Clock::now();
++    const int64_t CB = 2 + max_t_;
++    int kept[8] = {};   // per row: kept (1) or dropped (0)
++    for (int t = 0; t < S;) {
++        int t1 = t + 1;
++        while (t1 < S && last_rows_[t1] == last_rows_[t]) ++t1;
++        const int k = std::clamp(n_keep[last_rows_[t]], 1, t1 - t);
++        int32_t* c = h_commitb_ + (size_t) last_rows_[t] * CB;
++        c[0] = k;
++        c[1] = k - 1;
++        for (int64_t j = 0; j < CB - 2; ++j) c[2 + j] = j < k ? (int32_t) last_pos_b_[t + j] : -1;
++        for (int j = 0; j < k; ++j) kept[t + j] = 1;
++        t = t1;
++    }
+     std::atomic_thread_fence(std::memory_order_seq_cst);
+     const cudaError_t le = cudaGraphLaunch(commit_bm_[batch_key(last_rows_, S, row_base_)], cs_);
+     if (le != cudaSuccess) { err = std::string("verify: batch commit launch: ") + cudaGetErrorString(le); return false; }
+-    const cudaError_t se = cudaStreamSynchronize(cs_);
+-    if (se != cudaSuccess) { err = std::string("verify: batch commit: ") + cudaGetErrorString(se); return false; }
++    // as the solo commit (set_commit_async): the next window follows it on this stream, and the slots' drafters read
++    // only the window's final rows and their own K/V; a copy of a slot's sessions synchronizes the device first
++    if (!g_commit_async || next_ != nullptr) {
++        const cudaError_t se = cudaStreamSynchronize(cs_);
++        if (se != cudaSuccess) { err = std::string("verify: batch commit: ") + cudaGetErrorString(se); return false; }
++    } else {
++        const cudaError_t re = cudaEventRecord(commit_done_, cs_);
++        if (re != cudaSuccess) { err = std::string("verify: batch commit event: ") + cudaGetErrorString(re); return false; }
++        (void) cudaStreamQuery(cs_);
++        commit_pending_ = true;
++    }
+     if (ple_stage())
+         for (int t = 0; t < S; ++t) {
++            if (!kept[t]) continue;
+             SessionState& sx = *slots_[(size_t) last_rows_[t]];
+             sx.ple_prev[0] = sx.ple_prev[1];
+             sx.ple_prev[1] = last_tokens_[t];
+         }
+     ms_commit += ms_since(t0);
+-    return next_ == nullptr || next_->commit_slots(err);
++    return next_ == nullptr || next_->commit_slots_keep(n_keep, err);
+ }
+ 
+ bool Verifier::sample_rows(int S, std::string& err) {
+@@ -2068,6 +2154,15 @@ bool Verifier::batch_launch(int base, int S, const int32_t* tokens, const int64_
+     int rows[8] = {};
+     for (int t = 0; t < S && t < 8; ++t) rows[t] = base + t;
+     if (!stage_batch(rows, S, base, tokens, pos, err)) return false;
++    const int64_t CB = 2 + max_t_;
++    for (int t = 0; t < S; ++t) {   // one row per slot here, every row kept: [1, 0, position, -1 ..]
++        int32_t* c = h_commitb_ + (size_t) rows[t] * CB;
++        c[0] = 1;
++        c[1] = 0;
++        c[2] = (int32_t) pos[t];
++        for (int64_t j = 3; j < CB; ++j) c[j] = -1;
++    }
++    std::atomic_thread_fence(std::memory_order_seq_cst);
+     cudaError_t le = cudaGraphLaunch(exec_bm_[batch_key(rows, S, base)], cs_);
+     if (le == cudaSuccess) le = cudaGraphLaunch(commit_bm_[batch_key(rows, S, base)], cs_);   // right behind it: every row is kept
+     if (le != cudaSuccess) { err = std::string("verify: batch launch: ") + cudaGetErrorString(le); return false; }
+diff --git a/src/kernels/cpu/iq_avx2.cpp b/src/kernels/cpu/iq_avx2.cpp
+index bb8849b..fb264ba 100644
+--- a/src/kernels/cpu/iq_avx2.cpp
++++ b/src/kernels/cpu/iq_avx2.cpp
+@@ -437,6 +437,78 @@ void iq256_rows(int type, const uint8_t* w, size_t row_bytes, int n, const void*
+     }
+ }
+ 
++// ---- IQ4_XS gate and up rows for ONE token (the common case: most of a window's expert groups hold one token).
++// ggml-cpu's dot works one row and one 128-bit half at a time, with the sub-block scale decoded in scalar code per
++// 32 values.  Here a 256-bit register holds two sub-blocks (32 qs bytes: sub-block 2j in lane 0, 2j+1 in lane 1), so
++// one pshufb decodes both sub-blocks' low nibbles and one their high nibbles; the activations are permuted to that
++// lane order once per pair and shared by the gate and the up row; a super-block's eight scales are decoded once,
++// in vector code.  ~0.3 vector instructions per weight against ggml's ~0.6.  Another summation order than ggml's.
++namespace {
++alignas(32) const uint8_t kIq4xsScaleMask[4][32] = {
++    {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3},
++    {4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7},
++    {8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11},
++    {12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15}};
++
++// the eight (ls - 32) of a super-block as int16, in both lanes: ls[i] = nibble i of scales_l | 2 bits i of scales_h << 4
++inline __m256i iq4xs_scales8(const uint8_t* b) {
++    const __m128i sl = _mm_cvtsi32_si128((int) u32(b + 4));
++    const __m128i m4 = _mm_set1_epi8(0x0f);
++    const __m128i nib = _mm_unpacklo_epi8(_mm_and_si128(sl, m4), _mm_and_si128(_mm_srli_epi16(sl, 4), m4));
++    const __m128i sh = _mm_set1_epi16((short) u16(b + 2));
++    // bits 2i..2i+1 of sh to bits 14..15 of lane i, then down to 0..1
++    const __m128i hb = _mm_srli_epi16(_mm_mullo_epi16(sh, _mm_setr_epi16(1 << 14, 1 << 12, 1 << 10, 1 << 8, 1 << 6, 1 << 4,
++                                                                         1 << 2, 1)), 14);
++    const __m128i ls = _mm_sub_epi16(_mm_or_si128(_mm_cvtepu8_epi16(nib), _mm_slli_epi16(hb, 4)), _mm_set1_epi16(32));
++    return _mm256_broadcastsi128_si256(ls);
++}
++
++// one row's pair j against the permuted activations: the int32 partial sums of its eight lanes
++inline __m256i iq4xs_pair(const uint8_t* blk, int j, __m256i values, __m256i m4, __m256i ylo, __m256i yhi, __m256i sc) {
++    const __m256i bits = _mm256_loadu_si256((const __m256i*) (blk + 8 + 32 * j));
++    const __m256i wl = _mm256_shuffle_epi8(values, _mm256_and_si256(bits, m4));
++    const __m256i wh = _mm256_shuffle_epi8(values, _mm256_and_si256(_mm256_srli_epi16(bits, 4), m4));
++    const __m256i pl = _mm256_maddubs_epi16(_mm256_sign_epi8(wl, wl), _mm256_sign_epi8(ylo, wl));
++    const __m256i ph = _mm256_maddubs_epi16(_mm256_sign_epi8(wh, wh), _mm256_sign_epi8(yhi, wh));
++    const __m256i s = _mm256_shuffle_epi8(sc, _mm256_load_si256((const __m256i*) kIq4xsScaleMask[j]));
++    return _mm256_add_epi32(_mm256_madd_epi16(pl, s), _mm256_madd_epi16(ph, s));
++}
++}  // namespace
++
++void iq4xs256_gu1_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* act, float* ff,
++                       int r0, int r1) {
++    const block_q8_K* y = (const block_q8_K*) act;
++    const int nb = n / QK_K;
++    const __m256i values = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) kvalues_iq4nl));
++    const __m256i m4 = _mm256_set1_epi8(0x0f);
++    for (int r = r0; r < r1; ++r) {
++        const uint8_t* gr = blob + (size_t) r * gu_row;
++        const uint8_t* ur = blob + up_off + (size_t) r * gu_row;
++        __m256 accg = _mm256_setzero_ps(), accu = _mm256_setzero_ps();
++        for (int i = 0; i < nb; ++i) {
++            const uint8_t* bg = gr + (size_t) i * 136;
++            const uint8_t* bu = ur + (size_t) i * 136;
++            rows_ahead(bg + prefetch_ahead);
++            rows_ahead(bu + prefetch_ahead);
++            const __m256i scg = iq4xs_scales8(bg), scu = iq4xs_scales8(bu);
++            const int8_t* q8 = y[i].qs;
++            __m256i sg = _mm256_setzero_si256(), su = _mm256_setzero_si256();
++            for (int j = 0; j < 4; ++j) {
++                const __m256i ya = _mm256_loadu_si256((const __m256i*) (q8 + 64 * j));
++                const __m256i yb = _mm256_loadu_si256((const __m256i*) (q8 + 64 * j + 32));
++                const __m256i ylo = _mm256_permute2x128_si256(ya, yb, 0x20);   // values 0-15 of sub-blocks 2j, 2j+1
++                const __m256i yhi = _mm256_permute2x128_si256(ya, yb, 0x31);   // values 16-31
++                sg = _mm256_add_epi32(sg, iq4xs_pair(bg, j, values, m4, ylo, yhi, scg));
++                su = _mm256_add_epi32(su, iq4xs_pair(bu, j, values, m4, ylo, yhi, scu));
++            }
++            accg = _mm256_fmadd_ps(_mm256_set1_ps(h2f(u16(bg)) * y[i].d), _mm256_cvtepi32_ps(sg), accg);
++            accu = _mm256_fmadd_ps(_mm256_set1_ps(h2f(u16(bu)) * y[i].d), _mm256_cvtepi32_ps(su), accu);
++        }
++        const float g = hsum8(accg), u = hsum8(accu);
++        ff[r] = (g / (1.f + std::exp(-g))) * u;
++    }
++}
++
+ // ---- IQ4_NL (type 20): 32-value blocks of 18 bytes (f16 d + 16 nibble bytes) against Q8_0 activations.
+ // ggml-cpu's own AVX-2 dot (ggml_vec_dot_iq4_nl_q8_0) is single-token: every token redoes the nibble ->
+ // kvalues_iq4nl pshufb decode and the |w| half of the signed x signed product.  Here both are computed once
+diff --git a/src/kernels/cpu/native_expert.cpp b/src/kernels/cpu/native_expert.cpp
+index 0dc5d3a..c9f9b0e 100644
+--- a/src/kernels/cpu/native_expert.cpp
++++ b/src/kernels/cpu/native_expert.cpp
+@@ -119,6 +119,12 @@ void native_gu_rows(const NativeFmt& f, const uint8_t* blob, const void* const*
+             return;
+         }
+     }
++    // one token of IQ4_XS on AVX-2: the gate and the up row in one pass (STRATA_IQ4XS_GU1=0: ggml-cpu's dot)
++    static const bool gu1 = avx2 && !cpu512 && [] { const char* v = std::getenv("STRATA_IQ4XS_GU1"); return v == nullptr || v[0] != '0'; }();
++    if (gu1 && nt == 1 && f.gu_type == 23) {
++        iq4xs256_gu1_rows(blob, f.gu_row, f.up_off, (int) f.n_embd, act[0], ff[0], r0, r1);
++        return;
++    }
+     const ggml_vec_dot_t dot = traits(f.gu_type)->vec_dot;
+     const int n = (int) f.n_embd;
+     for (int r = r0; r < r1; ++r) {
+diff --git a/src/kernels/cuda/fused_gr.cu b/src/kernels/cuda/fused_gr.cu
+index 71012ff..8877881 100644
+--- a/src/kernels/cuda/fused_gr.cu
++++ b/src/kernels/cuda/fused_gr.cu
+@@ -4,6 +4,7 @@
+ #include "strata/kernels/bf16_bits.hpp"
+ #include "strata/kernels/verify_kernels.hpp"
+ 
++#include <cuda_fp16.h>
+ #include <cuda_runtime.h>
+ 
+ #include <atomic>
+@@ -1165,6 +1166,281 @@ bool fused_gr_supported(int64_t n_embd, int64_t hc, int64_t hc_lr) {
+     return n_embd == N && hc == HC && hc_lr == LR;
+ }
+ 
++// ================================ the hc read on the GGUF's 4-bit weights ================================
++//
++// The OrcaRouter IQ4_XS file stores hc_*_down as IQ4_XS and hc_*_up as IQ4_NL (329 MiB); the BF16 copies the pack
++// makes of them (--compat-bf16) are 1,207 MiB of VRAM and 3.7x the bytes every window reads.  These kernels read the
++// 4-bit blocks and dequantize in registers: d * (ls - 32) * kvalue is exact in FP32 (11 + 6 + 7 significant bits), so
++// the weights are the GGUF's exactly (the BF16 copies rounded them).  The norm is the default read's kernel.
++namespace {
++
++__device__ const int8_t kGrIq4Values[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
++constexpr int XS_BYTES = 136;                     // block_iq4_xs: d, scales_h, scales_l[4], qs[128]
++constexpr int NL_BYTES = 18;                      // block_iq4_nl: d, qs[16]
++constexpr int XS_ROW = D / 256 * XS_BYTES;        // 5440 B: one down row (10240 values)
++constexpr int NL_ROW = LR / 32 * NL_BYTES;        // 180 B: one up row (320 values)
++constexpr int QN_TILE = 512;                      // down: activations staged per tile, 2 superblocks
++constexpr int QN_PAD = QN_TILE / 32 * 48;         // ... in 48-float strides per 32 (bank-conflict-free float4 reads)
++constexpr int QN_ROWS = 2;                        // down rows per warp: each staged activation feeds both
++constexpr int QN_DOWN_BLOCKS = LR / (WARPS * QN_ROWS);   // 20, plus one for the BF16 inject rows
++static_assert(D % QN_TILE == 0 && LR % (WARPS * QN_ROWS) == 0, "native hc read geometry");
++
++__device__ __forceinline__ int qn_pad(int x) { return x + (x >> 5) * 16; }
++
++// lo[k][row] = silu((W_down[row] . xn[k]) / hc), and the BF16 inject rows: the default down kernel's outputs.  Lane l
++// owns bytes 4l..4l+3 of every superblock's qs: sub-block l/4, values (l%4)*4 + {0..3} (low nibbles) and +16 (high).
++template <int MAX_T>
++__global__ void __launch_bounds__(THREADS) gr_down_iq4xs_kernel(GrMulti m) {
++    extern __shared__ __align__(16) float xt[];   // [T][QN_PAD]
++    __shared__ float kv[16];
++    const int t = threadIdx.x, lane = t & 31, warp = t >> 5;
++    const int T = m.T;
++    if (t < 16) kv[t] = (float) kGrIq4Values[t];
++    const bool inject_block = blockIdx.x == QN_DOWN_BLOCKS;
++    const bool active = !(inject_block && (m.a[0].w_inject == nullptr || warp >= HC));
++    const int row0 = inject_block ? warp : (blockIdx.x * WARPS + warp) * QN_ROWS;
++    const uint8_t* q0 = (const uint8_t*) m.a[0].q_down + (size_t) (inject_block ? 0 : row0) * XS_ROW;
++    const uint16_t* irow = inject_block && active ? m.a[0].w_inject + (size_t) row0 * D : nullptr;
++    const int ib = lane >> 2, j0 = (lane & 3) * 4;
++    float acc[QN_ROWS][MAX_T];
++#pragma unroll
++    for (int r = 0; r < QN_ROWS; ++r)
++#pragma unroll
++        for (int k = 0; k < MAX_T; ++k) acc[r][k] = 0.0f;
++    for (int base = 0; base < D; base += QN_TILE) {
++        __syncthreads();                                   // the previous tile is consumed (and kv is written)
++        for (int i = t; i < T * (QN_TILE / 4); i += THREADS) {
++            const int k = i / (QN_TILE / 4), x = (i - k * (QN_TILE / 4)) * 4;
++            *reinterpret_cast<float4*>(xt + k * QN_PAD + qn_pad(x)) =
++                *reinterpret_cast<const float4*>(m.xn + (size_t) k * D + base + x);
++        }
++        __syncthreads();
++        if (!active) continue;
++        if (!inject_block) {
++#pragma unroll
++            for (int sb = 0; sb < QN_TILE / 256; ++sb) {
++                const int blk = base / 256 + sb;
++                float w[QN_ROWS][8];
++#pragma unroll
++                for (int r = 0; r < QN_ROWS; ++r) {
++                    const uint8_t* b = q0 + (size_t) r * XS_ROW + (size_t) blk * XS_BYTES;
++                    const float d = __half2float(__ushort_as_half(*reinterpret_cast<const unsigned short*>(b)));
++                    const unsigned sh = *reinterpret_cast<const unsigned short*>(b + 2);
++                    const int ls = ((b[4 + (ib >> 1)] >> (4 * (ib & 1))) & 0xf) | (((sh >> (2 * ib)) & 3) << 4);
++                    const float dl = d * (float) (ls - 32);
++                    const uint32_t q = __ldg(reinterpret_cast<const unsigned int*>(b + 8) + lane);
++#pragma unroll
++                    for (int j = 0; j < 4; ++j) {
++                        w[r][j] = dl * kv[(q >> (8 * j)) & 0xf];
++                        w[r][4 + j] = dl * kv[(q >> (8 * j + 4)) & 0xf];
++                    }
++                }
++                const int x0 = qn_pad(sb * 256 + 32 * ib) + j0;
++#pragma unroll
++                for (int k = 0; k < MAX_T; ++k) {
++                    if (k >= T) break;
++                    const float4 lo4 = *reinterpret_cast<const float4*>(xt + k * QN_PAD + x0);
++                    const float4 hi4 = *reinterpret_cast<const float4*>(xt + k * QN_PAD + x0 + 16);
++#pragma unroll
++                    for (int r = 0; r < QN_ROWS; ++r) {
++                        float s = acc[r][k];
++                        s = fmaf(w[r][0], lo4.x, s); s = fmaf(w[r][1], lo4.y, s);
++                        s = fmaf(w[r][2], lo4.z, s); s = fmaf(w[r][3], lo4.w, s);
++                        s = fmaf(w[r][4], hi4.x, s); s = fmaf(w[r][5], hi4.y, s);
++                        s = fmaf(w[r][6], hi4.z, s); s = fmaf(w[r][7], hi4.w, s);
++                        acc[r][k] = s;
++                    }
++                }
++            }
++        } else {
++#pragma unroll
++            for (int q = 0; q < QN_TILE / 8 / 32; ++q) {   // BF16 inject row: 8 values per lane per chunk
++                const int j = lane + 32 * q;
++                const uint4 wv = __ldg(reinterpret_cast<const uint4*>(irow + base) + j);
++                const int x = qn_pad(j * 8);                   // 8 aligned values never straddle a 32-stride
++#pragma unroll
++                for (int k = 0; k < MAX_T; ++k)
++                    if (k < T) acc[0][k] += dot8(wv, xt + k * QN_PAD + x);
++            }
++        }
++    }
++    if (!active) return;
++#pragma unroll
++    for (int r = 0; r < QN_ROWS; ++r) {
++        if (inject_block && r > 0) break;
++#pragma unroll
++        for (int k = 0; k < MAX_T; ++k) {
++            if (k >= T) break;
++            const float s = warp_sum(acc[r][k]);
++            if (lane != k) continue;
++            if (inject_block) {
++                m.a[k].inject_out[row0] = s;
++            } else {
++                const float x = s / (float) HC;
++                m.a[k].lo[row0 + r] = x / (1.0f + __expf(-x));
++            }
++        }
++    }
++}
++
++// mixed[k][d] = mean_c xn[k][c,d] * sigmoid(W_up[c*n_embd + d] . lo[k]), R updated in place when apply: the default
++// up kernel's epilogue.  A block is QU_COLS columns x 4 streams, one thread per row; the block's rows (4 runs of
++// QU_COLS consecutive rows) are staged into shared memory by 16-byte loads first, so the global reads are coalesced
++// although an IQ4_NL row is 180 B.
++constexpr int QU_COLS = 32;
++constexpr int QU_THREADS = QU_COLS * HC;          // 128
++constexpr int QU_BLOCKS = N / QU_COLS;            // 80
++constexpr int QU_LS = LR / 32 * 33;               // lo staged as 10 rows of 32 + 1 pad float
++
++template <int MAX_T>
++__global__ void __launch_bounds__(QU_THREADS) gr_up_iq4nl_kernel(GrMulti m) {
++    __shared__ __align__(16) uint8_t wsm[HC][QU_COLS * NL_ROW];   // 4 x 5760 B
++    __shared__ float lo[MAX_T][QU_LS];
++    __shared__ float kv[16];
++    __shared__ float g[MAX_T][HC][QU_COLS];
++    const int t = threadIdx.x;
++    const int T = m.T;
++    const int c = t / QU_COLS, dd = t - c * QU_COLS;
++    const int d0 = blockIdx.x * QU_COLS;
++    if (t < 16) kv[t] = (float) kGrIq4Values[t];
++    for (int i = t; i < T * LR; i += QU_THREADS) {
++        const int k = i / LR, x = i - k * LR;
++        lo[k][(x >> 5) * 33 + (x & 31)] = m.a[k].lo[x];
++    }
++    // QU_COLS rows of a stream are contiguous: (QU_COLS * 180) / 16 = 360 uint4 per stream
++    for (int i = t; i < HC * (QU_COLS * NL_ROW / 16); i += QU_THREADS) {
++        const int cc = i / (QU_COLS * NL_ROW / 16), o = i - cc * (QU_COLS * NL_ROW / 16);
++        const uint4* src = reinterpret_cast<const uint4*>((const uint8_t*) m.a[0].q_up +
++                                                          ((size_t) cc * N + d0) * NL_ROW);
++        reinterpret_cast<uint4*>(wsm[cc])[o] = __ldg(src + o);
++    }
++    __syncthreads();
++    const uint8_t* row = wsm[c] + dd * NL_ROW;
++    float acc[MAX_T];
++#pragma unroll
++    for (int k = 0; k < MAX_T; ++k) acc[k] = 0.0f;
++#pragma unroll 2
++    for (int b = 0; b < LR / 32; ++b) {
++        const uint8_t* blk = row + b * NL_BYTES;      // 2-byte aligned
++        const unsigned short* h = reinterpret_cast<const unsigned short*>(blk);
++        const float d = __half2float(__ushort_as_half(h[0]));
++        float w[32];
++#pragma unroll
++        for (int j = 0; j < 8; ++j) {
++            const unsigned short two = h[1 + j];      // qs[2j], qs[2j+1]
++            w[2 * j] = d * kv[two & 0xf];
++            w[2 * j + 1] = d * kv[(two >> 8) & 0xf];
++            w[2 * j + 16] = d * kv[(two >> 4) & 0xf];
++            w[2 * j + 17] = d * kv[(two >> 12) & 0xf];
++        }
++#pragma unroll
++        for (int k = 0; k < MAX_T; ++k) {
++            if (k >= T) break;
++            const float* l = &lo[k][b * 33];          // broadcast: every thread reads the same lo values
++            float s = acc[k];
++#pragma unroll
++            for (int j = 0; j < 32; ++j) s = fmaf(w[j], l[j], s);
++            acc[k] = s;
++        }
++    }
++    const int i = c * N + d0 + dd;
++#pragma unroll
++    for (int k = 0; k < MAX_T; ++k) {
++        if (k >= T) break;
++        const FusedGrArgs& a = m.a[k];
++        float rv = a.R[i];
++        if (a.apply) {
++            rv = fmaf(a.bo_prev[d0 + dd], 2.0f * sigmoidf_(a.inj_prev[c] / (float) HC), rv);
++            a.R_out[i] = rv;
++        }
++        const float x = rv * a.w_norm[i] * a.rs[c];
++        g[k][c][dd] = x * sigmoidf_(acc[k]);
++    }
++    __syncthreads();
++    for (int j = t; j < T * QU_COLS; j += QU_THREADS) {
++        const int k = j / QU_COLS, col = j - k * QU_COLS;
++        float s = 0.0f;
++#pragma unroll
++        for (int cc = 0; cc < HC; ++cc) s += g[k][cc][col];
++        m.a[k].mixed[d0 + col] = s / (float) HC;
++    }
++}
++
++__global__ void gr_dequant_bf16_kernel(int type, const uint8_t* __restrict__ q, uint16_t* __restrict__ out, int64_t n) {
++    const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;   // one output value
++    if (i >= n) return;
++    float v;
++    if (type == kGrNativeDownType) {
++        const int64_t blk = i / 256;
++        const int x = (int) (i - blk * 256), ib = x / 32, p = x % 32;
++        const uint8_t* b = q + blk * XS_BYTES;
++        const float d = __half2float(__ushort_as_half(*reinterpret_cast<const unsigned short*>(b)));
++        const unsigned sh = *reinterpret_cast<const unsigned short*>(b + 2);
++        const int ls = ((b[4 + (ib >> 1)] >> (4 * (ib & 1))) & 0xf) | (((sh >> (2 * ib)) & 3) << 4);
++        const uint8_t byte = b[8 + 16 * ib + (p & 15)];
++        v = d * (float) (ls - 32) * (float) kGrIq4Values[p < 16 ? (byte & 0xf) : (byte >> 4)];
++    } else {
++        const int64_t blk = i / 32;
++        const int p = (int) (i - blk * 32);
++        const uint8_t* b = q + blk * NL_BYTES;
++        const float d = __half2float(__ushort_as_half(*reinterpret_cast<const unsigned short*>(b)));
++        const uint8_t byte = b[2 + (p & 15)];
++        v = d * (float) kGrIq4Values[p < 16 ? (byte & 0xf) : (byte >> 4)];
++    }
++    out[i] = bf16_from_f32(v);
++}
++
++}  // namespace
++
++void gr_dequant_bf16(int type, const void* q, uint16_t* out, int64_t n, void* stream) {
++    if ((type != kGrNativeDownType && type != kGrNativeUpType) || n % 256 != 0) {
++        std::fprintf(stderr, "gr_dequant_bf16: unsupported type %d / size %lld\n", type, (long long) n);
++        std::exit(1);
++    }
++    gr_dequant_bf16_kernel<<<(unsigned) ((n + 255) / 256), 256, 0, (cudaStream_t) stream>>>(type, (const uint8_t*) q,
++                                                                                            out, n);
++}
++
++namespace {
++void launch_native(const GrMulti& m, cudaStream_t st, unsigned long long* stamp_buf, int stamp_i0) {
++    const int T = m.T;
++    gr_norm_split_kernel<<<dim3((unsigned) T, HC), THREADS, 0, st>>>(m);
++    if (stamp_buf) gpu_stamp(stamp_buf, stamp_i0, (void*) st);
++    const size_t smem = (size_t) T * QN_PAD * sizeof(float);   // 24 KB at 8 tokens
++    if (T <= 4) gr_down_iq4xs_kernel<4><<<QN_DOWN_BLOCKS + 1, THREADS, smem, st>>>(m);
++    else gr_down_iq4xs_kernel<kFusedGrMaxT><<<QN_DOWN_BLOCKS + 1, THREADS, smem, st>>>(m);
++    if (stamp_buf) gpu_stamp(stamp_buf, stamp_i0 + 1, (void*) st);
++    if (T <= 4) gr_up_iq4nl_kernel<4><<<QU_BLOCKS, QU_THREADS, 0, st>>>(m);
++    else gr_up_iq4nl_kernel<kFusedGrMaxT><<<QU_BLOCKS, QU_THREADS, 0, st>>>(m);
++}
++}  // namespace
++
++bool fused_gr_read_native(const FusedGrArgs* a, int n_tok, float* xn_scratch, void* stream,
++                          unsigned long long* stamp_buf, int stamp_i0) {
++    if (n_tok < 1 || n_tok > kFusedGrMaxT || xn_scratch == nullptr || a[0].q_down == nullptr || a[0].q_up == nullptr)
++        return false;
++    GrMulti m;
++    for (int t = 0; t < n_tok; ++t) {
++        m.a[t] = a[t];
++        const FusedGrArgs& x = a[t];
++        if (!x.R || !x.w_norm || !x.lo || !x.rs || !x.mixed || (x.w_inject && !x.inject_out) ||
++            (x.apply && (!x.bo_prev || !x.inj_prev || !x.R_out)) || x.q_down != a[0].q_down || x.q_up != a[0].q_up ||
++            x.w_inject != a[0].w_inject || x.w_norm != a[0].w_norm) {
++            std::fprintf(stderr, "fused_gr_read_native: invalid arguments for token %d\n", t);
++            std::exit(1);
++        }
++    }
++    m.xn = xn_scratch;
++    m.T = n_tok;
++    launch_native(m, (cudaStream_t) stream, stamp_buf, stamp_i0);
++    const cudaError_t e = cudaGetLastError();
++    if (e != cudaSuccess) {
++        std::fprintf(stderr, "fused_gr_read_native: %s\n", cudaGetErrorString(e));
++        std::exit(1);
++    }
++    return true;
++}
++
+ void fused_gr_read(const FusedGrArgs& a, void* stream) {
+     if (!a.R || !a.w_norm || !a.w_down || !a.w_up || !a.lo || !a.rs || !a.mixed ||
+         (a.w_inject && !a.inject_out) || (a.apply && (!a.bo_prev || !a.inj_prev || !a.R_out)) ||
+diff --git a/src/prefill/prefill.cpp b/src/prefill/prefill.cpp
+index e76fb6d..9ece796 100644
+--- a/src/prefill/prefill.cpp
++++ b/src/prefill/prefill.cpp
+@@ -23,6 +23,7 @@
+ #include "strata/kernels/qsa_prompt_attn.hpp"
+ #include "strata/kernels/qsa_select.hpp"
+ #include "strata/prefill/gemm.hpp"
++#include "strata/kernels/fused_gr.hpp"
+ #include "strata/prefill/moe_fused.hpp"
+ #include "strata/prefill/moe_fused_iq.hpp"
+ #include "strata/prefill/moe_mmq.hpp"
+@@ -1446,9 +1447,21 @@ bool native_proj(Gemm& gm, const core::WeightRef* w, const uint16_t* X, float* Y
+ }
+ bool bf16_proj(Gemm& gm, const core::WeightRef* w, const uint16_t* X, float* Y, int64_t T, const std::string& name,
+                std::string& err, int64_t ldy = 0, const uint16_t* X_lo = nullptr) {
+-    if (w->kind != core::WeightKind::Bf16InF32 || !w->data) { err = "prefill: " + name + " is not a resident BF16 tensor"; return false; }
+-    gm.bf16(X, (const uint16_t*) w->data, Y, T, w->ne1 > 0 ? w->ne1 : 1, w->ne0, ldy);
+-    if (X_lo) gm.bf16(X_lo, (const uint16_t*) w->data, Y, T, w->ne1 > 0 ? w->ne1 : 1, w->ne0, ldy, 1.0f);
++    const uint16_t* W = (const uint16_t*) w->data;
++    if (!W && w->native_data &&
++        (w->native_type == strata::kernels::kGrNativeDownType || w->native_type == strata::kernels::kGrNativeUpType)) {
++        // a hyper-connection projection served in its GGUF 4-bit form (fused_gr's native read): its BF16 values,
++        // exactly as the pack's --compat-bf16 copy held them, in the dequantization scratch (same stream)
++        const int64_t n = w->ne0 * w->ne1;
++        if (gm.scratch() == nullptr || gm.scratch_elems() < n) { err = "prefill: " + name + ": the dequantization scratch is too small"; return false; }
++        strata::kernels::gr_dequant_bf16(w->native_type, w->native_data, gm.scratch(), n, gm.stream());
++        W = gm.scratch();
++    } else if (w->kind != core::WeightKind::Bf16InF32 || !W) {
++        err = "prefill: " + name + " is not a resident BF16 tensor";
++        return false;
++    }
++    gm.bf16(X, W, Y, T, w->ne1 > 0 ? w->ne1 : 1, w->ne0, ldy);
++    if (X_lo) gm.bf16(X_lo, W, Y, T, w->ne1 > 0 ? w->ne1 : 1, w->ne0, ldy, 1.0f);
+     return true;
+ }
+ 
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 085c3d8..6991b5e 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -3016,6 +3016,38 @@ int main(int argc, char** argv) {
+         if (!o.mtp.empty() && !mtp.load(o.mtp, draft_geometry, last_st ? last_st->ss : ss, o.spec, err, o.mtp_window)) { std::fprintf(stderr, "strata generate: %s%s\n", err.c_str(), vram_free_note().c_str()); return 1; }
+         mtp.set_ple_session(&ss);
+     }
++    // --batch with the drafter (one GPU): every slot drafts its own tokens - a drafter of its own on the shared
++    // weights (its K/V, buffers and graphs, ~50 MiB) and its own copy of the window's final rows.  STRATA_BATCH_DRAFTS=0:
++    // one token per slot per window, as before.
++    std::vector<std::unique_ptr<strata::core::MtpDrafter>> bmtp;
++    std::vector<float*> bmtp_R;
++    // drafts per slot and window: two slots then fill the window (STRATA_BATCH_DRAFTS_N=1..3 for fewer: every row of a
++    // batch window costs CPU experts, and a slot's rows share fewer of them than a solo window's)
++    const int kBatchDrafts = [] {
++        const char* v = std::getenv("STRATA_BATCH_DRAFTS_N");
++        const int n = v ? std::atoi(v) : strata::kernels::kVerifyMaxT / 2 - 1;
++        return std::clamp(n, 1, strata::kernels::kVerifyMaxT / 2 - 1);
++    }();
++    const bool bdraft = o.batch > 0 && !o.mtp.empty() && stages.empty() && !multi_gpu && [] {
++        const char* v = std::getenv("STRATA_BATCH_DRAFTS");
++        return v == nullptr || v[0] != '0';
++    }();
++    if (bdraft) {
++        const size_t rbytes = (size_t) strata::kernels::kVerifyMaxT * (size_t) (g.hc * g.n_embd) * sizeof(float);
++        for (int b = 0; b < o.batch; ++b) {
++            auto d = std::make_unique<strata::core::MtpDrafter>();
++            float* wr = nullptr;
++            if (cudaMalloc((void**) &wr, rbytes) != cudaSuccess || !d->load_shared(mtp, *bslot_ss[0][(size_t) b], wr, err)) {
++                std::fprintf(stderr, "strata generate: --batch: slot %d's drafter: %s%s\n", b,
++                             err.empty() ? "its rows do not fit" : err.c_str(), vram_free_note().c_str());
++                return 1;
++            }
++            bmtp_R.push_back(wr);
++            bmtp.push_back(std::move(d));
++        }
++        std::fprintf(stderr, "strata generate: --batch %d: every slot drafts its own tokens (a drafter each, %.0f MiB)\n",
++                     o.batch, (double) bmtp[0]->vram_bytes() / 1048576.0);
++    }
+     // THE HEAD BEFORE THE CACHE, AND BEFORE THE ARENA.  The expert cache takes what is free minus the reserve, so
+     // everything allocated after it comes out of the reserve.  The native head (~0.5 GB with IQ3_S) was loaded after
+     // it and ate most of the 700 MiB: 128K IQ3_S ended with 30 MiB free, the driver paged, and a request stalled for
+@@ -5131,11 +5163,17 @@ int main(int argc, char** argv) {
+             std::fprintf(stderr, "strata serve: layer split: layers %s, one hand-off per window\n", plan_s.c_str());
+         }
+         ver.set_remote_expert_opt(remote_opt.get());
+-        if (!ver.init(wt, g, ss, vh, native_head.loaded() ? &native_head : nullptr, std::max(o.spec, o.batch), err) ||
++        if (!ver.init(wt, g, ss, vh, native_head.loaded() ? &native_head : nullptr,
++                      bdraft ? strata::kernels::kVerifyMaxT : std::max(o.spec, o.batch), err) ||
+             !mtp.bind(last_st ? last_st->wt : wt, last_st ? &last_st->head : &native_head, ver.final_R_all(), err)) {
+             std::fprintf(stderr, "strata serve: %s\n", err.c_str());
+             return 1;
+         }
++        for (auto& d : bmtp)
++            if (!d->bind_shared(mtp, err)) {
++                std::fprintf(stderr, "strata serve: --batch: %s\n", err.c_str());
++                return 1;
++            }
+         // each stage's verifier gets its stage's slot sessions
+         if (o.batch > 0) {
+             for (size_t k = 0; k < bslot_ss.size(); ++k) {
+@@ -5747,6 +5785,8 @@ int main(int argc, char** argv) {
+         const int S = o.spec;
+         const int S_mtp = o.mtp_max_t > 0 ? std::min(o.mtp_max_t, S) : S;   // the MTP's windows; suffixes go up to S
+         if (S_mtp < S) mtp.set_max_drafts(S_mtp - 1);
++        // a batch window holds kVerifyMaxT rows: two drafting slots take half each
++        for (auto& d : bmtp) d->set_max_drafts(kBatchDrafts);
+         strata::spec::SuffixDrafter sfx(std::max(1, o.suffix_draft), 64, (size_t) o.max_context + 4096);
+         strata::spec::DraftPolicy policy(S);   // MTP or lookup window, learned over the whole process
+         // The vision path (--vision): GENI <max_new> <embeddings file> <id,id,...> carries images.  The file is one
+@@ -5897,13 +5937,19 @@ int main(int argc, char** argv) {
+             // a prompt read that gave way to a waiting request (BYIELD): `ids` is the part read so far, and the same
+             // request continues from it (the read goes on with the same chunks; `from0`: it had started at token 0)
+             bool partial = false, partial_from0 = false;
++            // drafts in batch windows (bmtp): the next window's drafts and their probabilities, how many it carries
++            std::vector<int32_t> drafts;
++            std::vector<float> dprob;
++            int nd = 0;
++            double min_p = 0.0;            ///< the request's spec_min_p
++            int64_t offered = 0, accepted = 0;
+         };
+         std::vector<BSlot> bs((size_t) std::max(o.batch, 0));
+         // timing of the batch windows since the slots were last all idle (one stderr line then)
+         double bt_run = 0, bt_commit = 0, bt_emit = 0;
+         double bt_wait0 = 0, bt_pool0 = 0;
+         int64_t bt_miss0 = 0, bt_hits0 = 0, bt_pcie0 = 0;
+-        int64_t bt_windows = 0, bt_rows = 0, bt_tokens = 0;
++        int64_t bt_windows = 0, bt_rows = 0, bt_tokens = 0, bt_rounds = 0;
+         Clock::time_point bt_start = Clock::now();
+         int admit_slot = -1;               ///< the slot the request being read will continue in (BGEN)
+         long long admit_max_new = 0;
+@@ -5915,6 +5961,8 @@ int main(int argc, char** argv) {
+             in_lines.pop_front();
+             return true;
+         };
++        // STRATA_DIRECT_COPY=0: the slot copies go through a host image (save + restore), as before
++        static const bool direct_copy = [] { const char* v = std::getenv("STRATA_DIRECT_COPY"); return v == nullptr || v[0] != '0'; }();
+         // the session a request just left behind (its prompt) -> slot b's sessions, on every stage
+         auto copy_to_slot = [&](int b, const std::vector<int32_t>& ids, std::string& e) -> bool {
+             const int64_t upto = (int64_t) ids.size();
+@@ -5923,6 +5971,15 @@ int main(int argc, char** argv) {
+                 strata::core::SessionState& to = *bslot_ss[k][(size_t) b];
+                 const strata::core::OnDevice on_k(k == 0 ? 0 : stages[k - 1]->dev);
+                 if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch admission: device sync failed"; return false; }
++                if (direct_copy) {   // both sessions on this stage's GPU: device to device, no host image
++                    if (!strata::core::conversation_state_copy(from, to, g, ids, e)) return false;
++                    for (int64_t j = 0; j < from.qsa_alloc; ++j)
++                        if (!strata::core::conversation_kv_copy(from.qsa_states[from.qsa_ord0 + j], to.qsa_states[to.qsa_ord0 + j],
++                                                                g, upto, true, e))
++                            return false;
++                    if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch admission: device sync failed"; return false; }
++                    continue;
++                }
+                 strata::core::ConversationCheckpoint ck;
+                 ck.ids = ids;
+                 if (!strata::core::conversation_checkpoint_save(ck, from, g, e) ||
+@@ -5954,6 +6011,14 @@ int main(int argc, char** argv) {
+                 if (at != nullptr) {
+                     if (!strata::core::conversation_checkpoint_restore(k == 0 ? *at : at->stage_parts[k - 1], to, g, e))
+                         return false;
++                } else if (direct_copy) {
++                    if (!strata::core::conversation_state_copy(from, to, g, bs[(size_t) b].ids, e)) return false;
++                    for (int64_t j = 0; j < from.qsa_alloc; ++j)
++                        if (!strata::core::conversation_kv_copy(from.qsa_states[from.qsa_ord0 + j], to.qsa_states[to.qsa_ord0 + j],
++                                                                g, upto, true, e))
++                            return false;
++                    if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch slot restore: device sync failed"; return false; }
++                    continue;
+                 } else {
+                     strata::core::ConversationCheckpoint ck;
+                     ck.ids = bs[(size_t) b].ids;
+@@ -5976,17 +6041,34 @@ int main(int argc, char** argv) {
+         // one batch window over the active slots only (row t is the t-th active slot): an idle slot is not touched,
+         // so it keeps the conversation it holds
+         auto batch_step = [&]() -> bool {
+-            int S = 0;
+-            int rows[strata::kernels::kVerifyMaxT] = {};
+-            int32_t tok[strata::kernels::kVerifyMaxT] = {}, outb[strata::kernels::kVerifyMaxT] = {};
+-            int64_t pos[strata::kernels::kVerifyMaxT] = {};
+-            for (int b = 0; b < (int) bs.size() && S < strata::kernels::kVerifyMaxT; ++b)
+-                if (bs[(size_t) b].active) {
++            // the rows: each active slot's token, then (bmtp) its drafts - one span per slot at consecutive positions
++            constexpr int MT = strata::kernels::kVerifyMaxT;
++            int S = 0, n_act = 0;
++            int rows[MT] = {};
++            int32_t tok[MT] = {}, outb[MT] = {};
++            int64_t pos[MT] = {};
++            for (const BSlot& b : bs) n_act += b.active ? 1 : 0;
++            const int per = n_act > 0 ? std::max(1, MT / n_act) : 1;   // the rows a slot may take
++            for (int b = 0; b < (int) bs.size() && S < MT; ++b) {
++                BSlot& sl = bs[(size_t) b];
++                if (!sl.active) continue;
++                int T = 1;
++                if (!bmtp.empty()) {
++                    // A FIXED SPAN: every distinct row layout is its own captured window graph, and on this class of
++                    // card each costs ~35 MiB of VRAM (measured, ~2,200 nodes) - variable spans exhausted the reserve
++                    // after a dozen windows.  So a slot always takes its token and kBatchDrafts drafts (the drafter
++                    // always drafts that many; a draft it was unsure of is simply rejected by the window): one graph
++                    // for the two slots together and one for each alone.  Only the context's end shortens a span.
++                    T = std::min({kBatchDrafts + 1, per, MT - S});
++                    T = (int) std::max<int64_t>(1, std::min<int64_t>((int64_t) T, o.max_context - sl.p));
++                }
++                for (int i = 0; i < T; ++i) {
+                     rows[S] = b;
+-                    tok[S] = bs[(size_t) b].x;
+-                    pos[S] = bs[(size_t) b].p;
++                    tok[S] = i == 0 ? sl.x : i - 1 < sl.nd ? sl.drafts[(size_t) i - 1] : sl.x;   // (a missing draft: any token)
++                    pos[S] = sl.p + i;
+                     ++S;
+                 }
++            }
+             if (S == 0) return true;
+             const bool was_busy = strata::core::progress().busy.load();
+             strata::core::progress().busy.store(true);
+@@ -6005,7 +6087,25 @@ int main(int argc, char** argv) {
+                 return false;
+             }
+             const Clock::time_point w1 = Clock::now();
+-            if (!ver.commit_slots(err)) {
++            // each slot keeps its token and the drafts the window agreed with
++            int keep[16];
++            for (int& k : keep) k = 1;
++            for (int t = 0; t < S;) {
++                int t1 = t + 1;
++                while (t1 < S && rows[t1] == rows[t]) ++t1;
++                int a = 0;
++                while (a < t1 - t - 1 && tok[t + a + 1] == outb[t + a]) ++a;
++                keep[rows[t]] = a + 1;
++                t = t1;
++            }
++            // the adaptive VRAM tier follows the batch too (beside the commit and the drafts, as in the solo loop)
++            std::thread adapt_thr;
++            bool adapt_ok = true;
++            if (!drive.d.usage.empty() && o.adapt_every > 0 && ((bt_rounds + 1) % o.adapt_every) == 0)
++                adapt_thr = std::thread([&] { adapt_ok = adapt(); });
++            ++bt_rounds;
++            if (!ver.commit_slots_keep(keep, err)) {
++                if (adapt_thr.joinable()) adapt_thr.join();
+                 std::printf("ERR %s\n", err.c_str());
+                 return false;
+             }
+@@ -6015,40 +6115,83 @@ int main(int argc, char** argv) {
+             bt_commit += msd(w1, w2);
+             ++bt_windows;
+             bt_rows += S;
+-            for (int t = 0; t < S; ++t) {
+-                const int b = rows[t];
++            const size_t hcn = (size_t) (g.hc * g.n_embd);
++            bool drafting[16] = {};
++            for (int t = 0; t < S;) {
++                int t1 = t + 1;
++                while (t1 < S && rows[t1] == rows[t]) ++t1;
++                const int b = rows[t], a = keep[b] - 1;
+                 BSlot& sl = bs[(size_t) b];
+-                const int32_t y = outb[t];
+-                sl.ids.push_back(sl.x);    // the window fed it: the slot's sessions hold it now
+-                std::printf("BT %d %d\n", b, (int) y);
+-                ++sl.produced;
+-                const bool eos = std::find(o.eos_ids.begin(), o.eos_ids.end(), (int64_t) y) != o.eos_ids.end();
+-                const char* fin = eos ? "stop" : sl.stop ? "cancel" : sl.produced >= sl.max_new ? "length"
+-                                : sl.p + 2 > o.max_context ? "length" : nullptr;
++                sl.offered += t1 - t - 1;
++                sl.accepted += a;
++                const int64_t p_win = sl.p;
++                for (int i = 0; i <= a; ++i) sl.ids.push_back(tok[t + i]);   // the window fed them: the slot holds them now
++                const char* fin = nullptr;
++                for (int i = 0; i <= a && fin == nullptr; ++i) {
++                    const int32_t y = outb[t + i];
++                    std::printf("BT %d %d\n", b, (int) y);
++                    ++sl.produced;
++                    ++bt_tokens;
++                    const bool eos = std::find(o.eos_ids.begin(), o.eos_ids.end(), (int64_t) y) != o.eos_ids.end();
++                    fin = eos ? "stop" : sl.stop ? "cancel" : sl.produced >= sl.max_new ? "length"
++                        : p_win + i + 2 > o.max_context ? "length" : nullptr;
++                }
+                 if (fin != nullptr) {
+                     const double ms = std::chrono::duration<double, std::milli>(Clock::now() - sl.t0).count();
+                     std::printf("BDONE %d %lld %s %.1f\n", b, (long long) sl.produced, fin, ms);
+                     sl.active = false;
+                     sl.cached = o.prompt_cache > 0 && !sl.img;   // its sessions hold sl.ids for the next turn
+                 } else {
+-                    sl.x = y;
+-                    sl.p += 1;
++                    sl.x = outb[t + a];
++                    sl.p += a + 1;
++                    if (!bmtp.empty()) {   // the slot's next drafts, from this window's rows of it (all slots at once)
++                        strata::core::MtpDrafter& dm = *bmtp[(size_t) b];
++                        if (cudaMemcpyAsync(bmtp_R[(size_t) b], ver.final_R_all() + (size_t) t * hcn,
++                                            (size_t) (t1 - t) * hcn * sizeof(float), cudaMemcpyDeviceToDevice,
++                                            dm.stream()) != cudaSuccess ||
++                            !dm.draft_launch(t1 - t, outb + t, p_win, a, err)) {
++                            if (adapt_thr.joinable()) adapt_thr.join();
++                            std::printf("ERR slot %d's drafts: %s\n", b, err.c_str());
++                            return false;
++                        }
++                        drafting[b] = true;
++                    }
+                 }
++                t = t1;
+             }
+             std::fflush(stdout);
++            for (int b = 0; b < (int) bs.size(); ++b) {
++                if (!drafting[b]) continue;
++                int nd = 0;
++                if (!bmtp[(size_t) b]->draft_collect(bs[(size_t) b].drafts.data(), bs[(size_t) b].dprob.data(), &nd, err)) {
++                    if (adapt_thr.joinable()) adapt_thr.join();
++                    std::printf("ERR slot %d's drafts: %s\n", b, err.c_str());
++                    return false;
++                }
++                bs[(size_t) b].nd = nd;
++            }
++            if (adapt_thr.joinable()) adapt_thr.join();
++            if (!adapt_ok) {
++                std::printf("ERR an adaptive refill failed\n");
++                return false;
++            }
+             bt_emit += msd(w2, Clock::now());
+             strata::core::progress().busy.store(was_busy);
+             if (!batch_on() && bt_windows > 0) {
+                 const double w = (double) bt_windows, wall = msd(bt_start, Clock::now());
+                 const double L = (double) g.n_layers;
+-                std::fprintf(stderr, "strata batch: %lld windows, avg %.2f rows, %.2f ms/window = run %.2f (CUDA0 GPU-reach "
+-                                     "wait %.2f + CPU experts %.2f) + commit %.2f + emit %.2f; per layer-window: CPU experts "
+-                                     "%.2f, VRAM hits %.2f, PCIe %.2f; %.1f rows/s over %.0f ms of wall time (admissions "
+-                                     "included)\n",
+-                             (long long) bt_windows, bt_rows / w, (bt_run + bt_commit + bt_emit) / w, bt_run / w,
++                int64_t off = 0, acc = 0;
++                for (const BSlot& b : bs) { off += b.offered; acc += b.accepted; }
++                std::fprintf(stderr, "strata batch: %lld windows, avg %.2f rows, %.2f tokens, %.2f ms/window = run %.2f (CUDA0 "
++                                     "GPU-reach wait %.2f + CPU experts %.2f) + commit %.2f + emit/draft %.2f; per layer-window: "
++                                     "CPU experts %.2f, VRAM hits %.2f, PCIe %.2f; %.1f tokens/s over %.0f ms of wall time "
++                                     "(admissions included); drafts accepted %lld of %lld\n",
++                             (long long) bt_windows, bt_rows / w, bt_tokens / w, (bt_run + bt_commit + bt_emit) / w, bt_run / w,
+                              (ver.ms_wait - bt_wait0) / w, (ver.ms_pool - bt_pool0) / w, bt_commit / w, bt_emit / w,
+                              (drive.d.multi_misses - bt_miss0) / (w * L), (drive.d.cache_hits - bt_hits0) / (w * L),
+-                             (drive.d.pcie_experts - bt_pcie0) / (w * L), 1000.0 * bt_rows / std::max(wall, 1e-9), wall);
++                             (drive.d.pcie_experts - bt_pcie0) / (w * L), 1000.0 * bt_tokens / std::max(wall, 1e-9), wall,
++                             (long long) acc, (long long) off);
++                for (BSlot& b : bs) b.offered = b.accepted = 0;
+                 for (size_t k = 0; k <= stages.size(); ++k) {
+                     const std::string pr = (k == 0 ? ver : stages[k - 1]->ver).profile_report();
+                     if (!pr.empty()) std::fprintf(stderr, "strata batch GPU stages, stage %zu (ms/window):%s\n", k + 1, pr.c_str());
+@@ -6507,6 +6650,12 @@ int main(int argc, char** argv) {
+                     resume = 0;
+                     from_live = false;
+                 } else {
++                    // the slot's drafter read this conversation: the main drafter goes on from its K/V
++                    if (!bmtp.empty() && !mtp.copy_kv_from(*bmtp[(size_t) slot_source], (int64_t) slot_tokens, err)) {
++                        std::fprintf(stderr, "strata batch: slot %d's draft K/V stays in the slot (%s)\n", slot_source,
++                                     err.c_str());
++                        err.clear();
++                    }
+                     checks.clear();   // the main session's checkpoints were of the conversation it held before
+                     // a read that gave way, the same request again (into its own slot): on with it - its segments and
+                     // checkpoints as if it had not stopped
+@@ -7377,6 +7526,27 @@ int main(int argc, char** argv) {
+                             std::equal(c.ids.begin(), c.ids.end(), live.begin()))
+                             best = &c;
+                     if (best != nullptr && !sl.img) sl.checks.push_back(*best);
++                    if (!bmtp.empty()) {
++                        // the slot's drafter: the main drafter's K/V (the prompt), then the cell of the request's first
++                        // window (its row 0 is still the verifier's) and the drafts of the slot's first window
++                        strata::core::MtpDrafter& dm = *bmtp[(size_t) admit_slot];
++                        const size_t hcn = (size_t) (g.hc * g.n_embd);
++                        sl.drafts.assign((size_t) strata::kernels::kVerifyMaxT, 0);
++                        sl.dprob.assign((size_t) strata::kernels::kVerifyMaxT, 0.0f);
++                        sl.min_p = req_spec_min_p;
++                        sl.nd = 0;
++                        int nd = 0;
++                        if (!dm.copy_kv_from(mtp, p, err) ||
++                            cudaMemcpy(bmtp_R[(size_t) admit_slot], ver.final_R_all(), hcn * sizeof(float),
++                                       cudaMemcpyDeviceToDevice) != cudaSuccess ||
++                            !dm.draft(1, &x, p - 1, 0, sl.drafts.data(), err, sl.dprob.data(), 0.0f, &nd)) {
++                            std::fprintf(stderr, "strata batch: slot %d's drafter could not start (%s): no drafts\n",
++                                         admit_slot, err.c_str());
++                            err.clear();
++                            nd = 0;
++                        }
++                        sl.nd = nd;
++                    }
+                     std::fprintf(stderr, "strata batch: slot %d takes %lld tokens (copied in %.1f ms)\n", admit_slot,
+                                  (long long) live.size(), std::chrono::duration<double, std::milli>(Clock::now() - tc0).count());
+                 }

@@ -1,21 +1,22 @@
 # devenv LLM Service (Qwen3.8-Flash-Next)
 
-`hosts/devenv/llm.nix` runs llama.cpp's `llama-server` as `llama-cpp.service` on
-devenv. It serves Qwen3.8-Flash-Next-Uncensored (IQ4_XS, about 97 GB in three
-GGUF shards) on CPU, with the model's MTP head for speculative decoding.
+`hosts/devenv/llm.nix` serves Qwen3.8-Flash-Next-Uncensored (OrcaRouter IQ4_XS,
+about 97 GB in three GGUF shards) on devenv with
+[Strata](https://github.com/Niko1221/Strata) on the passed-through GTX 1070.
+`strata.service` starts at boot and listens on `127.0.0.1:8080`.
 
 ## Endpoints
 
 | Client location | Base URL | Notes |
 |-----------------|----------|-------|
-| LAN / VPN | `https://llm.in.reinitialized.net/v1` | rp1, ACME TLS, `internalOnly`, only `/v1/` proxied |
+| LAN / VPN | `https://llm.in.reinitialized.net/v1` | rp1, ACME TLS, `internalOnly`; the web UI is at `https://llm.in.reinitialized.net/` |
 | Mesh hosts | `http://10.255.0.1:1045/v1` | `llm-api-mesh.socket` forwards to loopback; WireGuard-encrypted |
-| devenv itself | `http://127.0.0.1:8080/v1` | Also serves the agent web UI |
+| devenv itself | `http://127.0.0.1:8080/v1` | Also serves the web UI |
 
-Every route except `/health`, `/v1/health`, and the web UI's static files
-requires `Authorization: Bearer <key>`. The OpenAI SDKs send it when you set
-`api_key`. The model ID is `qwen3.8-flash-next` (`--alias`). Everything outside
-`/v1/` on rp1 returns 404.
+Every route except `/health` and the web UI's static files requires
+`Authorization: Bearer <key>` (Strata also accepts `x-api-key`). The model ID is
+`qwen3.8-flash-next`; Strata answers to any model name. Strata also serves the
+Anthropic Messages API (`/v1/messages`) and the Responses API (`/v1/responses`).
 
 ```python
 from openai import OpenAI
@@ -28,151 +29,302 @@ r = client.chat.completions.create(
 print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
-Use `stream=True` for long prompts. Prompt processing runs at about 22-28
-tokens/s, so a cold 20k-token prompt takes over 12 minutes. The server sends
-SSE pings every 30 s, and the proxy inactivity timeout is 1 h. Appended
-conversations reuse the cached prefix. The single slot keeps up to 32
-checkpoints at a minimum spacing of 8192 tokens, and an 8 GiB host prompt cache
-holds idle conversations.
+The context is 131072 tokens. A request alone decodes at about 33 tokens/s.
+Two requests run at once, at about 18 tokens/s each while both decode with short
+contexts (less with long ones; see Performance); a third waits. Strata reads prompts at about 145 tokens/s, so a 30k-token prompt takes
+about 3.5 minutes. Use `stream=True` for long prompts: Strata sends an SSE
+comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
+Follow-up turns reuse checkpoints of the conversation (6 by default), and each
+of the two batch slots keeps its last conversation.
 
 ## Reasoning effort
 
-The model's template has three levels: `low`, `medium`, and `xhigh`, with
-`xhigh` as the default. `hosts/devenv/qwen38-chat-template.jinja` is the
-model's template, with the OpenAI names mapped onto those levels:
-
-| Request `reasoning_effort` | Model level |
-|----------------------------|-------------|
-| `none` | thinking disabled (`<think></think>` prefilled) |
-| `minimal`, `low` | `low` |
-| `medium` | `medium` |
-| `high`, `xhigh`, `max`, omitted | `xhigh` |
-
-The Responses API's `reasoning.effort` maps the same way.
-`chat_template_kwargs: {"enable_thinking": false}` also disables thinking.
-`thinking_budget_tokens: N` adds a hard cap on thinking tokens.
-
-The upstream web UI's effort menu only sent a thinking-token budget (Low 512,
-Medium 2048, High 8192), so the model was always told `xhigh` and then
-truncated. `hosts/devenv/llama-ui-reasoning-effort.patch` makes the UI also send
-`reasoning_effort`. Remove the patch once upstream sends it.
+Strata takes `reasoning_effort` `none`, `low`, `medium`, or `high` (the default),
+also as `reasoning.effort` or `chat_template_kwargs: {"enable_thinking": false}`.
+Anthropic requests use `output_config.effort` or `thinking`.
 
 ## Web UI and agent tools
 
-The agent UI (`--agent`: built-in file/shell tools and the MCP CORS proxy) is
-only on devenv loopback. Open it with
-`ssh -L 8080:127.0.0.1:8080 devenv` (or VS Code port forwarding) at
-`http://127.0.0.1:8080`, then enter an API key under Settings. Tools run as the
-unit's DynamicUser, with no home directory, no LAN or private ranges, and
-read-only system paths (`/var`, `/srv`, `/mnt`, `/media`, and `/run` hidden).
-The rp1 route deliberately excludes `/tools` and the UI.
+The web UI is at `https://llm.in.reinitialized.net/` from the
+LAN and VPN (rp1 `internalOnly`), and at `http://127.0.0.1:8080` on devenv.
+Strata's UI has Chat (with an off/low/medium/high thinking menu and **Use tools
+from MCP servers** in the Sampling drawer), a live Monitor (tokens/s, expert
+cache hits, GPU, CPU, RAM, MCP servers), and About; enter an API key under
+About > Settings, which keeps it in the browser only.
+
+`strata-tools.service` runs
+every credential-free MCP server nixpkgs packages, plus `hosts/devenv/mcp-shell.py`
+(nixpkgs has no shell server), behind `mcp-proxy` on `127.0.0.1:8097`:
+
+| Server | Tools |
+|--------|-------|
+| `shell` | `run_command` (bash, up to 600 s) |
+| `files` | read, write, edit, list, search, move (workspace only) |
+| `git` | status, diff, add, commit, log, branch, ... |
+| `fetch` | web page to markdown |
+| `browser` | Playwright headless Chromium (21 tools) |
+| `documents` | MarkItDown: PDF/Office/HTML/URL to markdown |
+| `memory` | a knowledge graph kept in `memory.jsonl` |
+| `thinking` | sequential thinking |
+| `time` | current time, time zone conversion |
+| `nixos` | NixOS packages and options search |
+| `library-docs` | Context7 library documentation |
+
+Strata's chat page calls them as `<server>__<tool>` (up to 64 calls per answer,
+600 s per call, results cut at 40,000 characters); API clients opt in with
+`"strata_mcp": true`.
+
+The tools run as their own DynamicUser, not as Strata, so they
+cannot read the API keys, Strata's pack, or the engine. Their workspace is
+`/var/lib/private/strata-tools/workspace` (the shell starts there and the file
+server allows only it; use that path, not the `/var/lib/strata-tools` symlink).
+They have the system's tools on `PATH`, internet access, read-only system paths,
+no home directories, no `/mnt`, `/srv`, `/media`, and no LAN or private ranges.
+The tool listener has no authentication of its own and accepts loopback only.
+
+What this exposes: anyone on the LAN or VPN with an API key can have the model
+run commands, edit files, browse, and fetch from the internet as that user, and
+text the model reads (a web page, a document) can steer what it runs. Strata
+only runs MCP tools for requests from its own page or `trusted_origins`; another
+site's page gets 403.
+
+After `strata-tools` restarts, Strata's first call to each server fails once
+and is retried on a new session; restart `strata` to avoid it.
 
 ## API keys
 
 Keys live in `/var/lib/service-secrets/llm-api-keys` (root, `0600`), one per
 line, and `#` lines are comments. Override the path with
-`secrets.llmApi.file` in the external devenv secret module. The unit reads the
-file through `LoadCredential`, so after an edit run
-`sudo systemctl restart llama-cpp`. Use one key per consuming project so a
-key can be revoked on its own. With no key file, the unit fails closed.
+`secrets.llmApi.file` in the external devenv secret module. Strata reads the
+file through `LoadCredential`, so restart it after an edit
+(`sudo systemctl restart strata`). Use one key per consuming project so a key
+can be revoked on its own. With no key file, or no key in it, the unit fails
+closed.
+
+Upstream Strata takes a single key. `hosts/devenv/strata-api-keys.patch` makes
+it accept the one-key-per-line file and adds a test. The package build runs
+Strata's security tests, including that one.
+
+## GTX 1070
+
+The GPU sits in an R730 slot on CPU2, the same NUMA node as devenv, and is passed
+through to VM 202. The guest link trains at PCIe 3.0 x16 (Strata measures
+12.5 GB/s host to device). `llm.nix` loads the closed `legacy_580` driver, as
+`hosts/ai1.nix` did: the 580 branch is the last with Pascal, and the open kernel
+module does not support it. CUDA 13 dropped Pascal, so everything is built with
+`cudaPackages_12_9` for `sm_61` only.
+
+The first switch from nouveau to nvidia was done live, without a reboot. A
+`rebuildHost devenv` only blacklists nouveau for the next boot. After it:
+
+```bash
+sudo systemctl stop strata
+echo 0000:01:00.0 | sudo tee /sys/bus/pci/drivers/nouveau/unbind
+sudo modprobe -r nouveau
+# modprobe reads /run/booted-system, which has no nvidia module before a reboot
+sudo MODULE_DIR=/run/current-system/kernel-modules/lib/modules modprobe nvidia
+sudo systemctl restart nvidia-persistenced
+```
+
+## Strata
+
+`hosts/devenv/strata.nix` builds upstream's experimental CUDA 12 engine
+(`STRATA_EXPERIMENTAL_SM60`, sm_61), with ggml from the llama.cpp commit Strata
+pins and `-march=broadwell`. It also installs the Python server
+(`strata-server`) and a Python for the packing tools (`strata-python`). A 12 GB
+card is upstream's floor for supported cards; 8 GB Pascal is a community path.
+
+How it uses the hardware:
+
+- All 61 GiB of routed experts are copied from the GGUF shards into RAM and
+  pinned (`cudaHostRegister`), so the VM needs that much memory free. Loading
+  takes 1-2 minutes from the page cache.
+- The GPU holds the dense weights (2.2 GiB, 1.9 GiB of them read natively from
+  the GGUF), the MTP draft layer (835 MiB), the most-read 20K positions of the KV
+  cache (the rest streams from 1.55 GiB of pinned RAM), the two batch slots'
+  state (2 x 0.58 GiB) and drafters, and an expert cache in the remaining VRAM:
+  about 600 experts (1.48 GiB, about 2.4% of 24,576). The cache starts from what
+  it learned before the last restart (`expert_profile_save`), or upstream's
+  routing profile, and adapts to the requests.
+- About 30% of routed experts are cache hits on the GPU. The CPU pool computes
+  the rest at about 50 GB/s, close to the guest's measured 64 GB/s DRAM read
+  limit, so the CPU's memory bandwidth bounds decode. `--pcie-frac 0` keeps
+  missed experts off PCIe: copying them made the GPU wait longer than the CPU
+  took.
+- The MTP draft layer is the base model's (upstream recipe: `q2_0` experts, the
+  English/code draft vocabulary to save VRAM). It drafts up to 4 tokens, and
+  65-85% are accepted.
+
+### One-time preparation
+
+The unit starts only once these exist in `/var/lib/strata` (it is the unit's
+`StateDirectory`; with `DynamicUser` systemd keeps it at
+`/var/lib/private/strata`). Run the tools as root from the package's tree
+(`strata` and `strata-python` are on devenv's PATH):
+
+```bash
+S=$(dirname "$(dirname "$(readlink -f "$(command -v strata)")")")
+cd $S/share/strata
+# The dense pack (~1.4 GiB, under a minute). Experts and the PLE table stay in the GGUF.
+sudo $S/bin/strata-python tools/iq_pack.py --compat-bf16 \
+  --gguf /home/develop/llm-trial/models/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf \
+  --out /var/lib/strata/packs/orca-iq4_xs
+# The base model's MTP tensors (~5 GB of HTTP range reads from Hugging Face), then the draft runtime.
+sudo $S/bin/strata-python tools/mtp_fetch.py fetch --out /var/lib/strata/mtp
+sudo $S/bin/strata-python tools/mtp_pack.py --src /var/lib/strata/mtp --experts q2_0 \
+  --out /var/lib/strata/mtp/mtp-q2_0.gguf
+sudo $S/bin/strata-python tools/mtp_rt.py --gguf /var/lib/strata/mtp/mtp-q2_0.gguf \
+  --out /var/lib/strata/mtp/rt
+sudo cp data/draft_vocab_en.bin /var/lib/strata/mtp/rt/draft_vocab.bin
+```
+
+The engine log is `/var/lib/strata/strata.log`; the server's progress lines go
+to the journal. Upstream validates OrcaRouter IQ3_XXS and Q4_K_S. This IQ4_XS
+file (IQ4_XS gate/up, IQ4_NL down experts) packs and runs with the same
+`--compat-bf16` path, which rounds 364 small projections to BF16 (max abs error
+0.022); the engine patch reads 192 of them, the hyper-connection projections,
+from the GGUF instead. Answers were checked by hand, not with a quality
+benchmark.
+
+### Engine patch
+
+`hosts/devenv/strata-performance.patch` changes the engine for this card and
+for two requests at once. Each switch below restores upstream's behaviour for
+its part. Upstream's exactness test (`tools/batch_test.py`: every slot of a
+batch produces exactly its solo greedy tokens) passes with the patch, for two
+slots and for one.
+
+- **Hyper-connection projections in their GGUF form.** `--compat-bf16` turns the
+  192 `hc_*_down/up` matrices (IQ4_XS/IQ4_NL, 328 MiB) into BF16 copies
+  (1,200 MiB), which every decode window reads. The patch dequantizes the 4-bit
+  blocks in registers instead, to the same FP32 weights. The prompt path
+  dequantizes them to BF16 right before its GEMM, the same bits the pack held.
+  The 872 MiB saved goes to the expert cache (730 to 1,051 slots for one
+  request) or to the second request's state. `STRATA_HC_NATIVE=0` keeps the
+  BF16 copies.
+- **Drafts in batch windows.** With `"parallel": 2` each slot gets its own MTP
+  drafter on the shared draft weights (about 50 MiB each), and each batch window
+  verifies its token plus three drafts. Upstream verifies one token per slot,
+  without drafts. The span is fixed at four rows per slot: every distinct window
+  layout is its own CUDA graph, and each graph takes about 35 MiB of VRAM on
+  this card. `STRATA_BATCH_DRAFTS=0` restores one token per slot;
+  `STRATA_BATCH_DRAFTS_N=1..3` sets the drafts per slot.
+- **Pipelined batch windows.** With `--spec-split`, a window of two slots runs as
+  two groups, one per slot. The CPU computes one slot's experts while the GPU
+  runs the other's layers. A slot that is alone is split like a solo window.
+- **The adaptive VRAM tier also adapts during batch windows.** Upstream adapts
+  it only between solo windows.
+- **Direct slot copies.** Moving a conversation between the main session and a
+  slot copies its device state on the device and its K/V host copy once.
+  Upstream goes through a host image, which takes about twice as long.
+  `STRATA_DIRECT_COPY=0` restores that.
+- **A single-token IQ4_XS gate/up kernel for the CPU pool.** It handles both rows
+  in one pass with two sub-blocks per AVX2 register: 1.36x ggml-cpu's dot in
+  isolation (relative difference 1e-7), and 10% less CPU time in batch windows,
+  where most expert groups hold one token. `STRATA_IQ4XS_GU1=0` uses
+  ggml-cpu's dot.
 
 ## Performance
 
-Measured on hv1 (2x E5-2690 v4) with devenv cut over to NUMA node 1: 28
-vCPUs on 14 physical cores with hyperthreads, and 104 GiB bound to node 1.
+Measured on 2026-10-06 with four prompts at T=0 (code, prose, an edit of a
+4.4k-token file, and a thinking question; 512 tokens each), the first two at
+once for the two-request numbers, and a 13k-token prompt. hv1's nightly backups
+were running, so each run read the prompts twice and kept the second pass,
+when the n-gram rows were already cached (see "Nightly backups").
 
-| Configuration | Decode t/s | Notes |
-|---------------|-----------:|-------|
-| Trial (`-t 14 -tb 28 -ub 256`, mmap, no drafting) | 5.9-6.3 | server, 4 prompts; llama-bench tg64 6.74, pp512 28.3 |
-| + MTP draft, `--spec-draft-n-max 3` | 7.55 | acceptance 49-81% |
-| **+ MTP draft, `--spec-draft-n-max 2`** | **8.06** | code at T=0 9.1, prose 7.2-7.4 |
-| MTP 4 with `--spec-draft-p-min 0.5` | 7.79 | |
-| MTP 3 with `--spec-draft-p-min 0.6` | 6.39 | p-min suppresses useful drafts |
-| MTP 2 with `-tb 14` | 8.10 | same as `-tb 28`, so 28 is kept for prompt processing |
-| Deployed service (Nix build, warm) | 7.73 | 8.56 / 7.15 / 8.59 / 6.61; 7.16 on the first requests after a restart |
+| Configuration | One request, t/s (code / prose / edit / think) | Two requests | Prompt t/s (4.4k / 13k) |
+|---------------|------------------:|-----------------:|-----------------:|
+| before: upstream engine, `--kv-resident 32768`, `--pool-workers 13` | 22.1 (21.7 / 19.7 / 21.7 / 25.4) | one at a time | 180 / - |
+| **deployed: engine patch, `--pcie-frac 0 --spec-split`, `--kv-resident 20480`, `"parallel": 2`** | **33.4 (33.1 / 28.9 / 34.4 / 37.0)** | **36 t/s together, 18 each while both decode** | **138 / 147** |
+| the same without `"parallel"`, `--kv-resident 32768` | 32.8 | one at a time | 208 / 232 |
 
-The sweep used a hand-built `-march=native` binary. Interleaved llama-bench
-A/B runs compared it with the Nix package:
+What each change gave (one request, mean t/s, earlier the same night with a
+single pass): `--pcie-frac 0` 21.3 to 27.3 (the GPU had waited about 64 ms per
+window for PCIe expert copies), `--spec-split` 31.5, and the engine patch 33.4.
+Without the patch, two requests do not fit on the card at 131072 tokens (the
+draft head runs out of VRAM); upstream's batch windows ran at 11-12 t/s per
+request.
 
-| Build | pp512 | tg64 |
-|-------|------:|-----:|
-| hand-built, `-march=native`, no hardening | 28.3-28.8 | 7.24-7.28 |
-| nixpkgs default (dynamic CPU variants, haswell picked) | 26.9-27.2 | 6.87-6.88 |
-| **deployed: single variant, `-march=broadwell -mtune=broadwell`** | 27.5-28.0 | 6.93-6.94 |
+A batch window of two requests verifies about 8 rows (each request's token plus
+3 drafts) and keeps 5.8 tokens in 160 ms, of which the CPU pool takes 124 ms.
+That pass is bound by memory bandwidth: about 44 distinct experts per layer, read
+at 46 GB/s, against the guest's measured 64 GB/s read limit. A request alone gets
+the single-request path again (about 0.1 s to move it), so the two-request
+penalty applies only while both decode. Two slots cost the prompt path its large
+chunks (1,024 tokens instead of 4,096), so long prompts read about 1.6x slower.
 
-The remaining ~4.5% decode gap matches Nix's default compiler hardening: the
-hot kernels zero registers on every return (`zerocallusedregs`) and build with
-`-fno-strict-overflow`. Disabling those flags for this package should close the
-gap, but it trades away hardening. It was not applied without explicit approval.
+Long contexts are slower. Two agents ran with 47k- and 40k-token contexts, three
+turns each with tool results, during the backup window. The prompts read at
+134-140 t/s, and an agent decoding alone ran at 25-33 t/s. While both decoded,
+each got only 3-15 t/s. Part of that is the backup's disk stalls. Part is that
+moving a request into a slot leaves its KV cache cold in VRAM (upstream's
+`kv_stream_reset`), so attention reads from RAM until the hot positions are
+cached again.
 
-These changes made no measurable difference within the ±7% run-to-run noise:
-hugepages for all hot weights (`-lm none` plus `glibc.malloc.hugetlb=1`, 67 GB
-verified on THP) and `-lzm off`. An earlier MTP attempt reached 0.33 t/s only
-because the VM was thrashing. The draft head and the mmap+repack double
-residency overflowed RAM, so even prompt processing collapsed to 1.5 t/s.
-`--lazy-mode auto` without mlock leaves enough headroom.
+Measured and not used:
 
-A decode profile (perf, 6.43 t/s) breaks down as follows:
+| Change | Result |
+|--------|--------|
+| `--pool-workers 20` | batch windows 3.5% faster; one request unchanged; 7 more busy vCPUs |
+| `--pool-workers 27` (no split) | 2% slower than 13 |
+| `STRATA_BATCH_DRAFTS_N=2` | batch windows 135 ms but 4.6 tokens: 6% less throughput |
+| 15% of a batch window's missed experts over PCIe (DMA) | 170 ms instead of 161: the copies take the same DRAM bandwidth |
+| skipping the CPU experts of batch drafts under min-p | 10% less CPU time, 5% fewer tokens per window: break-even |
+| `STRATA_FUSE_HEAD_GR=1`; a one-warp-per-row MMVQ kernel | within noise (+0.5%, +1.4%) |
+| `--prefill 2048` with two slots | does not fit; falls back to 512-token chunks (95 t/s) |
+| `STRATA_IQ4XS_GU1=0` (the patch's CPU kernel off) | batch CPU time 10% higher; one request -2% |
 
-- 53% quantized matmul kernels, running at about 46 GB/s effective (near node
-  1's memory bandwidth)
-- 32% OpenMP barrier spin (`gomp_team_barrier_wait_end`), waiting on
-  straggler threads
-- 14% small ops
+### Nightly backups
 
-The barrier share comes from unpinned vCPUs. The guest's 14 decode threads can
-land on hyperthread siblings or share a core with host work. Each token reads
-about 3.8 GiB, of which 2.6 GiB is dense. That is why the GPU plan below
-targets the dense part.
+Strata reads the 28.8 GB n-gram (PLE) table with direct I/O from devenv's disk
+on hotData, 16 rows per token, prefetched as drafts are made. While hv1's
+nightly vzdump runs (01:00, all VMs; a full read of a large disk can take hours),
+those reads slow from about 0.15 ms to 0.5 ms typical and 80-800 ms at the 99th
+percentile, and decode can fall to a third. A row the engine has read before is
+cached in its 1M-row cache, so repeated text is not affected. `--ple-io ram`
+avoids the disk entirely, but it locks 27 GiB more RAM, which would leave devenv
+about 4 GiB.
 
 ### Host tuning not applied (needs operator approval on hv1)
 
 These were measured or identified, but they are hv1 changes and were not made:
 
 1. **Pin vCPUs 1:1.** Pin vCPU k to host CPU `2k+1` and vCPU k+14 to its sibling
-   `2k+29`. Then bind the 14 decode threads to vCPUs 0-13 with
-   `OMP_PLACES=cores OMP_PROC_BIND=close`. This targets the 32% barrier wait,
-   and is the largest remaining CPU-side gain. Proxmox `affinity` only pins the
-   whole process, so this needs a hookscript.
+   `2k+29`. This should steady Strata's pool workers. Proxmox `affinity` only pins the whole process, so
+   this needs a hookscript.
 2. **Raise the uncore floor on package 1.** Set
    `/sys/devices/system/cpu/intel_uncore_frequency/package_01_die_01/min_freq_khz`
    to `2700000`. It idles at 1.2 GHz under the BIOS DAPC profile.
 3. **Limit C-states on node 1 only.** Set `pm_qos_resume_latency_us` on the odd
-   CPUs, and/or enable KVM halt polling (`halt_poll_ns_grow` is 0). The
-   2026-10-05 storage investigation measured small gains for model loading
-   from both. The BIOS `PerfPerWattOptimizedDapc` profile needs a reboot to
-   change.
+   CPUs, and/or enable KVM halt polling (`halt_poll_ns_grow` is 0). The BIOS
+   `PerfPerWattOptimizedDapc` profile needs a reboot to change.
+4. **More memory bandwidth.** Decode is bound by node 1's DRAM bandwidth (the
+   CPU pool reads experts at 46-53 GB/s). Memory and vCPUs on both nodes, with
+   the expert arena interleaved, could raise it. This is untested: node 0's
+   memory reaches the GPU and node-1 cores over QPI.
+5. **Backup-proof n-gram reads.** Either restore hotData's mirror (the pool lost
+   an NVMe to the GPU) or give devenv about 32 GiB more RAM for `--ple-io ram`.
 
-## GTX 1070 plan
+## Moving the GPU to its own VM
 
-The planned GPU goes in R730 slot 4, which is on CPU2, the same NUMA node as
-devenv. That slot currently holds a hotData mirror NVMe, which moves to slots
-1-3 first.
-
-1. Pass the GPU through to VM 202. Add `nixpkgs.config` `allowUnfree`,
-   `cudaCapabilities = [ "6.1" ]` and `cudaForwardCompat = false`, and set
-   `hardware.nvidia.branch = "legacy_580"` (the last branch with Pascal), as
-   `hosts/ai1.nix` does.
-2. Build with `pkgsUnstable.llama-cpp.override { cudaSupport = true;
-   cudaPackages = pkgsUnstable.cudaPackages_12_9; blasSupport = false; }`.
-   CUDA 13 dropped Pascal.
-3. In `llm.nix`, set `PrivateDevices = false` and add `DeviceAllow` for
-   `/dev/nvidia*`. Add `--n-gpu-layers 99`, keep experts in RAM with
-   `--cpu-moe` (or `--n-cpu-moe N` to put a few expert layers in leftover
-   VRAM), and offload the MTP head with `-ngld 99`.
-
-The dense weights, about 2.6 GiB of the 3.8 GiB read per token, plus the
-KV cache fit in 8 GiB. The CPU then streams only the roughly 1.2 GiB of routed
-experts per token, and the GPU takes over prompt processing.
+This is an experiment; if the GPU moves to a dedicated LLM VM or container,
+move `hosts/devenv/llm.nix` (driver block, `strata`, and `strata-tools`),
+`strata.nix`, both `strata-*.patch` files, and `mcp-shell.py` (with
+`tests/test-mcp-shell.py`).
+Then move or re-prepare `/var/lib/strata` (pack 1.4 GiB, MTP files 5.8 GiB) and
+the model directory, and point `llm-api-mesh` and the rp1 vhost at the new host.
+Give that VM about 80 GiB of RAM on the GPU's NUMA node (61 GiB of pinned
+experts plus the page cache for the n-gram table), and keep the 580 driver
+branch.
 
 ## Notes
 
-- The model and MTP files stay in `/home/develop/llm-trial/models`, bind-mounted
-  read-only. The trial scripts in `~/llm-trial` are superseded but still useful
-  for llama-bench runs. Stop the service first: the VM cannot hold two copies.
-- The live VM size (104 GiB, 28 vCPUs, node-1 binding) was a manual cutover on
-  hv1. `flake.nix` still describes devenv as 64 GB with 6 cores. The original
-  config is `/root/202.conf.pre-llm` on hv1.
-- llama.cpp is pinned to `d89651a` because nixpkgs releases predate the
-  qwen4exp tuning. Bump `rev`, `hash`, and `npmDepsHash` together, and re-check
-  that the UI patch still applies.
+- The model stays in `/home/develop/llm-trial/models`, bind-mounted read-only
+  into `strata`.
+- The live VM size (104 GiB, 28 vCPUs, node-1 binding) and the GPU passthrough
+  were manual changes on hv1. `flake.nix` still describes devenv as 64 GB with
+  6 cores. The original config is `/root/202.conf.pre-llm` on hv1.
+- Strata is pinned to `6f32ec0` (engine 0.1.39). When bumping it, update the
+  ggml commit from `third_party/ggml/VERSION.txt`, re-check the API key patch,
+  and rebase `strata-performance.patch` (verifier, MTP drafter, batch loop, and
+  CPU/GPU kernels), then re-run upstream's `tools/batch_test.py`.

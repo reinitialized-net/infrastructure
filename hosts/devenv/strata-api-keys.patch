@@ -1,0 +1,31 @@
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -2953,7 +2953,9 @@
+                 return True
+             auth = self.headers.get("Authorization", "")
+             given = auth[7:].strip() if auth.lower().startswith("bearer ") else self.headers.get("x-api-key", "")
+-            if hmac.compare_digest(given.encode(), svc.api_key.encode()):   # #213: constant-time
++            # one key per line; `#` lines are comments
++            keys = [k.strip() for k in svc.api_key.splitlines() if k.strip() and not k.strip().startswith("#")]
++            if any(hmac.compare_digest(given.encode(), k.encode()) for k in keys):   # #213: constant-time
+                 return True
+             self._json(401, {"error": {"type": "authentication_error", "message": "missing or wrong API key"}})
+             return False
+--- a/serve/test_security.py
++++ b/serve/test_security.py
+@@ -237,6 +237,15 @@
+         self.assertEqual(self.req("POST", "/v1/chat/completions", self.chat_body(),
+                                   {**headers, "Authorization": "Bearer s3cret"})[0], 200)
+ 
++    def test_a_key_file_accepts_each_key(self):
++        # one key per line; comment words are not keys
++        self.start(api_key="# project keys\nk1\n\n  k2  \n")
++        def code(key):
++            return self.req("GET", "/status", headers={"Authorization": f"Bearer {key}"})[0]
++        self.assertEqual([code("k1"), code("k2")], [200, 200])
++        for bad in ("", "#", "project", "keys", "k1 k2", "k3"):
++            self.assertEqual(code(bad), 401, bad)
++
+     # --- /unload and /load
+     def test_control_body_arrives_before_the_operation_and_reply(self):
+         self.start()

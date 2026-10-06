@@ -43,7 +43,7 @@
       };
     };
     llmApi = {
-      description = "llama-server API keys, one per line (# comments allowed)";
+      description = "Strata API keys, one per line (# comments allowed)";
       file = lib.mkDefault "/var/lib/service-secrets/llm-api-keys";
     };
     volumeMigration = {
