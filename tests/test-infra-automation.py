@@ -116,7 +116,7 @@ bash() { printf '%s\\n' syntax >> "$trace"; [[ "$FAIL" != syntax ]]; }
         INFRA_SECRETS_DIR="/synthetic-forbidden-overlay",
         GIT_PASSWORD="synthetic-credential", GIT_ASKPASS="/synthetic-askpass")
     build = next(line for line in trace.read_text().splitlines() if line.startswith("build "))
-    for host in ("devenv", "rp1", "apps1", "apps2", "apps3", "ai1", "db1"):
+    for host in ("devenv", "rp1", "apps1", "apps2", "apps3", "llm1", "db1"):
         assert f"path:.#checks.x86_64-linux.{host}" in build, build
     assert "nixosConfigurations" not in build
     assert "modules/secrets" not in validate

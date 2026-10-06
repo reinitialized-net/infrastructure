@@ -12,11 +12,11 @@ This repository is the NixOS infrastructure flake for the Reinitialized fleet. T
 
 ## Current Shape
 
-`flake.nix` exports these NixOS configurations: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `ai1`, and `db1`. VM hosts are also exported as `packages.x86_64-linux.<host>`; `ai1` instead has `packages.x86_64-linux.ai1-installer`. `gs1` exists in source/topology but is not currently exported.
+`flake.nix` exports these NixOS configurations: `devenv`, `rp1`, `apps1`, `apps2`, `apps3`, `llm1`, and `db1`. They are also exported as `packages.x86_64-linux.<host>` VMA images. `gs1` exists in source/topology but is not currently exported.
 
 The main repository areas are:
 
-- `flake.nix` — inputs, host exports, validation checks, VMA packages, and the `ai1` installer.
+- `flake.nix` — inputs, host exports, validation checks, and VMA packages.
 - `library/` — host/configuration/VMA helpers. Normal hosts use `library.makeDualExport`.
 - `hosts/` — host-specific configuration and generated-tool definitions.
 - `modules/profiles/` — shared NixOS profiles for standard behavior, containers, mesh, firewall, secrets, mounts, and update reporting.
@@ -44,7 +44,7 @@ nix build \
   path:.#checks.x86_64-linux.apps1 \
   path:.#checks.x86_64-linux.apps2 \
   path:.#checks.x86_64-linux.apps3 \
-  path:.#checks.x86_64-linux.ai1 \
+  path:.#checks.x86_64-linux.llm1 \
   path:.#checks.x86_64-linux.db1 \
   --no-write-lock-file --no-link
 
@@ -55,9 +55,6 @@ INFRA_SECRETS_DIR=/var/lib/infratainer/secrets \
 
 # Build an affected VMA only when image generation itself matters
 nix build path:.#packages.x86_64-linux.<host>
-
-# Build the physical ai1 installer when installer behavior changes
-nix build path:.#packages.x86_64-linux.ai1-installer
 ```
 
 Other focused checks:

@@ -615,6 +615,16 @@
         "manual-update"
       ],
       "automerge": false
+    },
+    {
+      "description": "nixpkgsStrata pins llm1's Strata build to one nixpkgs commit; bump it only on purpose (docs/llm1.md).",
+      "matchManagers": [
+        "nix"
+      ],
+      "matchDepNames": [
+        "nixpkgsStrata"
+      ],
+      "enabled": false
     }
   ]
 }

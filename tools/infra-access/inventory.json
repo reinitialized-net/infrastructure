@@ -353,21 +353,16 @@
       "notes": "Dedicated infraaccess Unix and PAM administrator; dedicated SSH key, passwordless sudo and full administrator API token verified.",
       "guest_sudo": true
     },
-    "cortex": {
-      "kind": "linux",
-      "probes": [
-        {
-          "host": "10.1.11.9",
-          "port": 22
-        }
-      ],
-      "qualification": {
-        "checked": "2026-09-19",
-        "access": "privileged guest-agent execution and temporary-file write/read/delete verified (root)"
+    "llm1": {
+      "kind": "nixos",
+      "ssh": {
+        "host": "10.1.11.9",
+        "user": "rnetadmin",
+        "identity_file": "~/.ssh/rnetadmin"
       },
-      "guest": {
-        "hypervisor": "hv1",
-        "vmid": 208
+      "qualification": {
+        "checked": "2026-10-06",
+        "access": "pending: VM 210 not yet created"
       }
     },
     "rinf": {
@@ -485,7 +480,7 @@
       "kind": "windows-candidate",
       "qualification": {
         "checked": "2026-09-19",
-        "access": "SMB/RDP reachable, SSH absent; no matching Windows administrative credential available; address conflicts with planned NixOS ai1 inventory"
+        "access": "SMB/RDP reachable, SSH absent; no matching Windows administrative credential available; this address was once planned for the removed NixOS ai1 host"
       },
       "probes": [
         {

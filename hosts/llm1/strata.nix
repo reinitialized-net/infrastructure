@@ -46,7 +46,7 @@ cuda.backendStdenv.mkDerivation {
   patches = [
     # The server takes one API key; accept a one-key-per-line file.
     ./strata-api-keys.patch
-    # Engine changes for this card and for two concurrent agents (docs/devenv-llm.md, "Engine patch").
+    # Engine changes for this card and for two concurrent agents (docs/llm1.md, "Engine patch").
     ./strata-performance.patch
   ];
 
@@ -73,7 +73,7 @@ cuda.backendStdenv.mkDerivation {
   ninjaFlags = [ "strata" ];
 
   # Strata forces GGML_NATIVE, which the Nix compiler wrapper strips; target
-  # hv1's E5-2690 v4 (`cpu: host`) explicitly instead, as hosts/devenv/llm.nix does.
+  # hv1's E5-2690 v4 (`cpu: host`) explicitly instead, as hosts/llm1/llm.nix does.
   env.NIX_CFLAGS_COMPILE = "-march=broadwell -mtune=broadwell";
 
   # The engine, plus the Python server, packers, and profiles it runs with.

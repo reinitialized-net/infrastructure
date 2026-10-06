@@ -25,6 +25,13 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Changed
 
+- Move the Qwen3.8 / Strata LLM service from devenv to a new VM, `llm1`
+  (VM 210, `10.1.11.9`, mesh `10.255.0.9`), bound to the GPU's NUMA node on hv1.
+  `llm.in.reinitialized.net` and mesh port 1045 now point at llm1. llm1 takes
+  nightly updates, but Strata (flake input `nixpkgsStrata`) and the NVIDIA
+  driver (580.173.02) are pinned, and `strata`/`llm-api-mesh` do not restart on
+  a switch. devenv shrinks to 40 GiB and 12 cores on node 0.
+
 - Move live host modules entirely outside the flake source, move container and
   OPNsense credentials to protected runtime files, stage per-application Valkey
   ACL users, and require impure external-overlay builds for deployments.
@@ -35,6 +42,12 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 - Require current human approval for executable Nix input and lock-file updates; validate candidates with synthetic secret modules under restricted evaluation instead of exposing production secret paths or Git credentials.
 - Preserve additive Renovate service and risk labels for Infratainer-managed dependency PRs and label every active container image family by affected service.
 - Report declarative container unit failures through the shared Infratainer Forgejo issue reporter, including containers skipped by digest-drift restarts.
+
+### Removed
+
+- Remove the never-installed physical `ai1` host, its installer ISO, and the
+  XPS 8930 hardware module; llm1 takes its mesh node ID 9. The unused `cortex`
+  VM (208) is deleted from hv1 and the access inventory.
 
 ### Fixed
 

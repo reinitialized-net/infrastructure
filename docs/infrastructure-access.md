@@ -35,7 +35,7 @@ Previously established fleet/device identities remain recorded in the inventory.
 ./tools/infra-access/infra-access api pbs1 GET /api2/json/nodes/localhost/status
 ./tools/infra-access/infra-access api unifi GET /api/self
 ./tools/infra-access/infra-access api idrac-41 GET /redfish/v1/Systems/System.Embedded.1
-./tools/infra-access/infra-access guest cortex -- id
+./tools/infra-access/infra-access guest winsvcs1 -- whoami
 ./tools/infra-access/infra-access onvif camera-10-1-14-2 tools/infra-access/requests/GetUsers.xml
 ```
 

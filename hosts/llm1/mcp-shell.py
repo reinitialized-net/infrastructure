@@ -2,7 +2,7 @@
 
 nixpkgs packages no shell MCP server; the reference servers cover files, git and
 the web. This gives the chat agent a shell. It runs in
-strata-tools.service's sandbox (hosts/devenv/llm.nix), not as Strata.
+strata-tools.service's sandbox (hosts/llm1/llm.nix), not as Strata.
 """
 
 import json

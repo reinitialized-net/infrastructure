@@ -46,13 +46,11 @@
       publicKey = "PL2fD0SDmoNX7L2ysYa7EbiHrpOmYSoZkSehb6q2qQU=";
     };
 
-    ai1 = {
+    llm1 = {
       nodeId = 9;
-      hostname = "ai1";
-      endpoint = "10.1.13.10:22";
-      deploymentOnly = true;
-      # Awaiting physical installation; explicit rebuildHost remains available.
-      fleetDeployment = false;
+      hostname = "llm1";
+      endpoint = "10.1.11.9:51820";
+      publicKey = "PLACEHOLDER_LLM1_PUBLIC_KEY";
     };
 
     db1 = {

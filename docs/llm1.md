@@ -1,17 +1,18 @@
-# devenv LLM Service (Qwen3.8-Flash-Next)
+# llm1 LLM Service (Qwen3.8-Flash-Next)
 
-`hosts/devenv/llm.nix` serves Qwen3.8-Flash-Next-Uncensored (OrcaRouter IQ4_XS,
-about 97 GB in three GGUF shards) on devenv with
-[Strata](https://github.com/Niko1221/Strata) on the passed-through GTX 1070.
-`strata.service` starts at boot and listens on `127.0.0.1:8080`.
+`hosts/llm1/llm.nix` serves Qwen3.8-Flash-Next-Uncensored (OrcaRouter IQ4_XS,
+about 97 GB in three GGUF shards) on llm1 (VM 210 on hv1, `10.1.11.9`, mesh
+`10.255.0.9`) with [Strata](https://github.com/Niko1221/Strata) on the
+passed-through GTX 1070. `strata.service` starts at boot and listens on
+`127.0.0.1:8080`. Until 2026-10-06 it ran on devenv.
 
 ## Endpoints
 
 | Client location | Base URL | Notes |
 |-----------------|----------|-------|
 | LAN / VPN | `https://llm.in.reinitialized.net/v1` | rp1, ACME TLS, `internalOnly`; the web UI is at `https://llm.in.reinitialized.net/` |
-| Mesh hosts | `http://10.255.0.1:1045/v1` | `llm-api-mesh.socket` forwards to loopback; WireGuard-encrypted |
-| devenv itself | `http://127.0.0.1:8080/v1` | Also serves the web UI |
+| Mesh hosts | `http://10.255.0.9:1045/v1` | `llm-api-mesh.socket` forwards to loopback; WireGuard-encrypted |
+| llm1 itself | `http://127.0.0.1:8080/v1` | Also serves the web UI |
 
 Every route except `/health` and the web UI's static files requires
 `Authorization: Bearer <key>` (Strata also accepts `x-api-key`). The model ID is
@@ -46,14 +47,14 @@ Anthropic requests use `output_config.effort` or `thinking`.
 ## Web UI and agent tools
 
 The web UI is at `https://llm.in.reinitialized.net/` from the
-LAN and VPN (rp1 `internalOnly`), and at `http://127.0.0.1:8080` on devenv.
+LAN and VPN (rp1 `internalOnly`), and at `http://127.0.0.1:8080` on llm1.
 Strata's UI has Chat (with an off/low/medium/high thinking menu and **Use tools
 from MCP servers** in the Sampling drawer), a live Monitor (tokens/s, expert
 cache hits, GPU, CPU, RAM, MCP servers), and About; enter an API key under
 About > Settings, which keeps it in the browser only.
 
 `strata-tools.service` runs
-every credential-free MCP server nixpkgs packages, plus `hosts/devenv/mcp-shell.py`
+every credential-free MCP server nixpkgs packages, plus `hosts/llm1/mcp-shell.py`
 (nixpkgs has no shell server), behind `mcp-proxy` on `127.0.0.1:8097`:
 
 | Server | Tools |
@@ -95,40 +96,30 @@ and is retried on a new session; restart `strata` to avoid it.
 
 Keys live in `/var/lib/service-secrets/llm-api-keys` (root, `0600`), one per
 line, and `#` lines are comments. Override the path with
-`secrets.llmApi.file` in the external devenv secret module. Strata reads the
+`secrets.llmApi.file` in the external llm1 secret module. Strata reads the
 file through `LoadCredential`, so restart it after an edit
 (`sudo systemctl restart strata`). Use one key per consuming project so a key
 can be revoked on its own. With no key file, or no key in it, the unit fails
 closed.
 
-Upstream Strata takes a single key. `hosts/devenv/strata-api-keys.patch` makes
+Upstream Strata takes a single key. `hosts/llm1/strata-api-keys.patch` makes
 it accept the one-key-per-line file and adds a test. The package build runs
 Strata's security tests, including that one.
 
 ## GTX 1070
 
-The GPU sits in an R730 slot on CPU2, the same NUMA node as devenv, and is passed
-through to VM 202. The guest link trains at PCIe 3.0 x16 (Strata measures
-12.5 GB/s host to device). `llm.nix` loads the closed `legacy_580` driver, as
-`hosts/ai1.nix` did: the 580 branch is the last with Pascal, and the open kernel
-module does not support it. CUDA 13 dropped Pascal, so everything is built with
-`cudaPackages_12_9` for `sm_61` only.
-
-The first switch from nouveau to nvidia was done live, without a reboot. A
-`rebuildHost devenv` only blacklists nouveau for the next boot. After it:
-
-```bash
-sudo systemctl stop strata
-echo 0000:01:00.0 | sudo tee /sys/bus/pci/drivers/nouveau/unbind
-sudo modprobe -r nouveau
-# modprobe reads /run/booted-system, which has no nvidia module before a reboot
-sudo MODULE_DIR=/run/current-system/kernel-modules/lib/modules modprobe nvidia
-sudo systemctl restart nvidia-persistenced
-```
+The GPU (hv1 `0000:82:00`) sits in an R730 slot on CPU2 (NUMA node 1), where
+llm1's vCPUs and memory are bound, and is passed through to VM 210. The guest
+link trains at PCIe 3.0 x16 (Strata measures 12.5 GB/s host to device).
+`llm.nix` loads the closed 580 driver, held at 580.173.02 (see "Update
+policy"): the 580 branch is the last with Pascal, and the open kernel module
+does not support it. CUDA 13 dropped Pascal, so everything is built with
+`cudaPackages_12_9` for `sm_61` only. On hv1, nouveau takes the card at host
+boot and Proxmox rebinds it to vfio-pci when VM 210 starts.
 
 ## Strata
 
-`hosts/devenv/strata.nix` builds upstream's experimental CUDA 12 engine
+`hosts/llm1/strata.nix` builds upstream's experimental CUDA 12 engine
 (`STRATA_EXPERIMENTAL_SM60`, sm_61), with ggml from the llama.cpp commit Strata
 pins and `-march=broadwell`. It also installs the Python server
 (`strata-server`) and a Python for the packing tools (`strata-python`). A 12 GB
@@ -160,14 +151,14 @@ How it uses the hardware:
 The unit starts only once these exist in `/var/lib/strata` (it is the unit's
 `StateDirectory`; with `DynamicUser` systemd keeps it at
 `/var/lib/private/strata`). Run the tools as root from the package's tree
-(`strata` and `strata-python` are on devenv's PATH):
+(`strata` and `strata-python` are on llm1's PATH):
 
 ```bash
 S=$(dirname "$(dirname "$(readlink -f "$(command -v strata)")")")
 cd $S/share/strata
 # The dense pack (~1.4 GiB, under a minute). Experts and the PLE table stay in the GGUF.
 sudo $S/bin/strata-python tools/iq_pack.py --compat-bf16 \
-  --gguf /home/develop/llm-trial/models/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf \
+  --gguf /mnt/data/models/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf \
   --out /var/lib/strata/packs/orca-iq4_xs
 # The base model's MTP tensors (~5 GB of HTTP range reads from Hugging Face), then the draft runtime.
 sudo $S/bin/strata-python tools/mtp_fetch.py fetch --out /var/lib/strata/mtp
@@ -188,7 +179,7 @@ benchmark.
 
 ### Engine patch
 
-`hosts/devenv/strata-performance.patch` changes the engine for this card and
+`hosts/llm1/strata-performance.patch` changes the engine for this card and
 for two requests at once. Each switch below restores upstream's behaviour for
 its part. Upstream's exactness test (`tools/batch_test.py`: every slot of a
 batch produces exactly its solo greedy tokens) passes with the patch, for two
@@ -226,7 +217,8 @@ slots and for one.
 
 ## Performance
 
-Measured on 2026-10-06 with four prompts at T=0 (code, prose, an edit of a
+Measured on devenv (VM 202, the same GPU, node and vCPU count) on 2026-10-06
+with four prompts at T=0 (code, prose, an edit of a
 4.4k-token file, and a thinking question; 512 tokens each), the first two at
 once for the two-request numbers, and a 13k-token prompt. hv1's nightly backups
 were running, so each run read the prompts twice and kept the second pass,
@@ -276,14 +268,14 @@ Measured and not used:
 
 ### Nightly backups
 
-Strata reads the 28.8 GB n-gram (PLE) table with direct I/O from devenv's disk
-on hotData, 16 rows per token, prefetched as drafts are made. While hv1's
+Strata reads the 28.8 GB n-gram (PLE) table with direct I/O from llm1's data
+disk on hotData, 16 rows per token, prefetched as drafts are made. While hv1's
 nightly vzdump runs (01:00, all VMs; a full read of a large disk can take hours),
 those reads slow from about 0.15 ms to 0.5 ms typical and 80-800 ms at the 99th
 percentile, and decode can fall to a third. A row the engine has read before is
 cached in its 1M-row cache, so repeated text is not affected. `--ple-io ram`
-avoids the disk entirely, but it locks 27 GiB more RAM, which would leave devenv
-about 4 GiB.
+avoids the disk entirely, but it locks 27 GiB more RAM; llm1 (104 GiB) would
+keep about 16 GiB for the page cache and the system. Not tried.
 
 ### Host tuning not applied (needs operator approval on hv1)
 
@@ -303,27 +295,58 @@ These were measured or identified, but they are hv1 changes and were not made:
    the expert arena interleaved, could raise it. This is untested: node 0's
    memory reaches the GPU and node-1 cores over QPI.
 5. **Backup-proof n-gram reads.** Either restore hotData's mirror (the pool lost
-   an NVMe to the GPU) or give devenv about 32 GiB more RAM for `--ple-io ram`.
+   an NVMe to the GPU) or use `--ple-io ram` on llm1.
 
-## Moving the GPU to its own VM
+## Update policy
 
-This is an experiment; if the GPU moves to a dedicated LLM VM or container,
-move `hosts/devenv/llm.nix` (driver block, `strata`, and `strata-tools`),
-`strata.nix`, both `strata-*.patch` files, and `mcp-shell.py` (with
-`tests/test-mcp-shell.py`).
-Then move or re-prepare `/var/lib/strata` (pack 1.4 GiB, MTP files 5.8 GiB) and
-the model directory, and point `llm-api-mesh` and the rp1 vhost at the new host.
-Give that VM about 80 GiB of RAM on the GPU's NUMA node (61 GiB of pinned
-experts plus the page cache for the n-gram table), and keep the 580 driver
-branch.
+llm1 takes part in the nightly fleet deploy like every other host, but the
+engine and the driver stay fixed:
+
+- **Strata** is built from the flake input `nixpkgsStrata`, pinned to nixpkgs
+  `c508844` (the nixpkgsStable commit that built it on devenv). Lock-file
+  updates do not move a rev-pinned input, and `renovate.json` disables it.
+- **The NVIDIA driver** is `nvidiaPackages.mkDriver` at 580.173.02 with the
+  hashes `legacy_580` had at that commit. The kernel and the rest of the system
+  update with nixpkgsStable; the module is rebuilt at this version for each
+  kernel and takes effect at the next reboot.
+- **`strata` and `llm-api-mesh`** have `restartIfChanged = false`, so a switch
+  never reloads the model (1-2 minutes) or cuts open requests. A changed unit
+  takes effect at the next reboot or `sudo systemctl restart strata`.
+  `strata-tools` and everything else restart normally.
+
+To bump on purpose:
+
+- Strata or its CUDA stack: change `nixpkgsStrata.url` to a newer commit and
+  run `nix flake lock`, or edit `hosts/llm1/strata.nix` (see Notes). Benchmark,
+  deploy, then restart `strata`.
+- The driver: copy the new `legacy_580` attributes (version and hashes) from
+  `pkgs/os-specific/linux/nvidia-x11/default.nix` in the locked nixpkgsStable
+  into `hosts/llm1/llm.nix`, deploy with `rebuildHost llm1 --boot`, and reboot
+  llm1. The driver must stay on the 580 branch.
+
+## hv1 VM config
+
+VM 210 was restored from `packages.x86_64-linux.llm1`, then set by hand on hv1
+(the VMA's generated config has no GPU or NUMA settings):
+
+```text
+memory 106496, sockets 1, cores 28, cpu host
+numa 1, numa0 cpus=0-27,hostnodes=1,memory=106496,policy=bind
+affinity 1,3,5,...,55 (the odd CPUs, node 1)
+hostpci0 0000:82:00,pcie=1
+hotplug disk,network,usb (no memory hotplug: DIMM backends get no host-nodes)
+allow-ksm 0, onboot 1, startup order=4, iothread=1 on scsi0 and scsi1
+```
+
+devenv (VM 202) gave up the GPU at the same time and moved to node 0:
+memory 40960, 1x12 cores, `numa0 cpus=0-11,hostnodes=0,memory=40960,policy=bind`,
+the even CPUs. The configs before the move are `/root/202.conf.pre-split` and
+`/root/210.conf.pre-split` on hv1.
 
 ## Notes
 
-- The model stays in `/home/develop/llm-trial/models`, bind-mounted read-only
-  into `strata`.
-- The live VM size (104 GiB, 28 vCPUs, node-1 binding) and the GPU passthrough
-  were manual changes on hv1. `flake.nix` still describes devenv as 64 GB with
-  6 cores. The original config is `/root/202.conf.pre-llm` on hv1.
+- The model is in `/mnt/data/models` on llm1's data disk, bind-mounted
+  read-only into `strata`.
 - Strata is pinned to `6f32ec0` (engine 0.1.39). When bumping it, update the
   ggml commit from `third_party/ggml/VERSION.txt`, re-check the API key patch,
   and rebase `strata-performance.patch` (verifier, MTP drafter, batch loop, and

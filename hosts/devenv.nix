@@ -50,7 +50,6 @@ in
     # DevEnv-exclusive fleet management & infrastructure tools
     ./devenv/devenvTools.nix
     ./devenv/infraAutoUpdate.nix
-    ./devenv/llm.nix
 
     (import "${self}/library/makeUser.nix" {
       username = "develop";

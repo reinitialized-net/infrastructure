@@ -1,14 +1,16 @@
 # Qwen3.8-Flash-Next behind one OpenAI-compatible API: Strata on the GTX 1070,
 # with MCP agent tools.
-# Operations, preparation, and tuning evidence: docs/devenv-llm.md
+# Operations, preparation, and tuning evidence: docs/llm1.md
 {
   config,
   lib,
   pkgs,
+  self,
+  system,
   ...
 }:
 let
-  modelDir = "/home/develop/llm-trial/models";
+  modelDir = "/mnt/data/models";
   model = "${modelDir}/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf";
   port = 8080;
   meshPort = 1045;
@@ -21,8 +23,18 @@ let
       "/var/lib/service-secrets/llm-api-keys";
 
   # Strata serves the model with the most-used experts on the GTX 1070. Its
-  # pack and MTP draft layer are prepared once into strataDir (docs/devenv-llm.md).
-  strata = pkgs.callPackage ./strata.nix { };
+  # pack and MTP draft layer are prepared once into strataDir (docs/llm1.md).
+  # Built from nixpkgsStrata, a fixed nixpkgs that nightly updates never move
+  # (docs/llm1.md, "Update policy").
+  pkgsStrata = import self.inputs.nixpkgsStrata {
+    inherit system;
+    config = {
+      allowUnfree = true;
+      cudaCapabilities = [ "6.1" ];
+      cudaForwardCompat = false;
+    };
+  };
+  strata = pkgsStrata.callPackage ./strata.nix { };
   strataDir = "/var/lib/strata";
   strataConfig = pkgs.writeText "strata.json" (
     builtins.toJSON {
@@ -125,18 +137,23 @@ let
   toolsConfig = pkgs.writeText "strata-tools.json" (builtins.toJSON { mcpServers = toolServers; });
 in
 {
-  # GTX 1070 (Pascal, passed through from hv1). Same driver setup as ai1: Pascal
-  # support ends with the 580 branch and needs the closed kernel module.
-  nixpkgs.config = {
-    allowUnfree = true;
-    cudaCapabilities = [ "6.1" ];
-    cudaForwardCompat = false;
-  };
+  # GTX 1070 (Pascal, passed through from hv1): Pascal support ends with the
+  # 580 branch and needs the closed kernel module.
+  nixpkgs.config.allowUnfree = true;
   services.xserver.videoDrivers = [ "nvidia" ];
   hardware = {
     graphics.enable = true;
     nvidia = {
-      branch = "legacy_580";
+      # Held at this version (legacy_580's attributes when it was pinned); the
+      # module is rebuilt for each new kernel. Bump on purpose: docs/llm1.md.
+      package = config.boot.kernelPackages.nvidiaPackages.mkDriver {
+        version = "580.173.02";
+        sha256_64bit = "sha256-jY65AB4FqaimY9PV0wT+tk7yhE7hhczf2VJ4aCD0bhs=";
+        sha256_aarch64 = "sha256-1lvVYIfvTXjwSoCNp4g8NaWQHF/TfpXRUKdgLrqXqoA=";
+        openSha256 = "sha256-lhloZdf6XbaAFTZBF1DxE0Nv9VC6obY8UPf0VyfVepE=";
+        settingsSha256 = "sha256-dfdu/3tnwHUfP7WoeQFNOMalMlpmUWjeMDIOnu+yi8E=";
+        persistencedSha256 = "sha256-j8YM1w231X+JIP3c3TpUNurEBumEu1stVjzFGWu1JXE=";
+      };
       open = false;
       gsp.enable = false;
       modesetting.enable = false;
@@ -147,7 +164,9 @@ in
     };
   };
   boot.kernelModules = [ "nvidia" ];
-  # strata-python runs the one-time packers (docs/devenv-llm.md).
+  # On llm1's data disk (mountData.nix); the shards are copied in by hand (docs/llm1.md).
+  systemd.tmpfiles.rules = [ "d ${modelDir} 0755 root root -" ];
+  # strata-python runs the one-time packers (docs/llm1.md).
   environment.systemPackages = [ strata ];
 
   systemd.services.strata = {
@@ -158,6 +177,9 @@ in
       "strata-tools.service"
     ];
     wants = [ "strata-tools.service" ];
+    # A nightly switch must not reload the model or cut open requests; the
+    # pinned engine only changes on purpose (docs/llm1.md, "Update policy").
+    restartIfChanged = false;
     unitConfig.ConditionPathExists = [
       modelDir
       "${strataDir}/packs/orca-iq4_xs"
@@ -225,7 +247,7 @@ in
       ];
       # Internet for fetch, docs, and the browser; loopback for Strata;
       # no LAN or private ranges. The listener is loopback-only (no auth in
-      # mcp-proxy): reaching it needs code already running on devenv.
+      # mcp-proxy): reaching it needs code already running on llm1.
       IPAddressDeny = [
         "10.0.0.0/8"
         "172.16.0.0/12"
@@ -249,9 +271,10 @@ in
   # TCP forwarder, so the server's LAN deny above stays intact.
   systemd.sockets.llm-api-mesh = {
     wantedBy = [ "sockets.target" ];
-    listenStreams = [ "10.255.0.1:${toString meshPort}" ];
+    listenStreams = [ "10.255.0.9:${toString meshPort}" ];
     socketConfig.FreeBind = true;
   };
+  systemd.services.llm-api-mesh.restartIfChanged = false;
   systemd.services.llm-api-mesh.serviceConfig = {
     ExecStart = "${config.systemd.package}/lib/systemd/systemd-socket-proxyd 127.0.0.1:${toString port}";
     DynamicUser = true;

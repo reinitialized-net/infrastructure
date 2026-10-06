@@ -811,7 +811,7 @@ let
                   path:.#checks.x86_64-linux.apps1 \
                   path:.#checks.x86_64-linux.apps2 \
                   path:.#checks.x86_64-linux.apps3 \
-                  path:.#checks.x86_64-linux.ai1 \
+                  path:.#checks.x86_64-linux.llm1 \
                   path:.#checks.x86_64-linux.db1 || return 1
                 bash -n hosts/devenv/tools/update-network-firewall-rules.sh || return 1
                 bash -n hosts/devenv/tools/release-infra.sh

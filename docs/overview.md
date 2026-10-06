@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This repository is a NixOS infrastructure flake for the Reinitialized fleet. It builds Proxmox-compatible VMA images and the physical `ai1` workstation installer, exports live NixOS configurations for rebuilds, and defines reusable profiles for common host roles: standard defaults, Docker hosts, WireGuard mesh networking, secrets wiring, source-scoped firewall rules, and data disks.
+This repository is a NixOS infrastructure flake for the Reinitialized fleet. It builds Proxmox-compatible VMA images, exports live NixOS configurations for rebuilds, and defines reusable profiles for common host roles: standard defaults, Docker hosts, WireGuard mesh networking, secrets wiring, source-scoped firewall rules, and data disks.
 
 The implementation is the source of truth. The most important entry point is `flake.nix`.
 
@@ -22,7 +22,7 @@ Current exported hosts:
 - `apps1`
 - `apps2`
 - `apps3`
-- `ai1`
+- `llm1`
 - `db1`
 
 `gs1` has a host file, secret example, and mesh topology entry, but its export is commented out in `flake.nix`.
@@ -52,7 +52,6 @@ Use `makeDualExport` for normal host additions so `nixosConfigurations` and VMA 
 | Containers | `modules/profiles/containers/` | Explicitly imported on Docker hosts |
 | Mount Data | `modules/profiles/mountData.nix` | Explicitly imported on hosts with a second data disk |
 | QEMU Hardware | `modules/hardware/qemu.nix` | Auto-imported by `makeConfiguration` when `hardware = "qemu"` |
-| XPS 8930 Hardware | `modules/hardware/xps8930.nix` | Imported for physical host `ai1`; mounts filesystems by installer-created labels |
 
 ### Host Files
 
@@ -80,8 +79,6 @@ The WireGuard mesh uses:
 
 Most Docker service-to-service traffic uses mesh IPs and explicitly mapped host ports. See [Mesh Network Port Reference](mesh-network-ports.md).
 
-`ai1` is a deployment-only topology entry at `10.1.13.10`; it does not join the WireGuard mesh or become an automatic peer.
-
 ## Proxmox VMA Generation
 
 `generateVMAImage` builds a VMA archive with:
@@ -95,18 +92,12 @@ Most Docker service-to-service traffic uses mesh IPs and explicitly mapped host 
 
 The first configured disk becomes `scsi0` and stores the OS. The `mountData` profile expects the data disk to be `scsi1`.
 
-## ai1 Installer Generation
-
-`packages.x86_64-linux.ai1-installer` is a hybrid UEFI/USB ISO based on the NixOS minimal installer. It embeds the secret-free `nixosConfigurations.ai1` closure and provides `install-ai1`, which explicitly erases and partitions one system disk and one model disk before running `nixos-install --system`.
-
-See [ai1 Workstation Installation](ai1-installation.md).
-
 ## Deployment Workflow
 
 The `devenv` host installs generated fleet tools:
 
 - `rebuildHost` - rebuild one target from the repository checkout on `devenv`
-- `updateInfra` - rebuild exported topology hosts with fleet deployment enabled; `ai1` is excluded while awaiting installation
+- `updateInfra` - rebuild exported topology hosts with fleet deployment enabled
 - `updateNetworkFirewallRules` - generate and optionally apply OPNsense firewall recommendations from traffic logs
 
 Remote deploys use SSH as `rnetadmin` with `--sudo` on the target. Do not run remote deploy tools with `sudo`.
@@ -128,13 +119,13 @@ infrastructure/
 │   ├── apps1.nix
 │   ├── apps2.nix
 │   ├── apps3.nix
-│   ├── ai1.nix
-│   ├── ai1-installer.nix
+│   ├── llm1.nix
 │   ├── db1.nix
 │   ├── gs1.nix
-│   └── devenv/tools/
+│   ├── devenv/tools/
+│   └── llm1/
 ├── modules/
-│   ├── hardware/{qemu,xps8930}.nix
+│   ├── hardware/qemu.nix
 │   ├── packages/
 │   ├── profiles/
 │   ├── secrets.example/

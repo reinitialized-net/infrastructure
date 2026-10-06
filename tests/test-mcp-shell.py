@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""hosts/devenv/mcp-shell.py over stdio: handshake, tool list, a command, a failure, a timeout.
+"""hosts/llm1/mcp-shell.py over stdio: handshake, tool list, a command, a failure, a timeout.
 
     python3 tests/test-mcp-shell.py
 """
@@ -10,7 +10,7 @@ import sys
 import time
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[1] / "hosts/devenv/mcp-shell.py"
+SERVER = Path(__file__).resolve().parents[1] / "hosts/llm1/mcp-shell.py"
 
 
 def main():

@@ -79,8 +79,9 @@
       #   remote-management:
       #     allow-remote: true            # rp1 proxies from a non-localhost address
       #     secret-key: "<openssl rand -hex 32>"   # hashed on first start
-      # Providers (OpenAI-compatible, incl. ai1 llama.cpp) are added from the
-      # management UI at https://ai.reinitialized.net/management.html.
+      # Providers (OpenAI-compatible, incl. llm1's Strata at
+      # http://10.255.0.9:1045/v1) are added from the management UI at
+      # https://ai.reinitialized.net/management.html.
       description = "CLIProxyAPI AI gateway (all config in runtime config.yaml)";
     };
     forgejoRunner = {

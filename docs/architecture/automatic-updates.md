@@ -16,7 +16,7 @@
    All executable Nix input and lock-file updates are `manual-update`. Candidate
    evaluation builds `checks.x86_64-linux.<host>`, which independently construct
    each host with external secret imports disabled and its checked-in synthetic
-   module when present (`ai1` needs none). These checks remain synthetic during
+   module when present. These checks remain synthetic during
    impure release evaluation. Live `nixosConfigurations` keep external-only imports.
    Validation drops secret and Git credential environment variables and enables
    restricted pure evaluation so dependency code cannot read arbitrary host paths:
@@ -35,7 +35,7 @@
      path:.#checks.x86_64-linux.apps1 \
      path:.#checks.x86_64-linux.apps2 \
      path:.#checks.x86_64-linux.apps3 \
-     path:.#checks.x86_64-linux.ai1 \
+     path:.#checks.x86_64-linux.llm1 \
      path:.#checks.x86_64-linux.db1
    bash -n hosts/devenv/tools/update-network-firewall-rules.sh
    bash -n hosts/devenv/tools/release-infra.sh
@@ -57,8 +57,8 @@
 `infra-deploy` intentionally skips `devenv` so the service does not replace its own running unit during the fleet deploy. Host-local `nixos-upgrade.timer` remains enabled as the fallback path for `devenv` and for any host missed by the coordinated deploy. It runs later from the Forgejo flake URL with `?ref=indev`, passes `--impure` and `INFRA_SECRETS_DIR=/var/lib/infratainer/secrets`, and suppresses live DBus reloads during switches so DBus implementation changes take effect after reboot instead of failing activation.
 
 Topology nodes with `fleetDeployment = false` are excluded from bulk deployment
-and its SSH identity checks. `ai1` has this setting while awaiting installation;
-explicit `rebuildHost ai1` and all build/release validation outputs remain available.
+and its SSH identity checks; explicit `rebuildHost <host>` and all build/release
+validation outputs remain available. No current node sets it.
 Every participating remote host must already have a verified identity in
 `/home/rnetadmin/.ssh/known_hosts`. Deployment fails on missing entries instead of
 enrolling keys through `ssh-keyscan`; verify fingerprints through a trusted console
@@ -110,8 +110,7 @@ The directory must include any helper files imported by host secret modules, suc
 The overlay bootstrap runs on **devenv only**. Each remote host's fallback update also
 needs its own `<host>.nix` and required helper modules under
 `/var/lib/infratainer/secrets`, provisioned as root with directory mode `0700` and
-file mode `0600`. Do not copy other hosts' modules to that machine. `ai1` currently
-sets `includeSecrets = false` and does not need this overlay.
+file mode `0600`. Do not copy other hosts' modules to that machine.
 
 Remote failure reporting separately needs a protected Forgejo token. Persist it
 outside `/run`, configure the remote host's `secrets.infraAutomation.file` to that

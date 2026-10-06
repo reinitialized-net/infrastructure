@@ -5,6 +5,8 @@
     nixpkgsMaster.url = "github:NixOS/nixpkgs/master";
     nixpkgsUnstable.url = "github:NixOS/nixpkgs/nixos-unstable";
     nixpkgsStable.url = "github:NixOS/nixpkgs/nixos-26.05";
+    # llm1's Strata build, held out of updates (docs/llm1.md, "Update policy").
+    nixpkgsStrata.url = "github:NixOS/nixpkgs/c508844df6c28fa6dabc1b6af70f3ccbd65c5201";
 
     vscodeServer = {
       url = "github:nix-community/nixos-vscode-server";
@@ -43,8 +45,8 @@
           system = "x86_64-linux";
           enableProtection = true;
           vmId = 202;
-          memory = 65536;
-          cores = 6;
+          memory = 40960;
+          cores = 12;
           disks = [
             {
               storage = "hotData";
@@ -181,11 +183,35 @@
           ];
         };
 
-        ai1 = library.makeDualExport "ai1" {
+        # The GPU passthrough, NUMA binding and sizes are set by hand on hv1 after
+        # restore (docs/llm1.md, "hv1 VM config").
+        llm1 = library.makeDualExport "llm1" {
           system = "x86_64-linux";
-          hardware = "xps8930";
-          includeSecrets = false;
-          exportVMA = false;
+          vmId = 210;
+          enableProtection = true;
+          memory = 106496;
+          cores = 28;
+          disks = [
+            {
+              storage = "hotData";
+              size = 50;
+            }
+            {
+              storage = "hotData";
+              size = 150;
+            }
+          ];
+          networking = [
+            {
+              bridge = "vmbr0";
+              firewall = false;
+              vlan = 11;
+            }
+          ];
+          modules = [
+            "${inputs.self}/modules/profiles/meshNetwork"
+            "${inputs.self}/modules/profiles/mountData.nix"
+          ];
         };
 
         db1 = library.makeDualExport "db1" {
@@ -245,15 +271,6 @@
         #   ];
         # };
       };
-
-      ai1Installer = inputs.nixpkgsStable.lib.nixosSystem {
-        system = "x86_64-linux";
-        specialArgs.targetSystem = dualSystems.ai1.nixosSystem.config.system.build.toplevel;
-        modules = [
-          "${inputs.nixpkgsStable}/nixos/modules/installer/cd-dvd/installation-cd-minimal.nix"
-          "${inputs.self}/hosts/ai1-installer.nix"
-        ];
-      };
     in
     {
       nixosModules.default = {
@@ -276,7 +293,7 @@
         apps2 = dualSystems.apps2.nixosSystem;
         apps3 = dualSystems.apps3.nixosSystem;
 
-        ai1 = dualSystems.ai1.nixosSystem;
+        llm1 = dualSystems.llm1.nixosSystem;
 
         db1 = dualSystems.db1.nixosSystem;
         #gs1 = dualSystems.gs1.nixosSystem;
@@ -288,23 +305,19 @@
         host: _: dualSystems.${host}.validationSystem.config.system.build.toplevel
       ) inputs.self.nixosConfigurations;
 
-      packages = library.forAllSystems (
-        system:
-        {
-          # Reference VMA package from dual export
-          devenv = dualSystems.devenv.package;
+      packages = library.forAllSystems (system: {
+        # Reference VMA package from dual export
+        devenv = dualSystems.devenv.package;
 
-          rp1 = dualSystems.rp1.package;
+        rp1 = dualSystems.rp1.package;
 
-          apps1 = dualSystems.apps1.package;
-          apps2 = dualSystems.apps2.package;
-          apps3 = dualSystems.apps3.package;
+        apps1 = dualSystems.apps1.package;
+        apps2 = dualSystems.apps2.package;
+        apps3 = dualSystems.apps3.package;
 
-          db1 = dualSystems.db1.package;
-        }
-        // inputs.nixpkgsStable.lib.optionalAttrs (system == "x86_64-linux") {
-          ai1-installer = ai1Installer.config.system.build.isoImage;
-        }
-      );
+        llm1 = dualSystems.llm1.package;
+
+        db1 = dualSystems.db1.package;
+      });
     };
 }
