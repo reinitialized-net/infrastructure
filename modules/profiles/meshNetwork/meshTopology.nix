@@ -50,7 +50,7 @@
       nodeId = 9;
       hostname = "llm1";
       endpoint = "10.1.11.9:51820";
-      publicKey = "PLACEHOLDER_LLM1_PUBLIC_KEY";
+      publicKey = "XLbZDYqVLu9m0YFHn5AyA71lQKQeQ4nVl9tmUSoZs1E=";
     };
 
     db1 = {

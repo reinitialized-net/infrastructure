@@ -362,7 +362,7 @@
       },
       "qualification": {
         "checked": "2026-10-06",
-        "access": "pending: VM 210 not yet created"
+        "access": "SSH as rnetadmin with passwordless sudo verified 2026-10-06"
       }
     },
     "rinf": {
