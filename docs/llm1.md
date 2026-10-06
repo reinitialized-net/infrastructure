@@ -148,10 +148,11 @@ How it uses the hardware:
 
 ### One-time preparation
 
-The unit starts only once these exist in `/var/lib/strata` (it is the unit's
-`StateDirectory`; with `DynamicUser` systemd keeps it at
-`/var/lib/private/strata`). Run the tools as root from the package's tree
-(`strata` and `strata-python` are on llm1's PATH):
+The unit starts only once these exist in `/var/lib/private/strata` (the unit's
+`StateDirectory`; with `DynamicUser` systemd keeps it there and adds the
+`/var/lib/strata` symlink only when the unit starts, so use the real path). Run
+the tools as root from the package's tree (`strata` and `strata-python` are on
+llm1's PATH):
 
 ```bash
 S=$(dirname "$(dirname "$(readlink -f "$(command -v strata)")")")
@@ -159,14 +160,14 @@ cd $S/share/strata
 # The dense pack (~1.4 GiB, under a minute). Experts and the PLE table stay in the GGUF.
 sudo $S/bin/strata-python tools/iq_pack.py --compat-bf16 \
   --gguf /mnt/data/models/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf \
-  --out /var/lib/strata/packs/orca-iq4_xs
+  --out /var/lib/private/strata/packs/orca-iq4_xs
 # The base model's MTP tensors (~5 GB of HTTP range reads from Hugging Face), then the draft runtime.
-sudo $S/bin/strata-python tools/mtp_fetch.py fetch --out /var/lib/strata/mtp
-sudo $S/bin/strata-python tools/mtp_pack.py --src /var/lib/strata/mtp --experts q2_0 \
-  --out /var/lib/strata/mtp/mtp-q2_0.gguf
-sudo $S/bin/strata-python tools/mtp_rt.py --gguf /var/lib/strata/mtp/mtp-q2_0.gguf \
-  --out /var/lib/strata/mtp/rt
-sudo cp data/draft_vocab_en.bin /var/lib/strata/mtp/rt/draft_vocab.bin
+sudo $S/bin/strata-python tools/mtp_fetch.py fetch --out /var/lib/private/strata/mtp
+sudo $S/bin/strata-python tools/mtp_pack.py --src /var/lib/private/strata/mtp --experts q2_0 \
+  --out /var/lib/private/strata/mtp/mtp-q2_0.gguf
+sudo $S/bin/strata-python tools/mtp_rt.py --gguf /var/lib/private/strata/mtp/mtp-q2_0.gguf \
+  --out /var/lib/private/strata/mtp/rt
+sudo cp data/draft_vocab_en.bin /var/lib/private/strata/mtp/rt/draft_vocab.bin
 ```
 
 The engine log is `/var/lib/strata/strata.log`; the server's progress lines go

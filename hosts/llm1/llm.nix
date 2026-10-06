@@ -180,10 +180,12 @@ in
     # A nightly switch must not reload the model or cut open requests; the
     # pinned engine only changes on purpose (docs/llm1.md, "Update policy").
     restartIfChanged = false;
+    # The real paths: systemd only creates the /var/lib/strata symlink when the
+    # unit starts, so a condition on it never passes on a fresh host.
     unitConfig.ConditionPathExists = [
       modelDir
-      "${strataDir}/packs/orca-iq4_xs"
-      "${strataDir}/mtp/rt"
+      "/var/lib/private/strata/packs/orca-iq4_xs"
+      "/var/lib/private/strata/mtp/rt"
     ];
     # The web UI's Monitor loads NVML (libnvidia-ml.so.1) by name.
     environment.LD_LIBRARY_PATH = "/run/opengl-driver/lib";
