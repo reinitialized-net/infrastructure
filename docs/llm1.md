@@ -10,11 +10,11 @@ passed-through GTX 1070. `strata.service` starts at boot and listens on
 
 | Client location | Base URL | Notes |
 |-----------------|----------|-------|
-| LAN / VPN | `https://llm.in.reinitialized.net/v1` | rp1, ACME TLS, `internalOnly`; the web UI is at `https://llm.in.reinitialized.net/` |
+| LAN / VPN | `https://llm.in.reinitialized.net/v1` | rp1, ACME TLS, `internalOnly` |
 | Mesh hosts | `http://10.255.0.9:1045/v1` | `llm-api-mesh.socket` forwards to loopback; WireGuard-encrypted |
-| llm1 itself | `http://127.0.0.1:8080/v1` | Also serves the web UI |
+| llm1 itself | `http://127.0.0.1:8080/v1` | |
 
-Every route except `/health` and the web UI's static files requires
+Every route except `/health` requires
 `Authorization: Bearer <key>` (Strata also accepts `x-api-key`). The model ID is
 `qwen3.8-flash-next`; Strata answers to any model name. Strata also serves the
 Anthropic Messages API (`/v1/messages`) and the Responses API (`/v1/responses`).
@@ -30,9 +30,10 @@ r = client.chat.completions.create(
 print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
-The context is 131072 tokens. A request alone decodes at about 33 tokens/s.
-Two requests run at once, at about 18 tokens/s each while both decode with short
-contexts (less with long ones; see Performance); a third waits. Strata reads prompts at about 145 tokens/s, so a 30k-token prompt takes
+The context is 131072 tokens. A request alone decodes at about 34 tokens/s
+(about 30 if it is left alone in a batch slot, where it stays).
+Two requests run at once, at about 18.5 tokens/s each while both decode with
+short contexts (about 16 each at 50-60k tokens and 15 at 100-110k; see Performance); a third waits. Strata reads prompts at about 145 tokens/s, so a 30k-token prompt takes
 about 3.5 minutes. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
 Follow-up turns reuse checkpoints of the conversation (6 by default), and each
@@ -44,53 +45,15 @@ Strata takes `reasoning_effort` `none`, `low`, `medium`, or `high` (the default)
 also as `reasoning.effort` or `chat_template_kwargs: {"enable_thinking": false}`.
 Anthropic requests use `output_config.effort` or `thinking`.
 
-## Web UI and agent tools
+## API only
 
-The web UI is at `https://llm.in.reinitialized.net/` from the
-LAN and VPN (rp1 `internalOnly`), and at `http://127.0.0.1:8080` on llm1.
-Strata's UI has Chat (with an off/low/medium/high thinking menu and **Use tools
-from MCP servers** in the Sampling drawer), a live Monitor (tokens/s, expert
-cache hits, GPU, CPU, RAM, MCP servers), and About; enter an API key under
-About > Settings, which keeps it in the browser only.
-
-`strata-tools.service` runs
-every credential-free MCP server nixpkgs packages, plus `hosts/llm1/mcp-shell.py`
-(nixpkgs has no shell server), behind `mcp-proxy` on `127.0.0.1:8097`:
-
-| Server | Tools |
-|--------|-------|
-| `shell` | `run_command` (bash, up to 600 s) |
-| `files` | read, write, edit, list, search, move (workspace only) |
-| `git` | status, diff, add, commit, log, branch, ... |
-| `fetch` | web page to markdown |
-| `browser` | Playwright headless Chromium (21 tools) |
-| `documents` | MarkItDown: PDF/Office/HTML/URL to markdown |
-| `memory` | a knowledge graph kept in `memory.jsonl` |
-| `thinking` | sequential thinking |
-| `time` | current time, time zone conversion |
-| `nixos` | NixOS packages and options search |
-| `library-docs` | Context7 library documentation |
-
-Strata's chat page calls them as `<server>__<tool>` (up to 64 calls per answer,
-600 s per call, results cut at 40,000 characters); API clients opt in with
-`"strata_mcp": true`.
-
-The tools run as their own DynamicUser, not as Strata, so they
-cannot read the API keys, Strata's pack, or the engine. Their workspace is
-`/var/lib/private/strata-tools/workspace` (the shell starts there and the file
-server allows only it; use that path, not the `/var/lib/strata-tools` symlink).
-They have the system's tools on `PATH`, internet access, read-only system paths,
-no home directories, no `/mnt`, `/srv`, `/media`, and no LAN or private ranges.
-The tool listener has no authentication of its own and accepts loopback only.
-
-What this exposes: anyone on the LAN or VPN with an API key can have the model
-run commands, edit files, browse, and fetch from the internet as that user, and
-text the model reads (a web page, a document) can steer what it runs. Strata
-only runs MCP tools for requests from its own page or `trusted_origins`; another
-site's page gets 403.
-
-After `strata-tools` restarts, Strata's first call to each server fails once
-and is retried on a new session; restart `strata` to avoid it.
+llm1 serves only the API. Strata's web UI and the server-side MCP agent tools
+(`strata-tools.service`) were removed on 2026-10-06:
+`hosts/llm1/strata-api-only.patch` answers 404 for `/`, the UI's files
+(`/web/*`, `/fonts/*`), and the views only the page used (`/settings`,
+`/config`, `/mcp`, `/api/requests`, `/api-monitor`), the package no longer
+ships `serve/web`, and the config sets no `mcp_servers`, so Strata starts no
+MCP clients. Run agent tools in the client instead.
 
 ## API keys
 
@@ -142,9 +105,15 @@ How it uses the hardware:
   limit, so the CPU's memory bandwidth bounds decode. `--pcie-frac 0` keeps
   missed experts off PCIe: copying them made the GPU wait longer than the CPU
   took.
-- The MTP draft layer is the base model's (upstream recipe: `q2_0` experts, the
-  English/code draft vocabulary to save VRAM). It drafts up to 4 tokens, and
-  65-85% are accepted.
+- The MTP draft layer is the fine-tune's own head: Orca abliterated its 3
+  residual-writer tensors, and the other 28 `mtp.*` tensors equal the base
+  model's. It is built with upstream's recipe (`q2_0` experts, the English/code
+  draft vocabulary to save VRAM) and drafts up to 4 tokens. Measured against the
+  base head on 2026-10-06 (same prompts, two passes each), it does not change
+  speed: solo acceptance per prompt (code / prose / edit / think) was 77, 75 /
+  69, 70 / 85, 84 / 87, 86% with the base head and 75, 75 / 67, 70 / 85, 87 /
+  89, 84% with Orca's, batch-window acceptance 61% and 60%, and one request
+  33.83 and 33.85 t/s. It is kept because it is the model's own head.
 
 ### One-time preparation
 
@@ -152,7 +121,9 @@ The unit starts only once these exist in `/var/lib/private/strata` (the unit's
 `StateDirectory`; with `DynamicUser` systemd keeps it there and adds the
 `/var/lib/strata` symlink only when the unit starts, so use the real path). Run
 the tools as root from the package's tree (`strata` and `strata-python` are on
-llm1's PATH):
+llm1's PATH). `mtp/` (the base model's head, built the same way without
+`STRATA_MTP_REPO`/`STRATA_MTP_REVISION`) is kept as a fallback; the fetched raw
+tensors (~5.2 GB) can be deleted after packing:
 
 ```bash
 S=$(dirname "$(dirname "$(readlink -f "$(command -v strata)")")")
@@ -161,13 +132,17 @@ cd $S/share/strata
 sudo $S/bin/strata-python tools/iq_pack.py --compat-bf16 \
   --gguf /mnt/data/models/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf \
   --out /var/lib/private/strata/packs/orca-iq4_xs
-# The base model's MTP tensors (~5 GB of HTTP range reads from Hugging Face), then the draft runtime.
-sudo $S/bin/strata-python tools/mtp_fetch.py fetch --out /var/lib/private/strata/mtp
-sudo $S/bin/strata-python tools/mtp_pack.py --src /var/lib/private/strata/mtp --experts q2_0 \
-  --out /var/lib/private/strata/mtp/mtp-q2_0.gguf
-sudo $S/bin/strata-python tools/mtp_rt.py --gguf /var/lib/private/strata/mtp/mtp-q2_0.gguf \
-  --out /var/lib/private/strata/mtp/rt
-sudo cp data/draft_vocab_en.bin /var/lib/private/strata/mtp/rt/draft_vocab.bin
+# Orca's MTP tensors (~5.2 GB of HTTP range reads from the gated BF16 repo), then the draft runtime.
+# HF_TOKEN: a read-only token for an HF account that accepted the repo's gate; pass it
+# without leaving it in shell history (e.g. `read -rs HF_TOKEN`) and delete the token afterwards.
+sudo HF_TOKEN="$HF_TOKEN" STRATA_MTP_REPO=orcarouter/Qwen3.8-Flash-Next-Uncensored \
+  STRATA_MTP_REVISION=e096800036ec20da7e2442dcd4044a004d4e99fa \
+  $S/bin/strata-python tools/mtp_fetch.py fetch --out /var/lib/private/strata/mtp-orca
+sudo $S/bin/strata-python tools/mtp_pack.py --src /var/lib/private/strata/mtp-orca --experts q2_0 \
+  --out /var/lib/private/strata/mtp-orca/mtp-q2_0.gguf
+sudo $S/bin/strata-python tools/mtp_rt.py --gguf /var/lib/private/strata/mtp-orca/mtp-q2_0.gguf \
+  --out /var/lib/private/strata/mtp-orca/rt
+sudo cp data/draft_vocab_en.bin /var/lib/private/strata/mtp-orca/rt/draft_vocab.bin
 ```
 
 The engine log is `/var/lib/strata/strata.log`; the server's progress lines go
@@ -231,9 +206,16 @@ when the n-gram rows were already cached (see "Nightly backups").
 | **deployed: engine patch, `--pcie-frac 0 --spec-split`, `--kv-resident 20480`, `"parallel": 2`** | **33.4 (33.1 / 28.9 / 34.4 / 37.0)** | **36 t/s together, 18 each while both decode** | **138 / 147** |
 | the same without `"parallel"`, `--kv-resident 32768` | 32.8 | one at a time | 208 / 232 |
 | **llm1 after the move (same config, no backup running)** | **33.75 (34.1 / 28.1 / 34.6 / 38.2)** | **30.5 t/s together, 19.3 / 15.5 per stream** | **139 / 149** |
+| llm1, Orca MTP head (2026-10-06 22:45) | 33.85 | 34.4 t/s together, 17.2 each while both decode (fresh start) | ~138-139 / - |
+| **llm1, + vCPU pinning (22:52)** | **34.23** | **37.0 t/s together, 18.5 each while both decode** | **~138-139 / -** |
 
 The llm1 row was measured on 2026-10-06 at 18:56 with the same client and
-prompts (second of two passes), right after the move: llm1 matches devenv.
+prompts (second of two passes), right after the move: llm1 matches devenv. The
+last two rows are from 22:20-23:10 the same night; the two-request numbers are
+the engine's batch windows with both slots active (strata.log's
+`strata batch:` lines). The vCPU pinning (see "hv1 VM config") made two-slot
+windows 153.7 ms (CPU experts 116.0 ms) instead of 155.6-161.9 ms (CPU experts
+120-126 ms) unpinned: about 3-5%.
 
 What each change gave (one request, mean t/s, earlier the same night with a
 single pass): `--pcie-frac 0` 21.3 to 27.3 (the GPU had waited about 64 ms per
@@ -243,9 +225,23 @@ draft head runs out of VRAM); upstream's batch windows ran at 11-12 t/s per
 request.
 
 A batch window of two requests verifies about 8 rows (each request's token plus
-3 drafts) and keeps 5.8 tokens in 160 ms, of which the CPU pool takes 124 ms.
-That pass is bound by memory bandwidth: about 44 distinct experts per layer, read
-at 46 GB/s, against the guest's measured 64 GB/s read limit. A request alone gets
+3 drafts). With short contexts and pinned vCPUs it keeps 5.69 tokens in
+153.7 ms (37.0 t/s together, 18.5 each):
+
+| Part of a two-slot window | ms |
+|---------------------------|---:|
+| CPU experts | 116.0 |
+| waiting for the GPU's part | 12.1 |
+| drafting | 12.4 |
+| host orchestration | ~13 |
+
+The CPU pass is bound by memory bandwidth: about 44 distinct experts per layer,
+read at 46 GB/s, against the guest's measured 64 GB/s read limit. At 50-60k
+tokens of context (unpinned) a window takes 162-166 ms (CPU experts 127,
+drafting 14) and keeps 5.3 tokens, about 16 t/s each. DRAM bandwidth alone
+would allow about 21-24 t/s each if all the non-CPU time overlapped; that needs
+engine work (overlapping one slot's drafting with the other slot's last layers,
+batched drafting for both slots), not configuration. A request alone gets
 the single-request path again (about 0.1 s to move it), so the two-request
 penalty applies only while both decode. Two slots cost the prompt path its large
 chunks (1,024 tokens instead of 4,096), so long prompts read about 1.6x slower.
@@ -258,11 +254,61 @@ moving a request into a slot leaves its KV cache cold in VRAM (upstream's
 `kv_stream_reset`), so attention reads from RAM until the hot positions are
 cached again.
 
+While one agent's prompt (a tool result or a new conversation) is read, the
+other agent decodes only between prompt chunks. `STRATA_BATCH_DECODE_SHARE`
+(engine environment, default 0.5) gives it half as long as each chunk took,
+so a third of the time, and the prompt path borrows about 467 cached-expert
+slots meanwhile, so those windows also run slower. In the 60k baseline the
+decoding agent made about 8 t/s while the other read a 47k-token prompt.
+Prompts are admitted one at a time: an agent's next turn waited about 5 minutes
+behind the other agent's 47k-token prompt.
+
+llm1 sets `STRATA_BATCH_DECODE_SHARE=1.0` (half the time). With two agents at
+about 20k tokens of context, three turns each, a decoding agent's turn during
+the other's prompt read went from 9.1 to 12.3 t/s (client-measured); a prompt
+read beside a decoding agent takes 2x instead of 1.5x as long as alone. Mean
+client decode per turn: 22.5 t/s (1.0) against 12.3 (0.5, in a run that also
+contained the re-read below).
+
+llm1 also sets `STRATA_PARALLEL_SOLO=0` in the unit's environment (the server
+reads it, not the engine, so it is not in the config's `env`): a request left
+alone in a batch slot stays there instead of going back to the solo path. With
+the default, a request moved slot -> solo -> slot -> solo lost its cached state
+on the second return and was read again from scratch (22,055 tokens in 156 s;
+about 15 minutes at 128K). With it off, every follow-up turn reused its prefix
+and mean client decode per turn was the same (22.7 against 22.5 t/s). The cost:
+a lone agent in a slot decodes in batch windows (about 30 t/s) instead of the
+solo path (about 34 t/s). A request that starts while nothing else runs still
+takes the solo path.
+
+Two agents with long contexts (2026-10-06 23:31 to 2026-10-07 00:12, final
+configuration: pinned vCPUs, Orca MTP head, `STRATA_BATCH_DECODE_SHARE=1.0`,
+`STRATA_PARALLEL_SOLO=0`; bench client `agents` mode: two agents start 1 s apart,
+each with a large code document as context, then 3 turns, each appending a
+~1.4-1.8k-token tool result and generating up to 384 tokens; client t/s counts
+from the first to the last streamed token of a turn, so it includes pauses while
+the other agent's prompt is read):
+
+| Context per agent | Client t/s per turn, mean (min) | Both decoding (engine) | Notes |
+|---|---|---|---|
+| ~50-60k, before tonight (unpinned, base head, share 0.5) | 18.3 (8.0) | 162-166 ms windows, 5.3 tokens: ~16 each | an agent's next turn waited ~5 min behind the other's 47k prompt |
+| ~50-60k, final | 23.0 (10.4) | — | every follow-up turn reused its prefix |
+| ~100-110k, final | 12.3 (6.0) | 143.6 ms windows, 4.38 tokens at 5.8 rows: ~15 each | prompts read at 136-139 t/s (107k tokens: 12.9 min); KV streaming hit VRAM for 58-71% of block reads; while the other agent's prompt is read, the decoding agent's windows see almost no GPU expert hits (0.1-0.7 per layer) because the prompt path borrows the cache slots |
+
+The goal of two agents at 128K each decoding at 20 t/s or more is not met on
+this hardware: about 18.5 t/s each with short contexts, ~16 at 50-60k and ~15 at
+100-110k while both decode; one agent alone runs at ~34 t/s (~30 when left alone
+in its slot). The remaining levers are engine work (overlap a slot's drafting
+with the other slot's last layers, batched drafting for both slots, upstream
+v0.1.40's drafter and QSA changes) and more VRAM (a larger GPU holds several
+times more experts, which is the only change that removes most of the CPU
+expert pass). Configuration and hv1 tuning are exhausted (see Host tuning).
+
 Measured and not used:
 
 | Change | Result |
 |--------|--------|
-| `--pool-workers 20` | batch windows 3.5% faster; one request unchanged; 7 more busy vCPUs |
+| `--pool-workers 20` | unpinned: batch windows 3.5% faster, one request unchanged, 7 more busy vCPUs. Pinned: 153.4-153.9 ms per window against 153.7 with 13 (the expert pass is DRAM-bound), so 13 stays |
 | `--pool-workers 27` (no split) | 2% slower than 13 |
 | `STRATA_BATCH_DRAFTS_N=2` | batch windows 135 ms but 4.6 tokens: 6% less throughput |
 | 15% of a batch window's missed experts over PCIe (DMA) | 170 ms instead of 161: the copies take the same DRAM bandwidth |
@@ -270,6 +316,13 @@ Measured and not used:
 | `STRATA_FUSE_HEAD_GR=1`; a one-warp-per-row MMVQ kernel | within noise (+0.5%, +1.4%) |
 | `--prefill 2048` with two slots | does not fit; falls back to 512-token chunks (95 t/s) |
 | `STRATA_IQ4XS_GU1=0` (the patch's CPU kernel off) | batch CPU time 10% higher; one request -2% |
+
+Lower-bit experts do not help on this CPU. ggml-cpu's single-row `vec_dot` on
+one core of an E5-2690 v4 (AVX2; measured on devenv, the same CPU model) reads
+IQ4_XS weights at 4.6-6.7 GB/s from cache (5.6 from RAM: memory-bound), IQ3_XXS
+at 1.8-2.1 GB/s (compute-bound), and IQ3_S at 1.2-1.5. Per weight IQ3_XXS costs
+about 2.6x the CPU time of IQ4_XS, so OrcaRouter's IQ3_XXS file (18% fewer
+bytes) would make the CPU expert pass slower.
 
 ### Nightly backups
 
@@ -282,25 +335,33 @@ cached in its 1M-row cache, so repeated text is not affected. `--ple-io ram`
 avoids the disk entirely, but it locks 27 GiB more RAM; llm1 (104 GiB) would
 keep about 16 GiB for the page cache and the system. Not tried.
 
-### Host tuning not applied (needs operator approval on hv1)
+### Host tuning
 
-These were measured or identified, but they are hv1 changes and were not made:
+Applied on hv1 on 2026-10-06 (operator-approved):
 
-1. **Pin vCPUs 1:1.** Pin vCPU k to host CPU `2k+1` and vCPU k+14 to its sibling
-   `2k+29`. This should steady Strata's pool workers. Proxmox `affinity` only pins the whole process, so
-   this needs a hookscript.
-2. **Raise the uncore floor on package 1.** Set
-   `/sys/devices/system/cpu/intel_uncore_frequency/package_01_die_01/min_freq_khz`
-   to `2700000`. It idles at 1.2 GHz under the BIOS DAPC profile.
-3. **Limit C-states on node 1 only.** Set `pm_qos_resume_latency_us` on the odd
-   CPUs, and/or enable KVM halt polling (`halt_poll_ns_grow` is 0). The BIOS
-   `PerfPerWattOptimizedDapc` profile needs a reboot to change.
-4. **More memory bandwidth.** Decode is bound by node 1's DRAM bandwidth (the
-   CPU pool reads experts at 46-53 GB/s). Memory and vCPUs on both nodes, with
-   the expert arena interleaved, could raise it. This is untested: node 0's
-   memory reaches the GPU and node-1 cores over QPI.
-5. **Backup-proof n-gram reads.** Either restore hotData's mirror (the pool lost
-   an NVMe to the GPU) or use `--ple-io ram` on llm1.
+- **vCPUs pinned 1:1 with an SMT guest topology.** See "hv1 VM config". Two-slot
+  windows got 3-5% faster.
+
+Measured on 2026-10-06 and reverted:
+
+- **Uncore floor and C-states.** Package 1's uncore floor at its 2.7 GHz maximum
+  (`/sys/devices/system/cpu/intel_uncore_frequency/package_01_die_01/min_freq_khz`)
+  plus C1E/C6 disabled on node 1's CPUs: 157.3 ms per window against 155.6 ms
+  without. The pool workers spin with `_mm_pause` for 20 ms before they sleep,
+  and under load the uncore already runs at 2.7 GHz, so neither C-state limits
+  nor KVM halt polling matter for decode.
+- **`--pool-workers 20`.** No gain with pinning (see the table above).
+
+Still open:
+
+- **More memory bandwidth.** Decode is bound by node 1's DRAM bandwidth (the
+  CPU pool reads experts at 46-53 GB/s). hv1 has 4 x 32 GB DDR4-2400 2R per
+  socket, one DIMM per channel at 2400 MT/s, so node 1's ~64 GB/s guest read
+  limit is already the platform's practical maximum. Adding node 0's bandwidth
+  would take memory from the node-0 VMs.
+- **Backup-proof n-gram reads.** Either restore hotData's mirror (the pool lost
+  an NVMe to the GPU) or use `--ple-io ram` on llm1, which still needs about
+  27 GiB more RAM than llm1 can spare.
 
 ## Update policy
 
@@ -317,7 +378,7 @@ engine and the driver stay fixed:
 - **`strata` and `llm-api-mesh`** have `restartIfChanged = false`, so a switch
   never reloads the model (1-2 minutes) or cuts open requests. A changed unit
   takes effect at the next reboot or `sudo systemctl restart strata`.
-  `strata-tools` and everything else restart normally.
+  Everything else restarts normally.
 
 To bump on purpose:
 
@@ -336,11 +397,41 @@ VM 210 was restored from `packages.x86_64-linux.llm1`, then set by hand on hv1
 
 ```text
 memory 106496, sockets 1, cores 28, cpu host
+args -smp 28,sockets=1,cores=14,threads=2,maxcpus=28
 numa 1, numa0 cpus=0-27,hostnodes=1,memory=106496,policy=bind
 affinity 1,3,5,...,55 (the odd CPUs, node 1)
+hookscript local:snippets/llm1-vcpu-pin.sh
 hostpci0 0000:82:00,pcie=1
 hotplug disk,network,usb (no memory hotplug: DIMM backends get no host-nodes)
 allow-ksm 0, onboot 1, startup order=4, iothread=1 on scsi0 and scsi1
+```
+
+`sockets 1, cores 28` stays in the config, but QEMU uses the last `-smp`, so
+the guest sees 14 cores x 2 threads (checked with `lscpu`). The hookscript pins
+each vCPU thread after start: vCPU `2c` to host CPU `2c+1` (node 1's core c) and
+vCPU `2c+1` to its hyperthread sibling `2c+29`. Strata puts its host thread on
+core 0 and one pool worker per physical core, primaries first, so they land on
+separate physical cores. Proxmox `affinity` only pins the whole process, hence
+the hookscript. The `local` storage got the `snippets` content type for it
+(`/var/lib/vz/snippets/llm1-vcpu-pin.sh`). The config before the change is
+`/root/210.conf.pre-pin` on hv1.
+
+```bash
+#!/bin/bash
+# Proxmox hookscript for VM 210 (llm1, docs/llm1.md "hv1 VM config").
+# The guest sees 14 cores x 2 threads (args -smp); pin vCPU 2c to node 1's core c
+# (host CPU 2c+1) and vCPU 2c+1 to its hyperthread sibling (2c+29), so Strata's
+# one-worker-per-core placement lands on separate physical cores.
+vmid=$1 phase=$2
+[ "$phase" = post-start ] || exit 0
+pid=$(cat "/var/run/qemu-server/$vmid.pid") || exit 1
+for t in /proc/"$pid"/task/*; do
+  name=$(cat "$t/comm" 2>/dev/null) || continue
+  case $name in "CPU "*"/KVM") ;; *) continue ;; esac
+  k=${name#CPU }; k=${k%/KVM}
+  cpu=$(( 2 * (k / 2) + 1 + (k % 2) * 28 ))
+  taskset -pc "$cpu" "${t##*/}" >/dev/null || echo "llm1-vcpu-pin: vCPU $k -> CPU $cpu failed" >&2
+done
 ```
 
 devenv (VM 202) gave up the GPU at the same time and moved to node 0:
@@ -377,6 +468,19 @@ is configured for node 0 too; 102 (w11test) is unchanged.
 - The model is in `/mnt/data/models` on llm1's data disk, bind-mounted
   read-only into `strata`.
 - Strata is pinned to `6f32ec0` (engine 0.1.39). When bumping it, update the
-  ggml commit from `third_party/ggml/VERSION.txt`, re-check the API key patch,
-  and rebase `strata-performance.patch` (verifier, MTP drafter, batch loop, and
+  ggml commit from `third_party/ggml/VERSION.txt`, re-check the API key,
+  API-only, and MTP fetch (`strata-mtp-fetch.patch`) patches, and rebase `strata-performance.patch` (verifier, MTP drafter, batch loop, and
   CPU/GPU kernels), then re-run upstream's `tools/batch_test.py`.
+- The recommended next engine step is upstream v0.1.40 (2026-10-06) with the
+  v0.1.40.1 server hotfix. It adds its own MTP drafts in batch slots
+  (`--batch-mtp`), drafter fusions from Eddoursul's fork, the #783 decode
+  kernels (QSA early exit, +2.7% decode at 120K upstream), batched K/V append,
+  Linux read-ahead at cold start, NaN and crash fixes, and server fixes for
+  agents: stop strings on every path (#454), `tool_choice` (#790), empty
+  assistant turns (#886), requests waiting during an engine restart (#1012), and
+  quoted tool calls (#804, #1058). llm1 stays on 0.1.39 for now because
+  `strata-performance.patch` needs a rebase: `--batch-mtp` overlaps its
+  batch-draft part, while the native hyper-connection reads (the VRAM that lets
+  two 128K slots fit on 8 GB), the pipelined batch windows, and the IQ4_XS CPU
+  kernel are not upstream. The bump would mainly fix agent-facing server
+  behaviour and trim GPU-side time; the CPU expert pass stays DRAM-bound.

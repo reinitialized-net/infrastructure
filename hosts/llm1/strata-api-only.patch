@@ -1,0 +1,66 @@
+diff --git a/serve/server.py b/serve/server.py
+index cfd1323..3268d96 100644
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -2962,6 +2962,11 @@ def make_handler(svc: Service):
+ 
+         def do_GET(self):
+             path = self.path.split("?")[0].rstrip("/")
++            # API only (strata-api-only.patch): no web app, its files, or the views only it uses
++            if path in ("", "/api-monitor", "/settings", "/config", "/mcp", "/api/requests") or \
++                    path.startswith(("/web/", "/fonts/")):
++                self._json(404, {"error": {"message": "not found"}})
++                return
+             if path.startswith("/fonts/"):
+                 # the web app's font (Outfit, OFL: serve/web/fonts); the page falls back to the system font
+                 name = path[len("/fonts/"):]
+@@ -3083,11 +3088,8 @@ def make_handler(svc: Service):
+             path = self.path.split("?")[0].rstrip("/")   # issue #55: Claude Code posts /v1/messages?beta=true
+             if path.startswith("/v1/") and self._foreign_page():
+                 return
+-            if path == "/settings":
+-                self._settings()
+-                return
+-            if path == "/config":
+-                self._config_post()
++            if path in ("/settings", "/config"):             # API only (strata-api-only.patch)
++                self._json(404, {"error": {"message": "not found"}})
+                 return
+             if path in ("/unload", "/load") and not self._control_body():
+                 return
+@@ -3771,7 +3773,6 @@ def origin_allowed(origin: str, host, names, origins=()) -> bool:
+ 
+ def serve(svc: Service, host="127.0.0.1", port=8095) -> ThreadingHTTPServer:
+     svc.host_names = host_names_for(host, svc.allowed_hosts, svc.trusted_origins)
+-    svc.start_telemetry()
+     httpd = Server((host, port), make_handler(svc))
+     threading.Thread(target=httpd.serve_forever, daemon=True).start()
+     return httpd
+diff --git a/serve/test_security.py b/serve/test_security.py
+index 21a2b9e..adc025c 100644
+--- a/serve/test_security.py
++++ b/serve/test_security.py
+@@ -137,7 +137,7 @@ class OverHttp(unittest.TestCase):
+     # --- Host
+     def test_rebinding_name_is_refused_everywhere(self):
+         self.start()
+-        for method, path in (("GET", "/status"), ("GET", "/metrics"), ("GET", "/"), ("GET", "/health"),
++        for method, path in (("GET", "/status"), ("GET", "/metrics"), ("GET", "/v1/models"), ("GET", "/health"),
+                              ("POST", "/settings"), ("POST", "/v1/chat/completions"), ("OPTIONS", "/v1/models")):
+             code, body, log = self.req(method, path, {} if method == "POST" else None,
+                                        {"Content-Type": "application/json"}, host=f"evil.example.com:{self.port}")
+@@ -246,6 +246,14 @@ class OverHttp(unittest.TestCase):
+         for bad in ("", "#", "project", "keys", "k1 k2", "k3"):
+             self.assertEqual(code(bad), 401, bad)
+ 
++    def test_the_web_app_is_gone(self):
++        # API only (strata-api-only.patch): the page and its files are not served, even with a key
++        self.start(api_key="s3cret")
++        auth = {"Authorization": "Bearer s3cret", "Content-Type": "application/json"}
++        for method, path in (("GET", "/"), ("GET", "/web/app.js"), ("GET", "/settings"), ("POST", "/config")):
++            self.assertEqual(self.req(method, path, {} if method == "POST" else None, auth)[0], 404, path)
++        self.assertEqual(self.req("GET", "/v1/models", headers=auth)[0], 200)
++
+     # --- /unload and /load
+     def test_control_body_arrives_before_the_operation_and_reply(self):
+         self.start()

@@ -40,7 +40,7 @@ Documentation for the Reinitialized Infrastructure NixOS flake.
 - [Mesh Network Port Reference](mesh-network-ports.md)
 - [Bash Script Tools](bash-script-tools.md)
 - [Automatic Updates](architecture/automatic-updates.md)
-- [llm1 LLM Service](llm1.md) - Qwen3.8 API: Strata on the GTX 1070 with agent tools, update policy, tuning
+- [llm1 LLM Service](llm1.md) - Qwen3.8 API: Strata on the GTX 1070 (API only), update policy, tuning
 - [Release Process](release-process.md)
 - [Using makeUser](examples/makeUser.md)
 

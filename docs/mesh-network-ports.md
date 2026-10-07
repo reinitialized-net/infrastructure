@@ -123,7 +123,7 @@ Selected nginx routes from `hosts/rp1.nix`:
 | `jaeger.in.reinitialized.net` | `http://10.255.0.3:1039` |
 | `grafana.in.reinitialized.net` | `http://10.255.0.3:1040` |
 | `prometheus.in.reinitialized.net` | `http://10.255.0.11:1029` |
-| `llm.in.reinitialized.net` (API + web UI with agent tools) | `http://10.255.0.9:1045` |
+| `llm.in.reinitialized.net` (Strata API) | `http://10.255.0.9:1045` |
 | `photos.reinitialized.me` | `http://10.255.0.5:1001` |
 | `chat.reinitialized.me` | `http://10.255.0.4:1040` |
 | `reinitialized.me` Matrix paths | `http://10.255.0.5:1025` |

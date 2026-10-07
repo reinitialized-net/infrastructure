@@ -25,6 +25,24 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Changed
 
+- Pin llm1's vCPUs 1:1 with an SMT guest topology on hv1 (14 cores x 2 threads
+  through `args -smp` and the `llm1-vcpu-pin.sh` hookscript, documented in
+  `docs/llm1.md`): two-request batch windows about 3-5% faster. Document the
+  measured host and engine tuning results (uncore, C-states, pool workers, MTP
+  head, lower-bit experts, upstream v0.1.40). Set `STRATA_BATCH_DECODE_SHARE=1.0`
+  (an agent decodes faster during the other's prompt reads) and
+  `STRATA_PARALLEL_SOLO=0` (a lone slot request keeps its cached state).
+
+- Serve only the API from Strata on llm1: remove its web UI
+  (`hosts/llm1/strata-api-only.patch` answers 404 for `/` and the UI's files and
+  views, and the package drops `serve/web`) and the server-side MCP agent tools
+  (`strata-tools.service`, `hosts/llm1/mcp-shell.py` and its test).
+
+- Draft on llm1 with OrcaRouter's own MTP head (`mtp-orca/rt`, its abliterated
+  residual writers) instead of the base model's. `hosts/llm1/strata-mtp-fetch.patch`
+  lets `tools/mtp_fetch.py` fetch another repo (`STRATA_MTP_REPO`) with an
+  `HF_TOKEN`, and the package's Python gains PyYAML for the MTP packers.
+
 - Move the Qwen3.8 / Strata LLM service from devenv to a new VM, `llm1`
   (VM 210, `10.1.11.9`, mesh `10.255.0.9`), bound to the GPU's NUMA node on hv1.
   `llm.in.reinitialized.net` and mesh port 1045 now point at llm1. llm1 takes

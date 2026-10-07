@@ -762,8 +762,8 @@ in
         };
       };
 
-      # Qwen3.8 on llm1 (docs/llm1.md): the API and the running backend's
-      # web UI with its agent tools (shell, files, web), all behind the API key.
+      # Qwen3.8 on llm1 (docs/llm1.md): the Strata API only (no web UI), behind
+      # the API key.
       "llm.in.reinitialized.net" = {
         forceSSL = true;
         enableACME = true;
@@ -771,7 +771,7 @@ in
         listenAddresses = [ "10.1.12.4" ];
         locations."/" = {
           proxyPass = "http://10.255.0.9:1045";
-          # Streamed completions, long prompts, and minutes-long tool loops.
+          # Long streamed completions and prompts that take minutes to read.
           extraConfig = ''
             ${internalOnly}
             ${largeTransfer "3600s"}

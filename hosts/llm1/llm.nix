@@ -1,9 +1,8 @@
 # Qwen3.8-Flash-Next behind one OpenAI-compatible API: Strata on the GTX 1070,
-# with MCP agent tools.
+# API only (no web UI or server-side agent tools).
 # Operations, preparation, and tuning evidence: docs/llm1.md
 {
   config,
-  lib,
   pkgs,
   self,
   system,
@@ -23,7 +22,8 @@ let
       "/var/lib/service-secrets/llm-api-keys";
 
   # Strata serves the model with the most-used experts on the GTX 1070. Its
-  # pack and MTP draft layer are prepared once into strataDir (docs/llm1.md).
+  # pack and MTP draft layer (the fine-tune's own head) are prepared once into
+  # strataDir (docs/llm1.md).
   # Built from nixpkgsStrata, a fixed nixpkgs that nightly updates never move
   # (docs/llm1.md, "Update policy").
   pkgsStrata = import self.inputs.nixpkgsStrata {
@@ -57,7 +57,7 @@ let
         "--spec-min-p"
         "0.5"
         "--mtp"
-        "${strataDir}/mtp/rt"
+        "${strataDir}/mtp-orca/rt"
         # Missed experts run on the CPU only: the GPU otherwise waited on their
         # PCIe copies. Split windows overlap the CPU's experts with the GPU.
         "--pcie-frac"
@@ -78,8 +78,14 @@ let
         "13"
       ];
       # Two requests decode together (strata-performance.patch gives each its
-      # MTP drafts); a request alone runs on the faster single-request path.
+      # MTP drafts); a request that starts alone runs on the faster
+      # single-request path.
       parallel = 2;
+      # Agents: while one prompt is read, the other slot decodes for as long as
+      # each prompt chunk took (half the time instead of a third).
+      env = {
+        STRATA_BATCH_DECODE_SHARE = "1.0";
+      };
       # Start from what the VRAM expert cache learned before the last restart.
       expert_profile_save = "expert-profile-learned.bin";
       cwd = strataDir;
@@ -87,54 +93,8 @@ let
       model_name = "qwen3.8-flash-next";
       log = "${strataDir}/strata.log";
       host = "127.0.0.1";
-      # The page is also served as https://llm.in.reinitialized.net through rp1;
-      # Strata only runs MCP tools for requests from its own page.
-      trusted_origins = [ "https://llm.in.reinitialized.net" ];
-      mcp_servers = lib.mapAttrs (name: _: { url = toolUrl name; }) toolServers;
-      mcp = {
-        timeout_s = 600;
-        max_rounds = 64;
-        max_result_chars = 40000;
-      };
     }
   );
-
-  # Agent tools (MCP servers) for Strata, run by strata-tools.service
-  # as their own sandboxed user: they cannot read the API keys, the pack, or the
-  # engine. Every credential-free server nixpkgs has, plus a shell (mcp-shell.py).
-  toolsDir = "/var/lib/strata-tools";
-  toolsPort = 8097;
-  toolUrl = name: "http://127.0.0.1:${toString toolsPort}/servers/${name}/mcp";
-  toolServers = {
-    shell = {
-      command = "${pkgs.python3}/bin/python3";
-      args = [ "${./mcp-shell.py}" ];
-    };
-    files = {
-      command = "${pkgs.mcp-server-filesystem}/bin/mcp-server-filesystem";
-      # The resolved path: the server refuses paths through the DynamicUser
-      # symlink (/var/lib/strata-tools -> private/strata-tools).
-      args = [ "/var/lib/private/strata-tools/workspace" ];
-    };
-    git.command = "${pkgs.mcp-server-git}/bin/mcp-server-git";
-    fetch.command = "${pkgs.mcp-server-fetch}/bin/mcp-server-fetch";
-    browser = {
-      command = "${pkgs.playwright-mcp}/bin/playwright-mcp";
-      args = [
-        "--headless"
-        "--isolated"
-        "--output-dir"
-        "${toolsDir}/workspace/browser"
-      ];
-    };
-    documents.command = "${pkgs.markitdown-mcp}/bin/markitdown-mcp";
-    memory.command = "${pkgs.mcp-server-memory}/bin/mcp-server-memory";
-    thinking.command = "${pkgs.mcp-server-sequential-thinking}/bin/mcp-server-sequential-thinking";
-    time.command = "${pkgs.mcp-server-time}/bin/mcp-server-time";
-    nixos.command = "${pkgs.mcp-nixos}/bin/mcp-nixos";
-    library-docs.command = "${pkgs.context7-mcp}/bin/context7-mcp";
-  };
-  toolsConfig = pkgs.writeText "strata-tools.json" (builtins.toJSON { mcpServers = toolServers; });
 in
 {
   # GTX 1070 (Pascal, passed through from hv1): Pascal support ends with the
@@ -172,11 +132,7 @@ in
   systemd.services.strata = {
     description = "Strata: Qwen3.8-Flash-Next on the GTX 1070";
     wantedBy = [ "multi-user.target" ];
-    after = [
-      "nvidia-persistenced.service"
-      "strata-tools.service"
-    ];
-    wants = [ "strata-tools.service" ];
+    after = [ "nvidia-persistenced.service" ];
     # A nightly switch must not reload the model or cut open requests; the
     # pinned engine only changes on purpose (docs/llm1.md, "Update policy").
     restartIfChanged = false;
@@ -185,10 +141,15 @@ in
     unitConfig.ConditionPathExists = [
       modelDir
       "/var/lib/private/strata/packs/orca-iq4_xs"
-      "/var/lib/private/strata/mtp/rt"
+      "/var/lib/private/strata/mtp-orca/rt"
     ];
-    # The web UI's Monitor loads NVML (libnvidia-ml.so.1) by name.
-    environment.LD_LIBRARY_PATH = "/run/opengl-driver/lib";
+    # VRAM checks load NVML (libnvidia-ml.so.1) by name.
+    environment = {
+      LD_LIBRARY_PATH = "/run/opengl-driver/lib";
+      # Read by the server, not the engine: a request left alone stays in its
+      # slot, since moving back to the solo path could lose its cached state.
+      STRATA_PARALLEL_SOLO = "0";
+    };
     script = ''
       # Fail closed: an empty key file would start the server without authentication.
       grep -qv '^[[:space:]]*\(#.*\)\?$' "$CREDENTIALS_DIRECTORY/api-keys" ||
@@ -209,7 +170,7 @@ in
         "/dev/nvidia-uvm rw"
         "/dev/nvidia-uvm-tools rw"
       ];
-      # Tools run in strata-tools, not here: loopback only.
+      # Loopback only: mesh clients come in through llm-api-mesh.
       IPAddressAllow = "localhost";
       IPAddressDeny = "any";
       ProtectKernelTunables = true;
@@ -220,52 +181,6 @@ in
       Nice = -5;
       Restart = "on-failure";
       RestartSec = "10s";
-    };
-  };
-
-  systemd.services.strata-tools = {
-    description = "MCP agent tools for Strata";
-    # Tools run commands: give them the system's tools.
-    path = [ config.system.path ];
-    environment = {
-      HOME = toolsDir;
-      MEMORY_FILE_PATH = "${toolsDir}/memory.jsonl";
-    };
-    serviceConfig = {
-      ExecStart = "${pkgs.mcp-proxy}/bin/mcp-proxy --host 127.0.0.1 --port ${toString toolsPort} --pass-environment --named-server-config ${toolsConfig}";
-      DynamicUser = true;
-      StateDirectory = [
-        "strata-tools"
-        "strata-tools/workspace"
-      ];
-      # Named servers inherit this; the shell starts in the workspace.
-      WorkingDirectory = "${toolsDir}/workspace";
-      ProtectHome = "tmpfs";
-      PrivateDevices = true;
-      TemporaryFileSystem = [
-        "/srv:ro"
-        "/mnt:ro"
-        "/media:ro"
-      ];
-      # Internet for fetch, docs, and the browser; loopback for Strata;
-      # no LAN or private ranges. The listener is loopback-only (no auth in
-      # mcp-proxy): reaching it needs code already running on llm1.
-      IPAddressDeny = [
-        "10.0.0.0/8"
-        "172.16.0.0/12"
-        "192.168.0.0/16"
-        "100.64.0.0/10"
-        "169.254.0.0/16"
-        "fc00::/7"
-        "fe80::/10"
-      ];
-      # No RestrictNamespaces: the browser's own sandbox uses user namespaces.
-      ProtectKernelTunables = true;
-      ProtectKernelModules = true;
-      ProtectControlGroups = true;
-      LockPersonality = true;
-      Restart = "on-failure";
-      RestartSec = "5s";
     };
   };
 
