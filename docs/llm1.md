@@ -230,6 +230,10 @@ when the n-gram rows were already cached (see "Nightly backups").
 | before: upstream engine, `--kv-resident 32768`, `--pool-workers 13` | 22.1 (21.7 / 19.7 / 21.7 / 25.4) | one at a time | 180 / - |
 | **deployed: engine patch, `--pcie-frac 0 --spec-split`, `--kv-resident 20480`, `"parallel": 2`** | **33.4 (33.1 / 28.9 / 34.4 / 37.0)** | **36 t/s together, 18 each while both decode** | **138 / 147** |
 | the same without `"parallel"`, `--kv-resident 32768` | 32.8 | one at a time | 208 / 232 |
+| **llm1 after the move (same config, no backup running)** | **33.75 (34.1 / 28.1 / 34.6 / 38.2)** | **30.5 t/s together, 19.3 / 15.5 per stream** | **139 / 149** |
+
+The llm1 row was measured on 2026-10-06 at 18:56 with the same client and
+prompts (second of two passes), right after the move: llm1 matches devenv.
 
 What each change gave (one request, mean t/s, earlier the same night with a
 single pass): `--pcie-frac 0` 21.3 to 27.3 (the GPU had waited about 64 ms per
@@ -343,6 +347,30 @@ devenv (VM 202) gave up the GPU at the same time and moved to node 0:
 memory 40960, 1x12 cores, `numa0 cpus=0-11,hostnodes=0,memory=40960,policy=bind`,
 the even CPUs. The configs before the move are `/root/202.conf.pre-split` and
 `/root/210.conf.pre-split` on hv1.
+
+Every other VM is bound to node 0 the same way: `numa 1`,
+`numa0 cpus=0-<vCPUs-1>,hostnodes=0,memory=<MiB>,policy=bind`, the even CPUs,
+and no `memory` in `hotplug` (rp1, apps1, apps2 and db1 had it; with memory
+hotplug the DIMM backends get no host node). Their configs before the change are
+`/root/<id>.conf.pre-numa` on hv1. Placement measured on 2026-10-06 at 19:32
+(memory in `qemu.slice/<id>.scope/memory.numa_stat`, anon + file):
+
+| VM | Memory (MiB) | Node 0 (GiB) | Node 1 | CPUs |
+|----|-------------:|-------------:|-------:|------|
+| 201 rinf | 12288 | 1.7 | < 1 MiB | even |
+| 202 devenv | 40960 | 14.3 | < 1 MiB | even |
+| 203 rp1 | 4096 | 1.0 | < 1 MiB | even |
+| 204 apps1 | 8192 | 5.8 | < 1 MiB | even |
+| 205 apps2 | 16384 | 4.0 | < 1 MiB | even |
+| 206 db1 | 8192 | 2.0 | < 1 MiB | even |
+| 207 apps3 | 8192 | 7.6 | < 1 MiB | even |
+| 210 llm1 | 106496 | 0.02 | 104.0 GiB | odd |
+| 301 winsvcs1 | 16384 | 16.2 | < 1 MiB | even |
+
+The node-1 remainder of each node-0 VM is QEMU's own process memory. Node 0 had
+61.0 of 125.8 GiB free and node 1 12.4 of 126.0 GiB; node 0 falls to about
+10 GiB free once every VM has touched all its memory. 101 (ubuntu-test, stopped)
+is configured for node 0 too; 102 (w11test) is unchanged.
 
 ## Notes
 
