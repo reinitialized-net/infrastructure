@@ -120,7 +120,7 @@
     tuwunel = {
       autoStart = true;
       hostname = "tuwunel";
-      image = "ghcr.io/matrix-construct/tuwunel:v1.9.3";
+      image = "ghcr.io/matrix-construct/tuwunel:v1.9.4";
       environment = builtins.removeAttrs config.secrets.tuwunel.keys [
         "CONDUWUIT_REGISTRATION_TOKEN"
       ];
