@@ -4,6 +4,10 @@
   ...
 }:
 let
+  llmLanKeyFile = toString (
+    (config.secrets.llmLanKey or { }).file or "/var/lib/service-secrets/llm-lan-auth.conf"
+  );
+
   internalOnly = ''
     allow 10.0.0.0/8;
     allow 172.16.0.0/12;
@@ -762,8 +766,9 @@ in
         };
       };
 
-      # Qwen3.8 on llm1 (docs/llm1.md): the Strata API only (no web UI), behind
-      # the API key.
+      # Qwen3.8 on llm1 (docs/llm1.md): Strata's API and web UI. Internal
+      # clients need no key: rp1 sends its own (secrets.llmLanKey); without
+      # that file requests go on without one and Strata answers 401.
       "llm.in.reinitialized.net" = {
         forceSSL = true;
         enableACME = true;
@@ -775,6 +780,10 @@ in
           extraConfig = ''
             ${internalOnly}
             ${largeTransfer "3600s"}
+            set $llm_lan_auth "";
+            # The glob keeps nginx starting while the file is missing.
+            include ${llmLanKeyFile}*;
+            proxy_set_header Authorization $llm_lan_auth;
           '';
         };
       };

@@ -10,11 +10,11 @@ passed-through GTX 1070. `strata.service` starts at boot and listens on
 
 | Client location | Base URL | Notes |
 |-----------------|----------|-------|
-| LAN / VPN | `https://llm.in.reinitialized.net/v1` | rp1, ACME TLS, `internalOnly` |
+| LAN / VPN | `https://llm.in.reinitialized.net/v1` (web UI at `/`) | rp1, ACME TLS, `internalOnly`; no key needed (see Web UI) |
 | Mesh hosts | `http://10.255.0.9:1045/v1` | `llm-api-mesh.socket` forwards to loopback; WireGuard-encrypted |
 | llm1 itself | `http://127.0.0.1:8080/v1` | |
 
-Every route except `/health` requires
+On the mesh and on llm1 itself, every route except `/health` requires
 `Authorization: Bearer <key>` (Strata also accepts `x-api-key`). The model ID is
 `qwen3.8-flash-next`; Strata answers to any model name. Strata also serves the
 Anthropic Messages API (`/v1/messages`) and the Responses API (`/v1/responses`).
@@ -30,10 +30,11 @@ r = client.chat.completions.create(
 print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
-The context is 131072 tokens. A request alone decodes at about 34 tokens/s
-(about 30 if it is left alone in a batch slot, where it stays).
-Two requests run at once, at about 18.5 tokens/s each while both decode with
-short contexts (about 16 each at 50-60k tokens and 15 at 100-110k; see Performance); a third waits. Strata reads prompts at about 145 tokens/s, so a 30k-token prompt takes
+The context is 131072 tokens. On Strata 0.1.43 (since 2026-10-12, without
+the engine patch) a request alone decodes at about 35 tokens/s, and two
+requests run at once at about 13 tokens/s each while both decode with short
+contexts; a third waits. The 0.1.39 numbers below (18.5 each for two requests)
+need the engine patch, which has to be ported to 0.1.43 (see "Engine patch"). Strata reads prompts at about 145 tokens/s, so a 30k-token prompt takes
 about 3.5 minutes. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
 Follow-up turns reuse checkpoints of the conversation (6 by default), and each
@@ -45,15 +46,17 @@ Strata takes `reasoning_effort` `none`, `low`, `medium`, or `high` (the default)
 also as `reasoning.effort` or `chat_template_kwargs: {"enable_thinking": false}`.
 Anthropic requests use `output_config.effort` or `thinking`.
 
-## API only
+## Web UI
 
-llm1 serves only the API. Strata's web UI and the server-side MCP agent tools
-(`strata-tools.service`) were removed on 2026-10-06:
-`hosts/llm1/strata-api-only.patch` answers 404 for `/`, the UI's files
-(`/web/*`, `/fonts/*`), and the views only the page used (`/settings`,
-`/config`, `/mcp`, `/api/requests`, `/api-monitor`), the package no longer
-ships `serve/web`, and the config sets no `mcp_servers`, so Strata starts no
-MCP clients. Run agent tools in the client instead.
+Strata's web UI is served at `https://llm.in.reinitialized.net/` (re-enabled
+2026-10-12; it was removed on 2026-10-06 while llm1 was API-only). Internal
+clients need no key there or on the API: rp1 replaces the request's
+`Authorization` header with one of llm1's keys, read from the nginx snippet
+`/var/lib/service-secrets/llm-lan-auth.conf` on rp1 (`secrets.llmLanKey`,
+root:nginx `0640`, one line: `set $llm_lan_auth "Bearer <key>";`). Without
+that file rp1 still starts and sends no key, so Strata answers 401. Mesh
+clients (`10.255.0.9:1045`) still need their own key. The config sets no
+`mcp_servers`, so Strata starts no MCP clients; run agent tools in the client.
 
 ## API keys
 
@@ -62,12 +65,10 @@ line, and `#` lines are comments. Override the path with
 `secrets.llmApi.file` in the external llm1 secret module. Strata reads the
 file through `LoadCredential`, so restart it after an edit
 (`sudo systemctl restart strata`). Use one key per consuming project so a key
-can be revoked on its own. With no key file, or no key in it, the unit fails
-closed.
-
-Upstream Strata takes a single key. `hosts/llm1/strata-api-keys.patch` makes
-it accept the one-key-per-line file and adds a test. The package build runs
-Strata's security tests, including that one.
+can be revoked on its own; `rp1 web UI (LAN)` is rp1's. With no key file, or
+no key in it, the unit fails closed. The unit joins the lines with commas for
+Strata (0.1.40+ takes several keys that way), so a key must not contain a
+comma. The package build runs Strata's security tests.
 
 ## GTX 1070
 
@@ -155,6 +156,16 @@ benchmark.
 
 ### Engine patch
 
+**Not applied since 2026-10-12.** The patch is against 0.1.39 and does not
+apply to 0.1.43, so `strata.nix` no longer lists it; the file stays in the
+repository as the source for the port. Upstream 0.1.43 covers part of it with
+`--batch-mtp` (one MTP draft per slot instead of three) and
+`--batch-groups` (pipelined slots, but only with a layer split over several
+GPUs). Still missing upstream: three drafts per slot, pipelined windows on one
+GPU, the native hyper-connection reads (about 870 MiB of VRAM: 0.1.43's expert
+cache has 302 slots with two batch slots), and the IQ4_XS CPU kernel. The text
+below describes the patch on 0.1.39.
+
 `hosts/llm1/strata-performance.patch` changes the engine for this card and
 for two requests at once. Each switch below restores upstream's behaviour for
 its part. Upstream's exactness test (`tools/batch_test.py`: every slot of a
@@ -208,6 +219,8 @@ when the n-gram rows were already cached (see "Nightly backups").
 | **llm1 after the move (same config, no backup running)** | **33.75 (34.1 / 28.1 / 34.6 / 38.2)** | **30.5 t/s together, 19.3 / 15.5 per stream** | **139 / 149** |
 | llm1, Orca MTP head (2026-10-06 22:45) | 33.85 | 34.4 t/s together, 17.2 each while both decode (fresh start) | ~138-139 / - |
 | **llm1, + vCPU pinning (22:52)** | **34.23** | **37.0 t/s together, 18.5 each while both decode** | **~138-139 / -** |
+| llm1, stock 0.1.43 with `--batch-mtp` (2026-10-12 00:55, no patch) | 35.12 (34.5 / 30.1 / 37.1 / 38.8) | 26.2 t/s together, 13.3 each (windows 132 ms, 3.5 rows, 79% of proposals accepted) | - |
+| the same without `--batch-mtp` | - | 23.1 t/s together, 11.6 each | - |
 
 The llm1 row was measured on 2026-10-06 at 18:56 with the same client and
 prompts (second of two passes), right after the move: llm1 matches devenv. The
@@ -467,20 +480,9 @@ is configured for node 0 too; 102 (w11test) is unchanged.
 
 - The model is in `/mnt/data/models` on llm1's data disk, bind-mounted
   read-only into `strata`.
-- Strata is pinned to `6f32ec0` (engine 0.1.39). When bumping it, update the
-  ggml commit from `third_party/ggml/VERSION.txt`, re-check the API key,
-  API-only, and MTP fetch (`strata-mtp-fetch.patch`) patches, and rebase `strata-performance.patch` (verifier, MTP drafter, batch loop, and
-  CPU/GPU kernels), then re-run upstream's `tools/batch_test.py`.
-- The recommended next engine step is upstream v0.1.40 (2026-10-06) with the
-  v0.1.40.1 server hotfix. It adds its own MTP drafts in batch slots
-  (`--batch-mtp`), drafter fusions from Eddoursul's fork, the #783 decode
-  kernels (QSA early exit, +2.7% decode at 120K upstream), batched K/V append,
-  Linux read-ahead at cold start, NaN and crash fixes, and server fixes for
-  agents: stop strings on every path (#454), `tool_choice` (#790), empty
-  assistant turns (#886), requests waiting during an engine restart (#1012), and
-  quoted tool calls (#804, #1058). llm1 stays on 0.1.39 for now because
-  `strata-performance.patch` needs a rebase: `--batch-mtp` overlaps its
-  batch-draft part, while the native hyper-connection reads (the VRAM that lets
-  two 128K slots fit on 8 GB), the pipelined batch windows, and the IQ4_XS CPU
-  kernel are not upstream. The bump would mainly fix agent-facing server
-  behaviour and trim GPU-side time; the CPU expert pass stays DRAM-bound.
+- Strata is pinned to the `v0.1.43` tag. When bumping it, update the ggml
+  commit from `third_party/ggml/VERSION.txt`, re-check the MTP fetch patch
+  (`strata-mtp-fetch.patch`), and benchmark one and two requests against the
+  Performance table.
+- Next engine step: port `strata-performance.patch` to 0.1.43 (see "Engine
+  patch"), then re-run upstream's `tools/batch_test.py` and the benchmarks.

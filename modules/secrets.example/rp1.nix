@@ -28,6 +28,13 @@
       # TECHNITIUM_SERVER_BASE_URL=http://10.255.0.3:1026/
       file = lib.mkDefault "/var/lib/service-secrets/acme-dns.env";
     };
+    llmLanKey = {
+      description = "Strata API key rp1 sends for internal clients of llm.in";
+      # Provision this root-owned nginx snippet (0640 root:nginx) separately, with
+      # one of llm1's API keys:
+      # set $llm_lan_auth "Bearer <key>";
+      file = lib.mkDefault "/var/lib/service-secrets/llm-lan-auth.conf";
+    };
     volumeMigration = {
       description = "SSH private key for docker volume migration between hosts";
       file = lib.mkDefault "/var/lib/service-secrets/docker-volume-migration.key";

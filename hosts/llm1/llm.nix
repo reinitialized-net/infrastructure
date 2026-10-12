@@ -1,5 +1,5 @@
-# Qwen3.8-Flash-Next behind one OpenAI-compatible API: Strata on the GTX 1070,
-# API only (no web UI or server-side agent tools).
+# Qwen3.8-Flash-Next behind one OpenAI-compatible API and Strata's web UI on the
+# GTX 1070 (no server-side agent tools).
 # Operations, preparation, and tuning evidence: docs/llm1.md
 {
   config,
@@ -76,10 +76,11 @@ let
         # faster for one request (batch windows: 3.5% with 20).
         "--pool-workers"
         "13"
+        # Each batch slot also verifies an MTP draft per window.
+        "--batch-mtp"
       ];
-      # Two requests decode together (strata-performance.patch gives each its
-      # MTP drafts); a request that starts alone runs on the faster
-      # single-request path.
+      # Two requests decode together; a request that starts alone runs on the
+      # faster single-request path.
       parallel = 2;
       # Agents: while one prompt is read, the other slot decodes for as long as
       # each prompt chunk took (half the time instead of a third).
@@ -151,10 +152,11 @@ in
       STRATA_PARALLEL_SOLO = "0";
     };
     script = ''
+      # Strata takes several keys separated by commas; the file has one per line.
+      keys=$(grep -v '^[[:space:]]*\(#.*\)\?$' "$CREDENTIALS_DIRECTORY/api-keys" | paste -sd,)
       # Fail closed: an empty key file would start the server without authentication.
-      grep -qv '^[[:space:]]*\(#.*\)\?$' "$CREDENTIALS_DIRECTORY/api-keys" ||
-        { echo "no API key in $CREDENTIALS_DIRECTORY/api-keys" >&2; exit 1; }
-      STRATA_API_KEY=$(cat "$CREDENTIALS_DIRECTORY/api-keys") \
+      [ -n "$keys" ] || { echo "no API key in $CREDENTIALS_DIRECTORY/api-keys" >&2; exit 1; }
+      STRATA_API_KEY=$keys \
         exec ${strata}/bin/strata-server --engine strata --config ${strataConfig} --port ${toString port}
     '';
     serviceConfig = {

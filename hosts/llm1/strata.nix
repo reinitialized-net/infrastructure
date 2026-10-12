@@ -35,22 +35,16 @@ let
 in
 cuda.backendStdenv.mkDerivation {
   pname = "strata";
-  version = "0.1.39-unstable-2026-10-05";
+  version = "0.1.43";
 
   src = fetchFromGitHub {
     owner = "Niko1221";
     repo = "Strata";
-    rev = "6f32ec070f23ced9f50e704d854d775da52591ab";
-    hash = "sha256-9jqmV+AbGKiOqW1DvKjqBLVXmJCI9o6WI85QoHj5vBI=";
+    rev = "v0.1.43";
+    hash = "sha256-SjhgL3wXV36a4AuDlrQH9E9PDAOAqDS6dXMuVM5/5yw=";
   };
 
   patches = [
-    # The server takes one API key; accept a one-key-per-line file.
-    ./strata-api-keys.patch
-    # Engine changes for this card and for two concurrent agents (docs/llm1.md, "Engine patch").
-    ./strata-performance.patch
-    # API only: the web UI's page, files, and settings/config/MCP/monitor views answer 404.
-    ./strata-api-only.patch
     # mtp_fetch.py: STRATA_MTP_REPO picks the repo; HF_TOKEN authenticates gated ones.
     ./strata-mtp-fetch.patch
   ];
@@ -81,13 +75,12 @@ cuda.backendStdenv.mkDerivation {
   # hv1's E5-2690 v4 (`cpu: host`) explicitly instead, as hosts/llm1/llm.nix does.
   env.NIX_CFLAGS_COMPILE = "-march=broadwell -mtune=broadwell";
 
-  # The engine, plus the Python server (without its web UI), packers, and profiles it runs with.
+  # The engine, plus the Python server and its web UI, packers, and profiles it runs with.
   installPhase = ''
     runHook preInstall
     install -Dm755 strata $out/bin/strata
     mkdir -p $out/share/strata
     cp -r ../{serve,tools,data} $out/share/strata/
-    rm -r $out/share/strata/serve/web
     makeWrapper ${python.interpreter} $out/bin/strata-server \
       --chdir $out/share/strata --add-flags "-m serve.server"
     makeWrapper ${python.interpreter} $out/bin/strata-python \
@@ -95,7 +88,7 @@ cuda.backendStdenv.mkDerivation {
     runHook postInstall
   '';
 
-  # The API key and Host/Origin checks, including the key-file patch.
+  # The API key and Host/Origin checks.
   doInstallCheck = true;
   installCheckPhase = ''
     cd $out/share/strata && PYTHONDONTWRITEBYTECODE=1 ${python.interpreter} -m unittest serve.test_security
