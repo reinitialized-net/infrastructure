@@ -84,7 +84,7 @@
     dnsTwo = {
       autoStart = true;
       hostname = "dnsTwo";
-      image = "technitium/dns-server:15.6.0";
+      image = "technitium/dns-server:15.6.1";
       networks = [
         "backend"
       ];
