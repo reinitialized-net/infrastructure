@@ -134,7 +134,7 @@
     dnsOne = {
       autoStart = true;
       hostname = "dnsOne";
-      image = "technitium/dns-server:15.6.0";
+      image = "technitium/dns-server:15.6.1";
       networks = [
         "backend"
       ];
