@@ -86,6 +86,9 @@ let
       # each prompt chunk took (half the time instead of a third).
       env = {
         STRATA_BATCH_DECODE_SHARE = "1.0";
+        # The adaptive VRAM tier's copies land layer by layer while the next window runs instead of the window
+        # waiting for the whole round: one request 36.5 instead of 35.1 t/s (2026-10-13).
+        STRATA_ADAPT_OVERLAP = "1";
       };
       # Start from what the VRAM expert cache learned before the last restart.
       expert_profile_save = "expert-profile-learned.bin";

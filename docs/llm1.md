@@ -30,11 +30,10 @@ r = client.chat.completions.create(
 print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
-The context is 131072 tokens. On Strata 0.1.43 (since 2026-10-12, without
-the engine patch) a request alone decodes at about 35 tokens/s, and two
-requests run at once at about 13 tokens/s each while both decode with short
-contexts; a third waits. The 0.1.39 numbers below (18.5 each for two requests)
-need the engine patch, which has to be ported to 0.1.43 (see "Engine patch"). Strata reads prompts at about 145 tokens/s, so a 30k-token prompt takes
+The context is 131072 tokens. On Strata 0.1.43.1 with the engine patch (since
+2026-10-13) a request alone decodes at about 36 tokens/s, and two requests run
+at once at about 18.5-19.5 tokens/s each while both decode with short contexts;
+a third waits. Strata reads prompts at about 125-145 tokens/s, so a 30k-token prompt takes
 about 3.5 minutes. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
 Follow-up turns reuse checkpoints of the conversation (6 by default), and each
@@ -156,15 +155,15 @@ benchmark.
 
 ### Engine patch
 
-**Not applied since 2026-10-12.** The patch is against 0.1.39 and does not
-apply to 0.1.43, so `strata.nix` no longer lists it; the file stays in the
-repository as the source for the port. Upstream 0.1.43 covers part of it with
-`--batch-mtp` (one MTP draft per slot instead of three) and
-`--batch-groups` (pipelined slots, but only with a layer split over several
-GPUs). Still missing upstream: three drafts per slot, pipelined windows on one
-GPU, the native hyper-connection reads (about 870 MiB of VRAM: 0.1.43's expert
-cache has 302 slots with two batch slots), and the IQ4_XS CPU kernel. The text
-below describes the patch on 0.1.39.
+Ported to 0.1.43.1 on 2026-10-13. Upstream had meanwhile added `--batch-mtp`
+(per-slot drafters on the shared draft weights, one draft per slot, variable
+row groups per slot with prefix commits) and the adaptive tier in batch
+windows, so the port builds on those instead of the 0.1.39 code: the patch
+now adds three drafts per slot to upstream's `--batch-mtp`, the one-GPU
+pipelined batch windows, the native hyper-connection reads, the direct slot
+copies and the IQ4_XS CPU kernel. With it the expert cache has 590 slots
+instead of 302. Upstream's `tools/batch_test.py` (2 slots, 1 slot alone; 96 and
+256 tokens, `--adapt-every 1000000`) gives every slot exactly its solo tokens.
 
 `hosts/llm1/strata-performance.patch` changes the engine for this card and
 for two requests at once. Each switch below restores upstream's behaviour for
@@ -185,13 +184,13 @@ slots and for one.
   verifies its token plus three drafts. Upstream verifies one token per slot,
   without drafts. The span is fixed at four rows per slot: every distinct window
   layout is its own CUDA graph, and each graph takes about 35 MiB of VRAM on
-  this card. `STRATA_BATCH_DRAFTS=0` restores one token per slot;
-  `STRATA_BATCH_DRAFTS_N=1..3` sets the drafts per slot.
+  this card. `STRATA_BATCH_DRAFTS_N=1..3` sets the drafts per slot (1 is
+  upstream's `--batch-mtp`).
 - **Pipelined batch windows.** With `--spec-split`, a window of two slots runs as
   two groups, one per slot. The CPU computes one slot's experts while the GPU
   runs the other's layers. A slot that is alone is split like a solo window.
-- **The adaptive VRAM tier also adapts during batch windows.** Upstream adapts
-  it only between solo windows.
+  `STRATA_BATCH_SPLIT=0` keeps one group (upstream; only a layer split
+  pipelines there, with `--batch-groups`).
 - **Direct slot copies.** Moving a conversation between the main session and a
   slot copies its device state on the device and its K/V host copy once.
   Upstream goes through a host image, which takes about twice as long.
@@ -220,6 +219,8 @@ when the n-gram rows were already cached (see "Nightly backups").
 | llm1, Orca MTP head (2026-10-06 22:45) | 33.85 | 34.4 t/s together, 17.2 each while both decode (fresh start) | ~138-139 / - |
 | **llm1, + vCPU pinning (22:52)** | **34.23** | **37.0 t/s together, 18.5 each while both decode** | **~138-139 / -** |
 | llm1, stock 0.1.43 with `--batch-mtp` (2026-10-12 00:55, no patch) | 35.12 (34.5 / 30.1 / 37.1 / 38.8) | 26.2 t/s together, 13.3 each (windows 132 ms, 3.5 rows, 79% of proposals accepted) | - |
+| **llm1, 0.1.43.1 + ported patch (2026-10-13 13:35)** | **35.23 (34.1 / 32.4 / 36.0 / 38.4)** | **36.5 t/s together, 19.8 / 18.6 per stream (windows 145.5 ms = CPU experts 109.3 + GPU wait 11.6 + commit/drafts 12; 5.4 tokens; 63% of 3 drafts per slot accepted)** | 123 / - |
+| the same + `STRATA_ADAPT_OVERLAP=1` (deployed; one pass) | 36.48 | 35.0 t/s together (first pass, cold) | - |
 | the same without `--batch-mtp` | - | 23.1 t/s together, 11.6 each | - |
 
 The llm1 row was measured on 2026-10-06 at 18:56 with the same client and
@@ -324,6 +325,8 @@ Measured and not used:
 | `--pool-workers 20` | unpinned: batch windows 3.5% faster, one request unchanged, 7 more busy vCPUs. Pinned: 153.4-153.9 ms per window against 153.7 with 13 (the expert pass is DRAM-bound), so 13 stays |
 | `--pool-workers 27` (no split) | 2% slower than 13 |
 | `STRATA_BATCH_DRAFTS_N=2` | batch windows 135 ms but 4.6 tokens: 6% less throughput |
+| `STRATA_IQ_PREFETCH=4096` (CPU kernels' prefetch distance, default 2048; 0.1.43.1) | one request 35.1, two 34.0 together (first pass): no gain |
+| `--spec 6` (0.1.43.1) | one request 35.1, two 34.1 together (first pass): no gain |
 | 15% of a batch window's missed experts over PCIe (DMA) | 170 ms instead of 161: the copies take the same DRAM bandwidth |
 | skipping the CPU experts of batch drafts under min-p | 10% less CPU time, 5% fewer tokens per window: break-even |
 | `STRATA_FUSE_HEAD_GR=1`; a one-warp-per-row MMVQ kernel | within noise (+0.5%, +1.4%) |
@@ -480,9 +483,11 @@ is configured for node 0 too; 102 (w11test) is unchanged.
 
 - The model is in `/mnt/data/models` on llm1's data disk, bind-mounted
   read-only into `strata`.
-- Strata is pinned to the `v0.1.43` tag. When bumping it, update the ggml
+- Strata is pinned to the `v0.1.43.1` tag. When bumping it, update the ggml
   commit from `third_party/ggml/VERSION.txt`, re-check the MTP fetch patch
   (`strata-mtp-fetch.patch`), and benchmark one and two requests against the
   Performance table.
-- Next engine step: port `strata-performance.patch` to 0.1.43 (see "Engine
-  patch"), then re-run upstream's `tools/batch_test.py` and the benchmarks.
+- When bumping Strata, port `strata-performance.patch` (see "Engine patch"),
+  then run upstream's `tools/batch_test.py` on llm1 with strata stopped
+  (`--batch 2 --n 2` and `--n 1`, `--extra "--adapt-every 1000000"`, the
+  config's paths under `/var/lib/private/strata`) and the benchmarks.

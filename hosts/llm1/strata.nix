@@ -35,18 +35,20 @@ let
 in
 cuda.backendStdenv.mkDerivation {
   pname = "strata";
-  version = "0.1.43";
+  version = "0.1.43.1";
 
   src = fetchFromGitHub {
     owner = "Niko1221";
     repo = "Strata";
-    rev = "v0.1.43";
-    hash = "sha256-SjhgL3wXV36a4AuDlrQH9E9PDAOAqDS6dXMuVM5/5yw=";
+    rev = "v0.1.43.1";
+    hash = "sha256-ouJseBgkuS0WxgHgHw8vxuNNqR/B3W5yjbjfBzkBpqA=";
   };
 
   patches = [
     # mtp_fetch.py: STRATA_MTP_REPO picks the repo; HF_TOKEN authenticates gated ones.
     ./strata-mtp-fetch.patch
+    # Engine changes for the GTX 1070 and two requests at once (docs/llm1.md, "Engine patch").
+    ./strata-performance.patch
   ];
 
   nativeBuildInputs = [
