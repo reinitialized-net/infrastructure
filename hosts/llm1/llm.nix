@@ -89,6 +89,10 @@ let
         # The adaptive VRAM tier's copies land layer by layer while the next window runs instead of the window
         # waiting for the whole round: one request 36.5 instead of 35.1 t/s (2026-10-13).
         STRATA_ADAPT_OVERLAP = "1";
+        # Pascal has no tensor cores: use SGEMM for the supported large prompt
+        # projections. gemm_f32_parity --quick passed on this GTX 1070 with
+        # the pinned CUDA 12.9 cuBLAS (134 shapes, bitwise; 2026-10-13).
+        STRATA_DENSE_F32 = "1";
       };
       # Start from what the VRAM expert cache learned before the last restart.
       expert_profile_save = "expert-profile-learned.bin";

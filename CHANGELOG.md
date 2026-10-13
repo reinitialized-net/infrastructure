@@ -25,6 +25,15 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Changed
 
+- Migrate llm1 to Strata 0.1.44 and port its GTX 1070 performance patch,
+  retaining two-slot speculative decode and native hyper-connection weights.
+  Include focused Pascal kernel qualification tools and document the expert
+  streaming tradeoff against FreeToken's bandwidth-aware scheduling. Enable the
+  verified FP32 prompt path: the short llm1 smoke check measured solo decode
+  at 41-42 t/s (was 38) and prompt ingestion at 146 t/s (was 135); concurrent
+  throughput showed no gain. Keep CPU execution of expert misses after a
+  20% PCIe streaming check reduced solo decode to 28 t/s.
+
 - Pin llm1's vCPUs 1:1 with an SMT guest topology on hv1 (14 cores x 2 threads
   through `args -smp` and the `llm1-vcpu-pin.sh` hookscript, documented in
   `docs/llm1.md`): two-request batch windows about 3-5% faster. Document the

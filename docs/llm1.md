@@ -30,11 +30,12 @@ r = client.chat.completions.create(
 print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
-The context is 131072 tokens. On Strata 0.1.43.1 with the engine patch (since
-2026-10-13) a request alone decodes at about 36 tokens/s, and two requests run
-at once at about 18.5-19.5 tokens/s each while both decode with short contexts;
-a third waits. Strata reads prompts at about 125-145 tokens/s, so a 30k-token prompt takes
-about 3.5 minutes. Use `stream=True` for long prompts: Strata sends an SSE
+The context is 131072 tokens, with two concurrent requests; a third waits.
+The deployed Strata 0.1.44 and engine patch reached 41-42 tokens/s on a short
+solo coding smoke check, about 37 tokens/s total for two requests, and
+146 prompt tokens/s (2026-10-13). These are short samples; the Performance
+section retains the broader earlier measurements and long-context limits.
+Budget several minutes to read a fresh 30k-token prompt. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
 Follow-up turns reuse checkpoints of the conversation (6 by default), and each
 of the two batch slots keeps its last conversation.
@@ -316,7 +317,9 @@ in its slot). The remaining levers are engine work (overlap a slot's drafting
 with the other slot's last layers, batched drafting for both slots, upstream
 v0.1.40's drafter and QSA changes) and more VRAM (a larger GPU holds several
 times more experts, which is the only change that removes most of the CPU
-expert pass). Configuration and hv1 tuning are exhausted (see Host tuning).
+expert pass). The configuration experiments above did not meet that target; they do not establish
+an absolute hardware limit. Re-evaluate engine changes against the same workload
+(see Host tuning).
 
 Measured and not used:
 
@@ -339,6 +342,63 @@ IQ4_XS weights at 4.6-6.7 GB/s from cache (5.6 from RAM: memory-bound), IQ3_XXS
 at 1.8-2.1 GB/s (compute-bound), and IQ3_S at 1.2-1.5. Per weight IQ3_XXS costs
 about 2.6x the CPU time of IQ4_XS, so OrcaRouter's IQ3_XXS file (18% fewer
 bytes) would make the CPU expert pass slower.
+
+### 0.1.44 migration and expert streaming
+
+The local performance patch is rebased onto 0.1.44, retaining the native
+hyper-connection projections, three batch drafts, split verification, direct
+slot copies and AVX2 IQ4_XS kernel. The ggml revision is unchanged. Upstream
+adds sm_61 expert mode 8, Pascal matrix-vector dispatch and wider dense-weight
+dequantization. Their upstream P40 measurements are not GTX 1070 results.
+
+[FreeToken](https://github.com/FlashML-org/FreeToken) supplies a useful comparison:
+its hybrid scheduler divides missed experts using CPU and PCIe bandwidth measured
+while both run, and its prompt path double-buffers streamed expert layers.
+Strata already streams the next prompt layer while the current layer runs and
+maintains an adaptive GPU expert cache. More expert traffic over PCIe also reads
+host DRAM, so it can compete with the CPU pool. Keep `--pcie-frac 0` unless a
+same-workload measurement beats it; the historical 15% DMA experiment above lost.
+The current kernel-copy path can be checked separately without selecting the
+older DMA path, which upstream documents as vulnerable to a driver-lock stall.
+
+The package includes focused matching-hardware checks under
+`libexec/strata/{gemm_f32_parity,mmvq_il_parity,dequant_wide_parity}`. Run these
+with the service stopped to release VRAM. `gemm_f32_parity --quick` checks the
+optional `STRATA_DENSE_F32=1` prompt route against this package's cuBLAS; it is
+a sampled correctness check, not a full chunk-size sweep. On 2026-10-13 the
+GTX 1070 passed all 134 sampled shapes with CUDA 12.9 / cuBLAS 12.9.1.4,
+all 360 dequantization cases, and every matrix-vector parity case. The
+ported engine also passed `batch_test.py --batch 2 --n 2` and `--n 1`
+(64 greedy tokens per slot, fixed adaptive cache, `STRATA_IQ_MT_MIN=1`).
+The service enables `STRATA_DENSE_F32=1`; prompt buffers still fall back to
+the FP16 route if its extra allocations cannot fit.
+`--prefill-head-alias` is unsuitable here because upstream refuses it with batching.
+
+Deployed and smoke-checked on llm1 on 2026-10-13 (one short sample per
+configuration, not a benchmark sweep): temperature 0, reasoning disabled,
+256 output tokens for a merge-intervals coding prompt and a B-tree explanation;
+the two-request test starts both concurrently. The prompt check reads 1,123
+fresh tokens of repeated text. Context limit remains 131072 and parallelism 2.
+
+| Check | 0.1.43.1 + patch | 0.1.44 + ported patch + FP32 prompt path |
+|---|---:|---:|
+| Solo client decode (completion tokens / first-to-last-token time) | 38.0 t/s | 41.2 t/s; warm recheck 42.5 |
+| Two requests, total completion tokens / wall time including admission | 37.9 t/s | 36.6 t/s |
+| Two-request engine window | 141.25 ms | 135.62 ms |
+| Fresh prompt, engine-reported | 134.7 t/s | 145.5 t/s |
+
+The batch windows became shorter, but draft acceptance in this sample fell
+from 72.0% to 66.5%, so there is no demonstrated two-request throughput gain.
+These short checks do not requalify long-context throughput or prove a hardware
+maximum. The source host check, external-secret host build and activation passed;
+the active engine is 0.1.44.
+
+One bounded expert-streaming check used `strata_tune: {"pcie_frac": 0.2}`
+on the same solo coding prompt, between the two CPU-miss runs. It reached
+27.9 t/s versus 41.2 and 42.5 with `pcie_frac: 0`; the returned completion was
+256 tokens in each case. This uses the current kernel-copy path, not the older
+DMA experiment. The service therefore keeps `--pcie-frac 0`. Prompt-layer
+streaming and asynchronous adaptive-cache uploads remain enabled.
 
 ### Nightly backups
 
@@ -483,7 +543,7 @@ is configured for node 0 too; 102 (w11test) is unchanged.
 
 - The model is in `/mnt/data/models` on llm1's data disk, bind-mounted
   read-only into `strata`.
-- Strata is pinned to the `v0.1.43.1` tag. When bumping it, update the ggml
+- Strata is pinned to the `v0.1.44` tag. When bumping it, update the ggml
   commit from `third_party/ggml/VERSION.txt`, re-check the MTP fetch patch
   (`strata-mtp-fetch.patch`), and benchmark one and two requests against the
   Performance table.

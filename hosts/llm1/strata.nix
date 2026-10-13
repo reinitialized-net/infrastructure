@@ -35,13 +35,13 @@ let
 in
 cuda.backendStdenv.mkDerivation {
   pname = "strata";
-  version = "0.1.43.1";
+  version = "0.1.44";
 
   src = fetchFromGitHub {
     owner = "Niko1221";
     repo = "Strata";
-    rev = "v0.1.43.1";
-    hash = "sha256-ouJseBgkuS0WxgHgHw8vxuNNqR/B3W5yjbjfBzkBpqA=";
+    rev = "v0.1.44";
+    hash = "sha256-Yjlu2tRBYrabTp/hZvZh4QECJZSTJe8Bh2P6MqvQdX0=";
   };
 
   patches = [
@@ -67,11 +67,17 @@ cuda.backendStdenv.mkDerivation {
   cmakeFlags = [
     (lib.cmakeBool "STRATA_ENABLE_CUDA" true)
     (lib.cmakeBool "STRATA_EXPERIMENTAL_SM60" true)
-    (lib.cmakeBool "STRATA_BUILD_TESTS" false)
+    (lib.cmakeBool "STRATA_BUILD_TESTS" true)
     (lib.cmakeFeature "CMAKE_CUDA_ARCHITECTURES" "61")
     (lib.cmakeFeature "STRATA_GGML_DIR" "${ggml}")
   ];
-  ninjaFlags = [ "strata" ];
+  # Build only the engine and focused Pascal qualification tools, not the full suite.
+  ninjaFlags = [
+    "strata"
+    "gemm_f32_parity"
+    "mmvq_il_parity"
+    "dequant_wide_parity"
+  ];
 
   # Strata forces GGML_NATIVE, which the Nix compiler wrapper strips; target
   # hv1's E5-2690 v4 (`cpu: host`) explicitly instead, as hosts/llm1/llm.nix does.
@@ -81,7 +87,8 @@ cuda.backendStdenv.mkDerivation {
   installPhase = ''
     runHook preInstall
     install -Dm755 strata $out/bin/strata
-    mkdir -p $out/share/strata
+    mkdir -p $out/share/strata $out/libexec/strata
+    install -m755 gemm_f32_parity mmvq_il_parity dequant_wide_parity $out/libexec/strata/
     cp -r ../{serve,tools,data} $out/share/strata/
     makeWrapper ${python.interpreter} $out/bin/strata-server \
       --chdir $out/share/strata --add-flags "-m serve.server"

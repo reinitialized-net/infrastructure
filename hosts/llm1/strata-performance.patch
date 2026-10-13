@@ -19,7 +19,7 @@ index 80b1de8b..cdc69b56 100644
  // workspace, compares authoritative bytes and resident draft-ring pages, and
  // fingerprints the authoritative payload only. Never changes model state.
 diff --git a/include/strata/core/verify.hpp b/include/strata/core/verify.hpp
-index ffaea059..c186fffa 100644
+index a9dc19db..da113d19 100644
 --- a/include/strata/core/verify.hpp
 +++ b/include/strata/core/verify.hpp
 @@ -205,6 +205,10 @@ public:
@@ -60,7 +60,7 @@ index 519efa2c..7c04a6b6 100644
  void q8k_quant_avx2(const float* x, void* y, int64_t n);
  
 diff --git a/include/strata/kernels/fused_gr.hpp b/include/strata/kernels/fused_gr.hpp
-index 982b33bd..ffbe1089 100644
+index 00324247..a078706a 100644
 --- a/include/strata/kernels/fused_gr.hpp
 +++ b/include/strata/kernels/fused_gr.hpp
 @@ -45,8 +45,20 @@ struct FusedGrArgs {
@@ -83,8 +83,8 @@ index 982b33bd..ffbe1089 100644
 +
  bool fused_gr_supported(int64_t n_embd, int64_t hc, int64_t hc_lr);
  void fused_gr_read(const FusedGrArgs& a, void* stream);
- 
-@@ -59,6 +71,11 @@ constexpr int kFusedGrMaxT = 8;
+ /// STRATA_HC_Q8 on a bf16 pack: `out` (n_blocks * 34 bytes) = the Q8_0 blocks (fp16 d = amax / 127, round(x / d), ggml's
+@@ -64,6 +76,11 @@ constexpr int kFusedGrMaxT = 8;
  bool fused_gr_read_multi(const FusedGrArgs* a, int n_tok, float* xn_scratch, void* stream,
                           unsigned long long* stamp_buf = nullptr, int stamp_i0 = 0);
  
@@ -140,10 +140,10 @@ index 1468dc65..3b1fe35a 100644
                                int64_t upto, bool index, std::string& error) {
      Layout l{};
 diff --git a/src/core/conversation_state.cpp b/src/core/conversation_state.cpp
-index 4fbcf88b..2bc70911 100644
+index a93715dd..ce6fd5c2 100644
 --- a/src/core/conversation_state.cpp
 +++ b/src/core/conversation_state.cpp
-@@ -194,6 +194,31 @@ bool conversation_checkpoint_restore(const ConversationCheckpoint& c, SessionSta
+@@ -215,6 +215,31 @@ bool conversation_checkpoint_restore(const ConversationCheckpoint& c, SessionSta
      return sync(error);
  }
  
@@ -176,19 +176,11 @@ index 4fbcf88b..2bc70911 100644
                                   const ModelGeometry& g, const QsaState* draft, size_t& bytes, std::string& error) {
      bytes = 0;
 diff --git a/src/core/native_dense.cpp b/src/core/native_dense.cpp
-index e0775a6a..d57972ee 100644
+index aba2882b..735ed479 100644
 --- a/src/core/native_dense.cpp
 +++ b/src/core/native_dense.cpp
-@@ -4,6 +4,7 @@
- #include "strata/artifact/gguf_reader.hpp"
- #include "strata/kernels/native_mmvq.hpp"
- #include "strata/platform/memory.hpp"
-+#include "strata/kernels/fused_gr.hpp"
- 
- #include <cuda_runtime.h>
- #include <algorithm>
-@@ -86,9 +87,22 @@ std::vector<uint8_t> q8_0_of(const float* x, uint64_t n) {
-     }
+@@ -137,9 +137,22 @@ std::vector<uint8_t> q8_0_of_bf16(const uint16_t* x, uint64_t n) {
+     for (auto& th : pool) th.join();
      return out;
  }
 +// The hyper-connection projections in the GGUF's 4-bit forms (fused_gr's native read: down IQ4_XS, up IQ4_NL)
@@ -210,7 +202,7 @@ index e0775a6a..d57972ee 100644
      // Match the native PLE kernel: Q2_0, IQ3_XXS, IQ4_XS and Q8_0 (UD-Q4_K_XL). Other keys retain the packed BF16
      // fallback.
      if (name == "blk.1.ple_key.weight")
-@@ -281,7 +295,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
+@@ -342,7 +355,7 @@ bool NativeDense::load(const std::vector<std::string>& shards, WeightTable& tabl
                  if (!strata::kernels::native_mmvq_supported(tensor.type)) continue;
                  // #326: the pack keeps an unquantized (--compat-bf16) key, which the PLE reads from the arena
                  if (tensor.name == "blk.1.ple_key.weight" && !ref.quantized()) continue;
@@ -220,10 +212,10 @@ index e0775a6a..d57972ee 100644
                      tensor.shape[0] != (uint64_t) ref.ne0 || tensor.shape[1] != (uint64_t) ref.ne1) {
                      err = "native dense: incompatible matrix " + tensor.name; return false;
 diff --git a/src/core/verify.cpp b/src/core/verify.cpp
-index 3995ae9d..7b54ec5d 100644
+index a8791cc6..632e0bf4 100644
 --- a/src/core/verify.cpp
 +++ b/src/core/verify.cpp
-@@ -839,7 +839,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+@@ -874,7 +874,10 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
      const int64_t TS = (s.idx_block - 1) * ID;
      const bool ple_on = ss.ple.ready() && ple_stage();
      auto Rt = [&](int t) { return R_ + (size_t) t * HC * N; };
@@ -235,7 +227,7 @@ index 3995ae9d..7b54ec5d 100644
      // Pipelined windows must wait for the host verdict/snapshot fence before mutating state.
      const bool self_commit = T == 1 && !always_publish_ && !batch_rec_ && !g_qfuse() && one_token_self_commit();   // see Verifier::commit
      static const bool dec_batch = [] { const char* v = std::getenv("STRATA_DEC_BATCH"); return v == nullptr || std::atoi(v) != 0; }();
-@@ -847,7 +850,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+@@ -882,7 +885,8 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
          if (prof_on_ && grp == 0) gpu_stamp(prof_, (int) (l * kProfPer + i), cs);
          if (trace_m_ != nullptr) gpu_stamp(trace_m_, (int) ((l * kProfPer + i) * 2 + grp), cs);   // #649
      };
@@ -245,7 +237,7 @@ index 3995ae9d..7b54ec5d 100644
      // S26 STRATA_LFUSE=1: where the shared expert's gate / scale fusions apply (the paths they replace are the ones taken)
      auto lfuse_on = [&](int n) {
          return g_lfuse() && ar_on() && native_moe_combine_enabled() && dec_batch && n > 1 && n <= 8 &&
-@@ -1052,9 +1056,13 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+@@ -1087,9 +1091,13 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
          }
          auto gr_read_group = [&](int half, bool apply, float* inj_prev, float* inj_out) {
              FusedGrArgs fa[kFusedGrMaxT];
@@ -259,7 +251,7 @@ index 3995ae9d..7b54ec5d 100644
                  a.bo_prev = bo_ + t * N; a.inj_prev = inj_prev + t * HC;
                  a.w_norm = (const float*) wn[half]->data; a.w_down = (const uint16_t*) wd[half]->data;
                  a.w_up = (const uint16_t*) wu[half]->data; a.w_inject = (const uint16_t*) wi[half]->data;
-@@ -1068,6 +1076,12 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+@@ -1103,6 +1111,12 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                      else if (strata::kernels::cpu::expert_layout().native) a.q8_mixed = nat_xq_ + (size_t) t * (N / 32) * 36;
                  }
              }
@@ -272,7 +264,7 @@ index 3995ae9d..7b54ec5d 100644
              return fused_gr_read_multi(fa, n, xn_ + (size_t) tb * HC * N, cs, (prof_on_ && grp == 0) ? prof_ : nullptr,
                                  (int) (l * kProfPer + (half == 0 ? 27 : 30)));
          };
-@@ -1130,11 +1144,13 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+@@ -1165,11 +1179,13 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                      for (int t = tb; t < te;) {
                          const int first = t;
                          while (t < te && brow_[t] == brow_[first]) ++t;
@@ -288,7 +280,7 @@ index 3995ae9d..7b54ec5d 100644
                      }
                  } else
                  // a one-token window keeps its token: it advances the conv history and the state itself (commit)
-@@ -1164,12 +1180,14 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+@@ -1199,12 +1215,14 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                      for (int t = tb; t < te;) {
                          const int first = t;
                          while (t < te && brow_[t] == brow_[first]) ++t;
@@ -307,7 +299,7 @@ index 3995ae9d..7b54ec5d 100644
                      }
                  } else
                  gdn_step_norm_multi(state, hb, (int) C, gate, beta, z_, (const float*) wnm->data, EPS, y_, (int) HK,
-@@ -1255,7 +1273,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
+@@ -1290,7 +1308,7 @@ bool Verifier::record_window(int T, cudaStream_t cs, std::string& err) {
                  stamp(l, 8, grp);
                  if (batch_rec_) {   // snapshot each slot's indexer tail before its first proposed row
                      for (int t = tb; t < te; ++t)
@@ -316,7 +308,7 @@ index 3995ae9d..7b54ec5d 100644
                              copy_from_mapped(tail_snap_b_ + ((size_t) brow_[t] * nQall + qi) * TS,
                                               slot_ss(t).qsa_states[qi].idx_tail, TS, cs);
                  } else
-@@ -2376,7 +2394,7 @@ void Verifier::set_plan_slot(int grp) {
+@@ -2510,7 +2528,7 @@ void Verifier::set_plan_slot(int grp) {
      sink_.ptr = (unsigned long long*) (base + ptr_off);
      sink_.ptr2 = sink_.ptr + cap;
      sink_.start2 = base + ptr_off + 4 * cap;
@@ -325,7 +317,7 @@ index 3995ae9d..7b54ec5d 100644
      const int64_t per = G == 2 ? kStagingBlobs / 2 : kStagingBlobs;
      sink_.staging = (unsigned long long) (staging_ + (size_t) (grp * per) * strata::kernels::cpu::expert_layout().max_blob);
      sink_.staging_cap = per;
-@@ -2828,6 +2846,7 @@ bool Verifier::stage_batch(const int* rows, int S, int hbase, const int32_t* tok
+@@ -3004,6 +3022,7 @@ bool Verifier::stage_batch(const int* rows, int S, int hbase, const int32_t* tok
      for (int t = 0; t < S; ++t) last_rows_[t] = rows[t];
      row_base_ = hbase;   // the graphs' key (and nothing else) reads it until the next stage_batch
      last_batch_ = true;
@@ -333,7 +325,7 @@ index 3995ae9d..7b54ec5d 100644
      for (int t = 0; t < S; ++t) { last_tokens_[t] = tokens[t]; last_pos_b_[t] = pos[t]; }
      ms_host += ms_since(t0);
      return true;
-@@ -2879,8 +2898,11 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
+@@ -3055,8 +3074,11 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
          progress_beat();
          return true;
      }
@@ -347,7 +339,7 @@ index 3995ae9d..7b54ec5d 100644
          const uint32_t want = (uint32_t) (k + 1);
          const Clock::time_point a = Clock::now();
          auto last_flush = a;
-@@ -2906,12 +2928,15 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
+@@ -3082,12 +3104,15 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
          }
          const Clock::time_point b = Clock::now();
          cur_layer_ = want - 1;
@@ -366,7 +358,7 @@ index 3995ae9d..7b54ec5d 100644
          if (remote_opt_) remote_opt_->end();
          progress_tick();
          std::atomic_thread_fence(std::memory_order_seq_cst);
-@@ -2944,6 +2969,17 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
+@@ -3120,6 +3145,17 @@ bool Verifier::run_slot_rows(const int* rows, int S, const int32_t* tokens, cons
      return true;
  }
  
@@ -467,10 +459,10 @@ index 2884fcde..0f129dd1 100644
 +
  }  // namespace strata::kernels::cpu
 diff --git a/src/kernels/cpu/native_expert.cpp b/src/kernels/cpu/native_expert.cpp
-index 78e3cbaa..19c52a03 100644
+index 1ab75b64..7d7ba427 100644
 --- a/src/kernels/cpu/native_expert.cpp
 +++ b/src/kernels/cpu/native_expert.cpp
-@@ -182,6 +182,12 @@ void native_gu_rows(const NativeFmt& f, const uint8_t* blob, const void* const*
+@@ -191,6 +191,12 @@ void native_gu_rows(const NativeFmt& f, const uint8_t* blob, const void* const*
          iq128_gu_rows(f.gu_type, blob, f.gu_row, f.up_off, (int) f.n_embd, act, nt, ff, r0, r1);
          return;
      }
@@ -480,14 +472,14 @@ index 78e3cbaa..19c52a03 100644
 +        iq4xs256_gu1_rows(blob, f.gu_row, f.up_off, (int) f.n_embd, act[0], ff[0], r0, r1);
 +        return;
 +    }
-     const ggml_vec_dot_t dot = traits(f.gu_type)->vec_dot;
      const int n = (int) f.n_embd;
-     for (int r = r0; r < r1; ++r) {
+     // NVFP4: the per-expert global scales from the blob's tail (1 and 1 otherwise). s_down goes on the down output:
+     // folded into up it left the hidden near 1e-5, whose Q8_0 block scale is an FP16 subnormal (expert error 2-12%)
 diff --git a/src/kernels/cuda/fused_gr.cu b/src/kernels/cuda/fused_gr.cu
-index 766ac2ed..591c9c4f 100644
+index c3c2fc8d..6b03930e 100644
 --- a/src/kernels/cuda/fused_gr.cu
 +++ b/src/kernels/cuda/fused_gr.cu
-@@ -1966,6 +1966,281 @@ bool fused_gr_supported(int64_t n_embd, int64_t hc, int64_t hc_lr) {
+@@ -2127,6 +2127,281 @@ bool fused_gr_supported(int64_t n_embd, int64_t hc, int64_t hc_lr) {
      return n_embd == N && hc == HC && hc_lr == LR;
  }
  
@@ -770,10 +762,10 @@ index 766ac2ed..591c9c4f 100644
      if (!a.R || !a.w_norm || !a.w_down || !a.w_up || !a.lo || !a.rs || !a.mixed ||
          (a.w_inject && !a.inject_out) || (a.apply && (!a.bo_prev || !a.inj_prev || !a.R_out)) ||
 diff --git a/src/prefill/prefill.cpp b/src/prefill/prefill.cpp
-index 84164445..6a13c842 100644
+index 2fa71c7c..867a60a0 100644
 --- a/src/prefill/prefill.cpp
 +++ b/src/prefill/prefill.cpp
-@@ -34,6 +34,7 @@
+@@ -35,6 +35,7 @@
  #include "strata/kernels/qsa_prompt_attn.hpp"
  #include "strata/kernels/qsa_select.hpp"
  #include "strata/prefill/gemm.hpp"
@@ -781,7 +773,7 @@ index 84164445..6a13c842 100644
  #include "strata/prefill/moe_fused.hpp"
  #include "strata/prefill/moe_fused_iq.hpp"
  #include "strata/prefill/moe_mmq.hpp"
-@@ -1947,9 +1948,21 @@ bool native_proj(Gemm& gm, const core::WeightRef* w, const uint16_t* X, float* Y
+@@ -1988,9 +1989,21 @@ bool native_proj(Gemm& gm, const core::WeightRef* w, const uint16_t* X, float* Y
  }
  bool bf16_proj(Gemm& gm, const core::WeightRef* w, const uint16_t* X, float* Y, int64_t T, const std::string& name,
                 std::string& err, int64_t ldy = 0, const uint16_t* X_lo = nullptr, int64_t ldx = 0) {
@@ -806,7 +798,7 @@ index 84164445..6a13c842 100644
      return true;
  }
  
-@@ -2577,7 +2590,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
+@@ -2625,7 +2638,7 @@ bool Prefill::run_impl(const int64_t* tokens, int64_t n, int64_t pos0, std::stri
                  if (ldx != D && !pf_hcdown()) {   // STRATA_HCD_EXACT: the exact-order down kernel when hipBLASLt would take 1176 / 1177
                      hdown = wd->kind == core::WeightKind::Bf16InF32 && wd->data && wd->ne0 == D && wd->ne1 == LR &&
                              m.gemm.bf16_hcd_exact(m.xn16, ldx, (const uint16_t*) wd->data, m.lo, T, LR, D);
@@ -816,10 +808,10 @@ index 84164445..6a13c842 100644
                          wi->kind != core::WeightKind::Bf16InF32 || !wi->data || wi->ne0 != D || wi->ne1 != HC ||
                          !strata_pf_hcdown_bf16(m.xn16, ldx, (const uint16_t*) wd->data, (const uint16_t*) wi->data, LR,
 diff --git a/src/program/generate.cpp b/src/program/generate.cpp
-index 1e5299e5..e430fabe 100644
+index ba00f94d..f08e200e 100644
 --- a/src/program/generate.cpp
 +++ b/src/program/generate.cpp
-@@ -4365,6 +4365,15 @@ int main(int argc, char** argv) {
+@@ -4490,6 +4490,15 @@ int main(int argc, char** argv) {
      };
      const char* batch_mtp_env = std::getenv("STRATA_BATCH_MTP");
      bool batch_mtp = o.batch_mtp || (batch_mtp_env != nullptr && batch_mtp_env[0] != '\0' && batch_mtp_env[0] != '0');
@@ -835,7 +827,7 @@ index 1e5299e5..e430fabe 100644
      if (batch_mtp) {
          // (--pipeline-windows is already off with --batch slots)
          const char* why = o.batch < 2 ? "it needs --batch 2 or more" : o.mtp.empty() ? "it needs --mtp"
-@@ -4515,7 +4524,7 @@ int main(int argc, char** argv) {
+@@ -4640,7 +4649,7 @@ int main(int argc, char** argv) {
                                   vram_free_note().c_str());
                      return 1;
                  }
@@ -844,7 +836,7 @@ index 1e5299e5..e430fabe 100644
                  d->set_ple_session(bslot_ss[0][(size_t) b].get());
                  slot_mtp.push_back(std::move(d));
              }
-@@ -9325,7 +9334,7 @@ int main(int argc, char** argv) {
+@@ -9839,7 +9848,7 @@ int main(int argc, char** argv) {
          double bt_run = 0, bt_commit = 0, bt_emit = 0;
          double bt_wait0 = 0, bt_pool0 = 0;
          int64_t bt_miss0 = 0, bt_hits0 = 0, bt_pcie0 = 0;
@@ -853,7 +845,7 @@ index 1e5299e5..e430fabe 100644
          // per stage (0 = CUDA0's verifier): the GPU-reach wait and pool time when the timed windows began; and the routed
          // (token, expert) entries the CPU and the PCIe share had served by then (bt_hits0 holds the VRAM entries)
          std::vector<double> bt_stage_wait0, bt_stage_pool0;
-@@ -9347,6 +9356,8 @@ int main(int argc, char** argv) {
+@@ -9861,6 +9870,8 @@ int main(int argc, char** argv) {
              in_lines.pop_front();
              return true;
          };
@@ -862,7 +854,7 @@ index 1e5299e5..e430fabe 100644
          // the session a request just left behind (its prompt) -> slot b's sessions, on every stage
          auto copy_to_slot = [&](int b, const std::vector<int32_t>& ids, std::string& e) -> bool {
              const int64_t upto = (int64_t) ids.size();
-@@ -9355,6 +9366,15 @@ int main(int argc, char** argv) {
+@@ -9869,6 +9880,15 @@ int main(int argc, char** argv) {
                  strata::core::SessionState& to = *bslot_ss[k][(size_t) b];
                  const strata::core::OnDevice on_k(k == 0 ? 0 : stages[k - 1]->dev);
                  if (cudaDeviceSynchronize() != cudaSuccess) { e = "batch admission: device sync failed"; return false; }
@@ -878,7 +870,7 @@ index 1e5299e5..e430fabe 100644
                  strata::core::ConversationCheckpoint ck;
                  ck.ids = ids;
                  if (!strata::core::conversation_checkpoint_save(ck, from, g, e) ||
-@@ -9400,6 +9420,14 @@ int main(int argc, char** argv) {
+@@ -9914,6 +9934,14 @@ int main(int argc, char** argv) {
                  if (at != nullptr) {
                      if (!strata::core::conversation_checkpoint_restore(k == 0 ? *at : at->stage_parts[k - 1], to, g, e))
                          return false;
@@ -893,7 +885,7 @@ index 1e5299e5..e430fabe 100644
                  } else {
                      strata::core::ConversationCheckpoint ck;
                      ck.ids = bs[(size_t) b].ids;
-@@ -9441,25 +9469,27 @@ int main(int argc, char** argv) {
+@@ -9955,25 +9983,27 @@ int main(int argc, char** argv) {
              int64_t pos[strata::kernels::kVerifyMaxT] = {};
              int first[strata::kernels::kVerifyMaxT] = {}, active[strata::kernels::kVerifyMaxT] = {};
              static size_t next_slot = 0;
@@ -935,7 +927,7 @@ index 1e5299e5..e430fabe 100644
                          ++S;
                      }
                  }
-@@ -9516,14 +9546,19 @@ int main(int argc, char** argv) {
+@@ -10030,14 +10060,19 @@ int main(int argc, char** argv) {
              } adapt_run;
              if (!drive.d.usage.empty() && !ajob && !in_prompt_read && (++ba_window % o.adapt_every) == 0 && pending.empty())
                  adapt_run.th = std::thread([&] { adapt_run.ok = adapt(); });
@@ -959,7 +951,7 @@ index 1e5299e5..e430fabe 100644
              }
              if (!(batch_mtp ? ver.commit_slot_prefixes(keep.data(), err) : ver.commit_slots(err))) {
                  std::printf("ERR %s\n", err.c_str());
-@@ -9542,7 +9577,7 @@ int main(int argc, char** argv) {
+@@ -10056,7 +10091,7 @@ int main(int argc, char** argv) {
                  const int b = active[t];
                  BSlot& sl = bs[(size_t) b];
                  bool nf = false;   // #879: a row of this slot held non-finite logits: the slot ends, nothing emitted
@@ -968,7 +960,7 @@ index 1e5299e5..e430fabe 100644
                  if (nf) {
                      std::fprintf(stderr, "strata batch: non-finite logits (#879) in slot %d at position %lld: it ends "
                                           "(BDONE nonfinite) and the next request reads its prompt from token 0\n", b,
-@@ -9581,9 +9616,9 @@ int main(int argc, char** argv) {
+@@ -10095,9 +10130,9 @@ int main(int argc, char** argv) {
                      const size_t stride = (size_t) g.hc * (size_t) g.n_embd;
                      if (cudaMemcpyAsync(slot_mtp_rows[(size_t) b].get(),
                                          ver.final_R_all() + (size_t) first[t] * stride,
@@ -980,7 +972,7 @@ index 1e5299e5..e430fabe 100644
                                                      sl.draft.data(), err)) {
                          std::printf("ERR batch MTP slot %d: %s\n", b, err.c_str());
                          return false;
-@@ -9644,12 +9679,12 @@ int main(int argc, char** argv) {
+@@ -10158,12 +10193,12 @@ int main(int argc, char** argv) {
                      const std::string pr = (k == 0 ? ver : stages[k - 1]->ver).profile_report();
                      if (!pr.empty()) std::fprintf(stderr, "strata batch GPU stages, stage %zu (ms/window):%s\n", k + 1, pr.c_str());
                  }
