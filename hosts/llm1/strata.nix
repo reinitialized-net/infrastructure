@@ -55,6 +55,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-slot-checkpoints.patch
     # Opt-in AVX2 IQ4_NL nibble decode, checked by the existing CPU parity tool.
     ./strata-cpu-decode.patch
+    # Opt-in fused native dequantization to FP32, preserving intermediate FP16 rounding.
+    ./strata-prefill.patch
   ];
 
   nativeBuildInputs = [
@@ -83,6 +85,7 @@ cuda.backendStdenv.mkDerivation {
     "gemm_f32_parity"
     "mmvq_il_parity"
     "dequant_wide_parity"
+    "dequant_fused_parity"
     "iq4xs_gu1_parity"
     "iq_avx2_parity"
   ];
@@ -97,7 +100,7 @@ cuda.backendStdenv.mkDerivation {
     install -Dm755 strata $out/bin/strata
     mkdir -p $out/share/strata $out/libexec/strata
     install -m755 gemm_f32_parity mmvq_il_parity dequant_wide_parity $out/libexec/strata/
-    install -m755 iq4xs_gu1_parity iq_avx2_parity $out/libexec/strata/
+    install -m755 iq4xs_gu1_parity iq_avx2_parity dequant_fused_parity $out/libexec/strata/
     cp -r ../{serve,tools,data} $out/share/strata/
     makeWrapper ${python.interpreter} $out/bin/strata-server \
       --chdir $out/share/strata --add-flags "-m serve.server"
