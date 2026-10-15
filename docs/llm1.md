@@ -31,10 +31,11 @@ print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
 The context is 131072 tokens, with two concurrent requests; a third waits.
-The deployed Strata 0.1.44.1 and engine patches reached 40.7 tokens/s on a short
-solo coding stream and 38.3 tokens/s total for two requests (2026-10-14).
-The earlier 135 prompt tokens/s sample predates the checkpoint/activation fixes;
-fresh-prompt throughput was not remeasured. These are short samples; the
+The deployed Strata 0.1.44.1 and engine patches reached 40.30 tokens/s solo,
+38.29 tokens/s total for two requests and 131.7 prompt tokens/s on a fresh
+1,589-token prompt (2026-10-15). Live throughput was essentially unchanged
+from the freshly restarted baseline; the latest gains are in isolated CPU
+and dense-weight preparation components. These are short samples; the
 Performance section retains the broader earlier measurements and long-context limits.
 Budget several minutes to read a fresh 30k-token prompt. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
@@ -325,6 +326,16 @@ slots and for one.
   tasks use the original path. `iq4xs_gu1_parity` compares both paths bit for
   bit, including partial rows and the workspace fallback. Set the switch to
   `0` to retain the previous kernel.
+- **Decode IQ4_NL nibbles in wider AVX2 lanes.** `strata-cpu-decode.patch`
+  adds `STRATA_IQ4NL_WIDE=1` for the CPU down projection. It preserves integer
+  lane sums and FP32 accumulation order; the single-token ggml dispatch stays
+  unchanged. `iq_avx2_parity` compares the original, wider and dispatch paths.
+- **Fuse native dense weight preparation.** `strata-prefill.patch` adds
+  `STRATA_PREFILL_FUSED_WIDEN=1` for the Q5_K and IQ4_XS dense SGEMM paths.
+  It dequantizes directly into their FP32 buffer while explicitly preserving
+  the previous FP16 rounding. This removes the intermediate FP16 buffer write,
+  read and widening launch. `dequant_fused_parity` compares every output bit
+  against the two-stage path; unsupported types retain their existing path.
 - **Keep checkpoints when returning to solo.**
   `strata-slot-checkpoints.patch` carries the slot's turn checkpoints back
   with its live K/V state. Previously only a partial prompt restore or an
@@ -628,6 +639,71 @@ the CPU kernel component above.
 
 The model, quantization, 131072-token context, two-request capacity and sampling
 settings are unchanged. Long-context performance has not been requalified.
+
+### Exact CPU decode and dense preparation
+
+The optimizations deployed on 2026-10-15 preserve the existing quantized weights
+and arithmetic.
+On llm1's E5-2690 v4, the two-token, 25-expert CPU microcheck measured IQ4_NL
+down projection time of 0.400 to 0.380 ms per expert (5% less), and combined
+gate/up plus down time of 0.869 to 0.847 ms (2.5% less). The installed AVX2
+parity tool passed, including exact original/wider/dispatch rows for one
+through eight tokens.
+
+On its GTX 1070, fused Q5_K preparation fell from 1.3630 to 0.6425 ms (2.12x)
+and IQ4_XS preparation from 0.8381 to 0.3768 ms (2.22x), stable over three
+passes. All 96 bitwise cases passed. These measure weight preparation alone,
+not whole-prompt throughput. The combined secret-free llm1 check also passed,
+including 34 upstream API and 26 harness tests.
+
+The old deployed executable and the new package with both switches enabled
+produced identical token IDs and finish reasons for all 272 generated tokens:
+16 tokens after a fresh 1,473-token prompt, 64 solo tokens, two slots of 64 tokens each and
+64 one-slot tokens. In this fixed-cache check, prompt time fell from 9,746.7
+to 9,618.8 ms (1.3%), solo decode from 1,954.5 to 1,937.7 ms (0.9%), total
+two-slot time from 5,343.7 to 5,295.6 ms (0.9%) and one-slot time from 2,677.0
+to 2,655.7 ms (0.8%). This was one short A/B comparison, not a statistical
+whole-service speed claim.
+
+The external-secret system build, supported `rebuildHost llm1` and explicit
+service restart passed. Both switches are enabled declaratively. The installed
+package passed the CPU parity and 96 GPU bitwise cases; service health reported
+a loaded model, and the models endpoint returned 401 without authentication
+and 200 with it. The deployed engine is
+`/nix/store/jvj59wazzzi0ggfmxi5qc65mdw7bfwfx-strata-0.1.44.1`; the system is
+`/nix/store/9apxfy5ry7ssw40x3cb7cvfprarbgq3s-nixos-system-llm1-26.05.20260924.c508844`.
+
+Freshly restarted old/new live checks measured 40.13 to 40.30 tokens/s solo
+(256 tokens), 38.26 to 38.29 tokens/s combined (512 tokens, including admission),
+and 131.4 to 131.7 prompt tokens/s for an uncached 1,589-token prompt
+(12,091.7 to 12,061.9 ms). These are essentially unchanged within smoke-test
+noise. The model, quantization, 131072-token context, two-request capacity,
+13 CPU workers, `--spec 4` and `--pcie-frac 0` remain
+unchanged. Long-context runtime performance has not been requalified.
+
+The reusable focused gate compares token IDs and finish reasons within each
+execution mode. It keeps the existing `STRATA_IQ_MT_MIN`, fixes the adaptive
+cache and disables conversation caching.
+Use an idle GPU and a batch-test-format model config with its `env` removed;
+export the common service engine environment in the calling shell. The config
+and output directory must stay outside this checkout, and the output directory
+must not already exist:
+
+```bash
+python3 tests/check-strata-optimizations.py \
+  --baseline-exe "$BASELINE/bin/strata" --exe "$CANDIDATE/bin/strata" \
+  --config "$MODEL_CONFIG" --tools "$CANDIDATE/share/strata/tools" \
+  --off-env STRATA_IQ4NL_WIDE=0 --on-env STRATA_IQ4NL_WIDE=1 \
+  --off-env STRATA_PREFILL_FUSED_WIDEN=0 --on-env STRATA_PREFILL_FUSED_WIDEN=1 \
+  --output-dir "$QUALIFICATION_OUTPUT"
+```
+
+Two trials were rejected. Vectorizing the separate FP16 widening kernel passed
+40 bitwise cases but changed large-buffer conversion time by only about 0–0.4%.
+Coalescing PLE reads contained in an existing straddling read reduced a synthetic
+neighboring-row fixture from seven reads to six with identical bytes. Decode
+heads address disjoint ranges, however, and no useful real-workload hit rate was
+established. Neither trial is retained; the direct-I/O backup limitation remains.
 
 ### Nightly backups
 
