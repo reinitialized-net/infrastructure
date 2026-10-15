@@ -1,0 +1,7 @@
+.workspace-bar { display:flex; flex-wrap:wrap; gap:8px; padding:8px 16px; border-bottom:1px solid var(--st-line-soft); }
+.workspace-dialog { color:var(--st-ink); background:var(--st-bg); border:1px solid var(--st-line-soft); border-radius:12px; padding:24px; width:min(900px,90vw); max-height:85vh; overflow:auto; }
+.workspace-dialog::backdrop { background:#0008; }
+.workspace-dialog .st-input { display:block; width:100%; margin:12px 0; }
+.workspace-row { display:flex; gap:8px; margin:8px 0; justify-content:space-between; }
+.workspace-row button:first-child { text-align:left; white-space:normal; }
+.workspace-dialog iframe { width:100%; height:60vh; background:white; border:0; margin-top:16px; }

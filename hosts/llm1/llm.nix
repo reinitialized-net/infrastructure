@@ -1,5 +1,5 @@
 # Qwen3.8-Flash-Next behind one OpenAI-compatible API and Strata's web UI on the
-# GTX 1070 (no server-side agent tools).
+# GTX 1070, with an isolated read-only web research service.
 # Operations, preparation, and tuning evidence: docs/llm1.md
 {
   config,
@@ -35,6 +35,31 @@ let
     };
   };
   strata = pkgsStrata.callPackage ./strata.nix { };
+  # The harness can evolve without recompiling or retuning the pinned GPU engine.
+  harness = pkgs.runCommand "strata-harness" { nativeBuildInputs = [ pkgs.makeWrapper ]; } ''
+    mkdir -p $out/share/strata $out/bin
+    cp -r ${strata}/share/strata/serve $out/share/strata/
+    chmod -R u+w $out/share/strata/serve
+    ln -s ${strata}/share/strata/tools $out/share/strata/tools
+    ln -s ${strata}/share/strata/data $out/share/strata/data
+    cp ${./harness/test_workspace.py} $out/share/strata/serve/test_workspace.py
+    cp ${./harness/workspace_proxy.py} $out/share/strata/serve/workspace_proxy.py
+    cp ${./harness/workspace.js} $out/share/strata/serve/web/workspace.js
+    cp ${./harness/workspace.css} $out/share/strata/serve/web/workspace.css
+    cd $out/share/strata
+    ${pkgs.python3}/bin/python3 ${./harness/install.py}
+    makeWrapper ${strata}/bin/strata-python $out/bin/strata-server \
+      --chdir $out/share/strata --add-flags "-m serve.server"
+    PYTHONDONTWRITEBYTECODE=1 ${strata}/bin/strata-python -m unittest serve.test_security serve.test_workspace
+  '';
+  analysisPython = pkgs.python3.withPackages (p: [
+    p.numpy
+    p.pandas
+    p.matplotlib
+    p.pypdf
+    p.python-docx
+    p.openpyxl
+  ]);
   strataDir = "/var/lib/strata";
   strataConfig = pkgs.writeText "strata.json" (
     builtins.toJSON {
@@ -101,6 +126,14 @@ let
       model_name = "qwen3.8-flash-next";
       log = "${strataDir}/strata.log";
       host = "127.0.0.1";
+      trusted_origins = [ "https://llm.in.reinitialized.net" ];
+      mcp_servers.web.url = "http://127.0.0.1:8091/mcp";
+      mcp_servers.analysis.url = "http://127.0.0.1:8092/mcp";
+      mcp = {
+        timeout_s = 90;
+        max_result_chars = 24000;
+        max_rounds = 12;
+      };
     }
   );
 in
@@ -140,7 +173,15 @@ in
   systemd.services.strata = {
     description = "Strata: Qwen3.8-Flash-Next on the GTX 1070";
     wantedBy = [ "multi-user.target" ];
-    after = [ "nvidia-persistenced.service" ];
+    after = [
+      "nvidia-persistenced.service"
+      "strata-web.service"
+      "strata-analysis.service"
+    ];
+    wants = [
+      "strata-web.service"
+      "strata-analysis.service"
+    ];
     # A nightly switch must not reload the model or cut open requests; the
     # pinned engine only changes on purpose (docs/llm1.md, "Update policy").
     restartIfChanged = false;
@@ -164,7 +205,7 @@ in
       # Fail closed: an empty key file would start the server without authentication.
       [ -n "$keys" ] || { echo "no API key in $CREDENTIALS_DIRECTORY/api-keys" >&2; exit 1; }
       STRATA_API_KEY=$keys \
-        exec ${strata}/bin/strata-server --engine strata --config ${strataConfig} --port ${toString port}
+        exec ${harness}/bin/strata-server --engine strata --config ${strataConfig} --port ${toString port}
     '';
     serviceConfig = {
       DynamicUser = true;
@@ -190,6 +231,76 @@ in
       Nice = -5;
       Restart = "on-failure";
       RestartSec = "10s";
+    };
+  };
+
+  # Network access belongs to a separate user with no model state or API credentials.
+  systemd.services.strata-web = {
+    description = "Read-only web research tools for Strata";
+    wantedBy = [ "multi-user.target" ];
+    after = [ "network-online.target" ];
+    wants = [ "network-online.target" ];
+    serviceConfig = {
+      ExecStart = "${pkgs.python3}/bin/python3 ${./web-tools.py}";
+      DynamicUser = true;
+      PrivateTmp = true;
+      PrivateDevices = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      NoNewPrivileges = true;
+      ProtectKernelTunables = true;
+      ProtectKernelModules = true;
+      ProtectControlGroups = true;
+      RestrictNamespaces = true;
+      RestrictAddressFamilies = [
+        "AF_INET"
+        "AF_INET6"
+      ];
+      MemoryMax = "256M";
+      TasksMax = 32;
+      Restart = "on-failure";
+    };
+  };
+
+  systemd.services.strata-analysis = {
+    description = "Isolated Strata document and Python analysis workers";
+    wantedBy = [ "multi-user.target" ];
+    environment = {
+      ANALYSIS_PYTHON = "${analysisPython}/bin/python3";
+      ANALYSIS_BWRAP = "${pkgs.bubblewrap}/bin/bwrap";
+      ANALYSIS_PRLIMIT = "${pkgs.util-linux}/bin/prlimit";
+      ANALYSIS_ARTIFACTS = "/var/lib/strata-analysis";
+    };
+    serviceConfig = {
+      ExecStart = "${pkgs.python3}/bin/python3 ${./harness/analysis-tools.py}";
+      DynamicUser = true;
+      StateDirectory = "strata-analysis";
+      StateDirectoryMode = "0700";
+      PrivateDevices = true;
+      ProtectSystem = "strict";
+      ProtectHome = true;
+      NoNewPrivileges = true;
+      ProtectKernelTunables = true;
+      ProtectKernelModules = true;
+      ProtectControlGroups = true;
+      # bwrap needs user/PID/mount/network namespaces; the model service does not.
+      RestrictNamespaces = [
+        "user"
+        "mnt"
+        "pid"
+        "net"
+        "ipc"
+        "uts"
+        "cgroup"
+      ];
+      IPAddressAllow = "localhost";
+      IPAddressDeny = "any";
+      TemporaryFileSystem = "/tmp:rw,size=256M,mode=1777";
+      MemoryMax = "2G";
+      TasksMax = 64;
+      CPUQuota = "200%";
+      UMask = "0077";
+      Restart = "on-failure";
     };
   };
 

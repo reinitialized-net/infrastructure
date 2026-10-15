@@ -55,8 +55,123 @@ clients need no key there or on the API: rp1 replaces the request's
 `/var/lib/service-secrets/llm-lan-auth.conf` on rp1 (`secrets.llmLanKey`,
 root:nginx `0640`, one line: `set $llm_lan_auth "Bearer <key>";`). Without
 that file rp1 still starts and sends no key, so Strata answers 401. Mesh
-clients (`10.255.0.9:1045`) still need their own key. The config sets no
-`mcp_servers`, so Strata starts no MCP clients; run agent tools in the client.
+clients (`10.255.0.9:1045`) still need their own key.
+
+The configuration connects Strata to `strata-web.service` over loopback MCP
+(`127.0.0.1:8091`). The web chat's **Use tools from MCP servers** switch enables:
+
+- `web__search`: live SearXNG search with optional day/week/month/year filters,
+  source URLs, snippets, and explicit upstream engine errors.
+- `web__read_page`: public HTML/text/JSON pages with numbered text, links, and
+  continuation offsets for long pages.
+- `web__find_in_page`: text matches with line numbers and nearby context.
+
+The Monitor tab lists three tools from `web` and one from `analysis`. API clients retain their
+own tools unless they explicitly send `"strata_mcp": true`. The public UI origin
+is explicitly trusted for upstream's same-origin MCP checks. The tool loop is
+limited to 12 rounds, 90 seconds per call, and 24,000 result characters.
+
+Search uses the existing SearXNG instance at `10.255.0.5:1029`; its JSON API
+must remain enabled. Search-engine outages are returned to the model, not
+silently presented as successful searches. Read source pages and cite their
+URLs when answering research questions. Retrieved content is untrusted data.
+
+The web service runs as a separate dynamic user without the model service's
+API credentials, model state, or GPU access. Strata retains its loopback-only
+network restriction. Public page fetches validate all resolved addresses and
+connect to a validated address, rechecking every redirect; private, loopback,
+link-local and non-HTTP destinations are refused. Only the fixed search backend
+can receive private-network requests. Fetches have a 2 MB limit and socket
+timeouts. No shell, filesystem, or write tools are exposed.
+
+### Workspace and analysis
+
+The local harness overlay (`hosts/llm1/harness/`) adds:
+
+- **Chats & projects**: persistent conversation history, full-text search, project
+  labels, and deletion. **Instructions** adds per-chat system instructions.
+  New chats retain those instructions; project labels group conversations but
+  do not implicitly share their attachments or instructions.
+- **Edit & branch / Retry in new branch** preserves the original conversation.
+- **Backup chat / Import chat** transfers a JSON backup. Imports restore text
+  and file attachments; tool execution records and image payloads are not replayed.
+- Attach **PDF, DOCX, XLSX**, or the upstream text/code/CSV formats. Documents
+  are parsed in the isolated worker (8 MB input, 200 PDF pages, 200,000 extracted
+  characters; spreadsheets read up to 20 sheets, 10,000 rows and 100 columns).
+  Excel uses cached cell values; it does not execute formulas or macros.
+  Scanned PDFs need OCR, which is not enabled.
+- **`analysis__python`**: calculations, pandas/numpy analysis, matplotlib charts,
+  and file creation (including DOCX/XLSX). Each call has a fresh workspace;
+  the model must pass needed text data in `files`. Results include exit status,
+  bounded output, and download buttons. Downloads expire after 24 hours and are
+  served as attachments behind the existing API authentication. Generated files
+  are limited to ten per call, 8 MB each. Tools must be enabled in chat settings.
+- Fenced code has **Download**; HTML/SVG also has a sandboxed static **Preview**.
+  Preview scripts, forms, and network loading are disabled.
+
+Conversations and attachment text live in IndexedDB in the current browser,
+not a server account. The old single chat is migrated on first use. Export a
+backup before clearing browser data; storage failures are shown explicitly.
+Other browsers/devices do not synchronize automatically. The server retains
+only generated analysis downloads in `/var/lib/private/strata-analysis`, with
+expired files cleaned on the next analysis request. This directory contains
+user data; do not expose it or include it in source snapshots. The existing
+model state, packs and backups are unchanged; rollback leaves the new browser
+store and generated-file directory intact.
+
+`strata-analysis.service` is a separate dynamic user with no credentials,
+model mounts, or GPU. It uses bubblewrap with new user/mount/PID/network
+namespaces, read-only Nix store, and a disposable working directory. Jobs cannot
+see the host home, service secrets, other jobs, or stored artifacts. They have
+no network, a 30-second wall timeout, 25-second CPU limit, bounded stdout, and
+an 8 MB per-file limit. `/proc` is deliberately not mounted: the service's
+systemd proc protections prevent an unprivileged nested proc mount, and these
+analysis libraries do not require one. The service allows two concurrent jobs and is capped at
+2 GB RAM, 64 tasks, two CPUs and 256 MB temporary storage. Python/package
+installation and shell access to the host are not provided. The Strata process
+continues to have loopback-only network access and its original credentials.
+
+The UI/server overlay is built separately from the pinned CUDA engine. Its
+installer checks exact integration points so an incompatible upstream upgrade
+fails the build. Package tests cover upstream authentication plus authentication
+and same-origin checks on the document/download routes.
+
+This is **not full ChatGPT/Claude feature parity**. The comparison baseline is
+[ChatGPT capabilities](https://help.openai.com/en/articles/9260256-chatgpt-capabilities-overview)
+and [Claude artifacts](https://support.claude.com/en/articles/17153992-what-are-artifacts-and-how-do-i-use-them).
+The configured model remains text-only: vision, voice, image/video generation,
+authenticated/JavaScript browser automation, cross-device accounts, shared
+project knowledge, autonomous scheduled tasks, connectors, and collaborative
+canvas editing are not implemented. Static previews are not interactive apps.
+Harness features do not establish frontier-model reasoning or tool-use quality.
+
+Validate with `python3 tests/test-strata-web.py`, the llm1 host check, and
+`tests/test-strata-analysis.py` with the service's `ANALYSIS_PYTHON`,
+`ANALYSIS_BWRAP`, and `ANALYSIS_PRLIMIT` environment. The analysis tests execute
+real sandbox jobs (calculation/chart creation, document extraction, isolation,
+errors, and traversal). `tests/test-strata-workspace.cjs` uses Playwright and
+`STRATA_WEB_ROOT` pointing at the built harness's `share/strata/serve/web`;
+optional `PLAYWRIGHT_MODULE` and `CHROMIUM_EXECUTABLE` select local runners.
+It tests attachment persistence, history/search, branching, instructions and
+preview isolation with a mock API.
+
+After deploying llm1, explicitly restart `strata` (its unit intentionally has
+`restartIfChanged = false`). Verify four tools in Monitor (three from `web`,
+one from `analysis`), a chat that searches/reads/cites a source, a Python-backed
+calculation and artifact download, and a document upload. Source checks alone
+do not prove that live chat path or model tool-selection quality.
+
+Validated and deployed on 2026-10-14: the secret-free llm1 build, external-secret
+build/activation, 26 upstream/route authentication tests, seven web-tool tests,
+five real sandbox tests, and an actual 30-second timeout passed. Playwright
+verified attachment persistence, history/search, instructions, branching and
+static preview isolation against the packaged UI. Against the deployed UI it
+uploaded/extracted a DOCX, observed the model execute Python for `6 * 7`, and
+downloaded `answer.txt` containing `42`. A separate live streamed chat invoked
+search and page reading and cited the IANA source. The deployed systemd worker
+also refused access to the model's loopback port and host credential/state
+paths. These are focused functional checks, not a comprehensive model-quality
+or adversarial sandbox evaluation.
 
 ## API keys
 
