@@ -1,0 +1,183 @@
+diff --git a/include/strata/kernels/cpu/iq_avx2.hpp b/include/strata/kernels/cpu/iq_avx2.hpp
+index a67061f..f82f137 100644
+--- a/include/strata/kernels/cpu/iq_avx2.hpp
++++ b/include/strata/kernels/cpu/iq_avx2.hpp
+@@ -23,6 +23,8 @@ void iq256_rows(int ggml_type, const uint8_t* w, size_t row_bytes, int n, const
+ /// kIq256Vnni: AVX-VNNI's vpdpwssd / vpdpbusd, every format and iq4nl256_down_rows (cpu_avxvnni_ok).
+ inline constexpr int kIq256Gather = 1;
+ inline constexpr int kIq256Vnni = 2;
++/// IQ4_NL only: identical lanes with a single AVX2 nibble shuffle (STRATA_IQ4NL_WIDE=1).
++inline constexpr int kIq4nlWide = 4;
+ /// The variant iq256_gu_rows / iq256_rows take on the calling thread.
+ int iq256_variant() noexcept;
+ /// Every variant bit this build and this CPU can run (tests and benches).
+@@ -48,7 +50,7 @@ void q8k_quant_avx2(const float* x, void* y, int64_t n);
+ /// IQ4_NL is a 32-value-block format, so this does not go through iq256_rows (QK_K blocks, Q8_K acts).
+ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
+                         float* const* out, int r0, int r1);
+-/// The same in a given variant (only the kIq256Vnni bit matters here).
++/// The same in a given variant (the kIq256Vnni and kIq4nlWide bits matter here).
+ void iq4nl256_down_rows_v(int variant, const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
+                           float* const* out, int r0, int r1);
+ 
+diff --git a/src/kernels/cpu/iq_avx2.cpp b/src/kernels/cpu/iq_avx2.cpp
+index 2b74176..550136c 100644
+--- a/src/kernels/cpu/iq_avx2.cpp
++++ b/src/kernels/cpu/iq_avx2.cpp
+@@ -506,17 +506,20 @@ void iq4nl256_down_rows_v(int variant, const uint8_t* w, size_t row_bytes, int n
+     for (int t = 0; t < nt; ++t) y[t] = (const block_q8_0*) hq[t];
+ #if STRATA_AVXVNNI
+     if (variant & kIq256Vnni) {
+-        vnni::iq4nl_nt(w, row_bytes, n, y, nt, out, r0, r1);
++        if (variant & kIq4nlWide) vnni::iq4nl_nt<true>(w, row_bytes, n, y, nt, out, r0, r1);
++        else vnni::iq4nl_nt<false>(w, row_bytes, n, y, nt, out, r0, r1);
+         return;
+     }
+ #endif
+-    (void) variant;
+-    plain::iq4nl_nt(w, row_bytes, n, y, nt, out, r0, r1);
++    if (variant & kIq4nlWide) plain::iq4nl_nt<true>(w, row_bytes, n, y, nt, out, r0, r1);
++    else plain::iq4nl_nt<false>(w, row_bytes, n, y, nt, out, r0, r1);
+ }
+ 
+ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt, float* const* out,
+                         int r0, int r1) {
+-    iq4nl256_down_rows_v(vnni_on() ? kIq256Vnni : 0, w, row_bytes, n, hq, nt, out, r0, r1);
++    static const bool wide = [] { const char* v = std::getenv("STRATA_IQ4NL_WIDE"); return v && std::atoi(v) != 0; }();
++    iq4nl256_down_rows_v((vnni_on() ? kIq256Vnni : 0) | (wide ? kIq4nlWide : 0),
++                         w, row_bytes, n, hq, nt, out, r0, r1);
+ }
+ 
+ // ---- IQ4_XS gate and up rows for ONE token (the common case: most of a window's expert groups hold one token).
+diff --git a/src/kernels/cpu/iq_avx2_parity.cpp b/src/kernels/cpu/iq_avx2_parity.cpp
+index 5475dd5..6a448b1 100644
+--- a/src/kernels/cpu/iq_avx2_parity.cpp
++++ b/src/kernels/cpu/iq_avx2_parity.cpp
+@@ -64,7 +64,7 @@ constexpr int kMaxT = 8;
+ #if defined(STRATA_IQ_PARITY_DISPATCH_ONLY)
+ constexpr bool kVariants = false;
+ int gu_variants() { return 0; }
+-int down_variants() { return 0; }
++int down_variants(int) { return 0; }
+ void gu_rows_v(int, int type, const uint8_t* blob, size_t gu_row, size_t up_off, const void* const* act, int nt,
+                float* const* ff) {
+     cpu::iq256_gu_rows(type, blob, gu_row, up_off, (int) kH, act, nt, ff, 0, (int) kFF);
+@@ -82,7 +82,9 @@ std::string variant_name(int) { return "dispatch"; }
+ #else
+ constexpr bool kVariants = true;
+ int gu_variants() { return cpu::iq256_variants(); }
+-int down_variants() { return cpu::iq256_variants() & cpu::kIq256Vnni; }
++int down_variants(int type) {
++    return (cpu::iq256_variants() & cpu::kIq256Vnni) | (type == 20 ? cpu::kIq4nlWide : 0);
++}
+ void gu_rows_v(int v, int type, const uint8_t* blob, size_t gu_row, size_t up_off, const void* const* act, int nt,
+                float* const* ff) {
+     cpu::iq256_gu_rows_v(v, type, blob, gu_row, up_off, (int) kH, act, nt, ff, 0, (int) kFF);
+@@ -101,6 +103,7 @@ std::string variant_name(int v) {
+     std::string s;
+     if (v & cpu::kIq256Gather) s += "gather";
+     if (v & cpu::kIq256Vnni) s += s.empty() ? "vnni" : "+vnni";
++    if (v & cpu::kIq4nlWide) s += s.empty() ? "wide-nl" : "+wide-nl";
+     return s;
+ }
+ #endif
+@@ -316,7 +319,7 @@ int check_down(int d_type) {
+     std::printf("  %-8s down rows vs %s: rel %.2e\n", type_name(d_type),
+                 d_type == 20 ? "ggml vec_dot" : "a double reference", r_ref);
+     if (!(r_ref <= 1e-5)) { std::printf("  %-8s MISMATCH against the reference\n", type_name(d_type)); ++failures; }
+-    for (int v : subsets(down_variants())) {
++    for (int v : subsets(down_variants(d_type))) {
+         size_t differ = 0;
+         std::vector<float> o(kMaxT * R);
+         for (int nt = 1; nt <= kMaxT; ++nt) {
+@@ -329,6 +332,18 @@ int check_down(int d_type) {
+                     variant_name(v).c_str(), differ, variant_name(0).c_str());
+         if (differ) ++failures;
+     }
++    if (d_type == 20) {
++        size_t differ = 0;
++        std::vector<float> o(kMaxT * R);
++        for (int nt = 1; nt <= kMaxT; ++nt) {
++            float* op[kMaxT];
++            for (int t = 0; t < nt; ++t) op[t] = &o[t * R];
++            cpu::iq4nl256_down_rows(w, f.d_row, (int) kFF, a.dnp, nt, op, 0, (int) kH);
++            for (int t = 0; t < nt; ++t) differ += rows_differ(op[t], &one[t * R], R);
++        }
++        std::printf("  iq4_nl   dispatch     1..8 tokens: %zu down rows differ from the scalar one-token rows\n", differ);
++        if (differ) ++failures;
++    }
+     return failures;
+ }
+ 
+@@ -420,7 +435,7 @@ int bench(const std::vector<std::string>& pairs, const std::vector<int>& nts, in
+             };
+         };
+         if (!dispatch_only && kVariants) {
+-            for (int v : subsets(gu_variants() | down_variants()))
++            for (int v : subsets(gu_variants() | down_variants(dt)))
+                 ms.push_back({variant_name(v),
+                               [&, v, gt](const uint8_t* blob, int nt) { gu_rows_v(v, gt, blob, f.gu_row, f.up_off, a.gup, nt, ff); },
+                               down_v(v)});
+diff --git a/src/kernels/cpu/iq_avx2_rows.inl b/src/kernels/cpu/iq_avx2_rows.inl
+index a8af07f..e26f344 100644
+--- a/src/kernels/cpu/iq_avx2_rows.inl
++++ b/src/kernels/cpu/iq_avx2_rows.inl
+@@ -240,7 +240,7 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
+ // kvalues_iq4nl pshufb decode and the |w| half of the signed x signed product.  Here both are computed once
+ // per block; every token then costs a sign, a maddubs, a madd and an fmadd.  The arithmetic is ggml's - only
+ // the order of the float additions differs.
+-template <int NT> STRATA_ROWS_FN
++template <int NT, bool Wide> STRATA_ROWS_FN
+ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* const* y, float* const* out,
+                 int r0, int r1) {
+     const __m128i values = _mm_loadu_si128((const __m128i*) kvalues_iq4nl);
+@@ -254,11 +254,21 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
+         for (int ib = 0; ib < nb; ++ib) {
+             const uint8_t* blk = row + (size_t) ib * sizeof(block_iq4_nl);
+             rows_ahead(blk, pf);
+-            const __m128i bits = _mm_loadu_si128((const __m128i*) (blk + 2));
+-            const __m128i lo = _mm_and_si128(bits, m4b);                      // values 0..15
+-            const __m128i hi = _mm_and_si128(_mm_srli_epi16(bits, 4), m4b);    // values 16..31
+-            const __m256i q4 = _mm256_inserti128_si256(_mm256_castsi128_si256(_mm_shuffle_epi8(values, lo)),
+-                                                       _mm_shuffle_epi8(values, hi), 1);
++            __m256i q4;
++            if constexpr (Wide) {
++                // The same decoded bytes in the same lanes: a broadcast load and one shuffle
++                // replace two shuffles plus inserti128 on Broadwell's single shuffle port.
++                const __m256i bits = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) (blk + 2)));
++                const __m256i indices = _mm256_and_si256(
++                    _mm256_blend_epi32(bits, _mm256_srli_epi16(bits, 4), 0xf0), _mm256_set1_epi8(15));
++                q4 = _mm256_shuffle_epi8(_mm256_broadcastsi128_si256(values), indices);
++            } else {
++                const __m128i bits = _mm_loadu_si128((const __m128i*) (blk + 2));
++                const __m128i lo = _mm_and_si128(bits, m4b);
++                const __m128i hi = _mm_and_si128(_mm_srli_epi16(bits, 4), m4b);
++                q4 = _mm256_inserti128_si256(_mm256_castsi128_si256(_mm_shuffle_epi8(values, lo)),
++                                              _mm_shuffle_epi8(values, hi), 1);
++            }
+             const __m256i aq = _mm256_sign_epi8(q4, q4);   // |w|: the unsigned operand of maddubs
+             const float dx = h2f(u16(blk));
+             for (int t = 0; t < NT; ++t) {
+@@ -272,16 +282,16 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
+     }
+ }
+ 
+-STRATA_ROWS_FN void iq4nl_nt(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* const* y, int nt,
++template <bool Wide> STRATA_ROWS_FN void iq4nl_nt(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* const* y, int nt,
+                              float* const* out, int r0, int r1) {
+     switch (nt) {
+-        case 1: iq4nl_rows<1>(w, row_bytes, n, y, out, r0, r1); break;
+-        case 2: iq4nl_rows<2>(w, row_bytes, n, y, out, r0, r1); break;
+-        case 3: iq4nl_rows<3>(w, row_bytes, n, y, out, r0, r1); break;
+-        case 4: iq4nl_rows<4>(w, row_bytes, n, y, out, r0, r1); break;
++        case 1: iq4nl_rows<1, Wide>(w, row_bytes, n, y, out, r0, r1); break;
++        case 2: iq4nl_rows<2, Wide>(w, row_bytes, n, y, out, r0, r1); break;
++        case 3: iq4nl_rows<3, Wide>(w, row_bytes, n, y, out, r0, r1); break;
++        case 4: iq4nl_rows<4, Wide>(w, row_bytes, n, y, out, r0, r1); break;
+         default: for (int t0 = 0; t0 < nt; t0 += 4) {
+             const int k = nt - t0 < 4 ? nt - t0 : 4;
+-            iq4nl_nt(w, row_bytes, n, y + t0, k, out + t0, r0, r1);
++            iq4nl_nt<Wide>(w, row_bytes, n, y + t0, k, out + t0, r0, r1);
+         }
+     }
+ }
