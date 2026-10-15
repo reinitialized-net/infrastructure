@@ -25,6 +25,11 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Changed
 
+- Migrate llm1's existing Pascal performance patch to Strata 0.1.44.1 and
+  include upstream Responses reasoning-effort routing tests in the package
+  checks. Retain the measured CPU/GPU split, prompt staging and cache cadence
+  after focused streaming and cache-scheduling trials showed no speed gain.
+
 - Migrate llm1 to Strata 0.1.44 and port its GTX 1070 performance patch,
   retaining two-slot speculative decode and native hyper-connection weights.
   Include focused Pascal kernel qualification tools and document the expert

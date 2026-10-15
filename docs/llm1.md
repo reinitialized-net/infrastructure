@@ -31,9 +31,9 @@ print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
 The context is 131072 tokens, with two concurrent requests; a third waits.
-The deployed Strata 0.1.44 and engine patch reached 41-42 tokens/s on a short
-solo coding smoke check, about 37 tokens/s total for two requests, and
-146 prompt tokens/s (2026-10-13). These are short samples; the Performance
+The deployed Strata 0.1.44.1 and engine patch reached 40.2 tokens/s on a short
+solo coding smoke check, 38.5 tokens/s total for two requests, and
+135 prompt tokens/s (2026-10-14). These are short samples; the Performance
 section retains the broader earlier measurements and long-context limits.
 Budget several minutes to read a fresh 30k-token prompt. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
@@ -469,8 +469,9 @@ dequantization. Their upstream P40 measurements are not GTX 1070 results.
 [FreeToken](https://github.com/FlashML-org/FreeToken) supplies a useful comparison:
 its hybrid scheduler divides missed experts using CPU and PCIe bandwidth measured
 while both run, and its prompt path double-buffers streamed expert layers.
-Strata already streams the next prompt layer while the current layer runs and
-maintains an adaptive GPU expert cache. More expert traffic over PCIe also reads
+Strata has an ahead-streaming prompt path and an adaptive GPU expert cache;
+the current smaller prompt chunks use a routed staging ring (see the 0.1.44.1
+measurements below). More expert traffic over PCIe also reads
 host DRAM, so it can compete with the CPU pool. Keep `--pcie-frac 0` unless a
 same-workload measurement beats it; the historical 15% DMA experiment above lost.
 The current kernel-copy path can be checked separately without selecting the
@@ -506,14 +507,63 @@ The batch windows became shorter, but draft acceptance in this sample fell
 from 72.0% to 66.5%, so there is no demonstrated two-request throughput gain.
 These short checks do not requalify long-context throughput or prove a hardware
 maximum. The source host check, external-secret host build and activation passed;
-the active engine is 0.1.44.
+the active engine at that point was 0.1.44.
 
 One bounded expert-streaming check used `strata_tune: {"pcie_frac": 0.2}`
 on the same solo coding prompt, between the two CPU-miss runs. It reached
 27.9 t/s versus 41.2 and 42.5 with `pcie_frac: 0`; the returned completion was
 256 tokens in each case. This uses the current kernel-copy path, not the older
-DMA experiment. The service therefore keeps `--pcie-frac 0`. Prompt-layer
-streaming and asynchronous adaptive-cache uploads remain enabled.
+DMA experiment. The service therefore keeps `--pcie-frac 0`. Prompt expert
+staging and asynchronous adaptive-cache uploads remain enabled.
+
+### 0.1.44.1 migration
+
+The patch applies to the 0.1.44.1 release; the ggml commit and CUDA 12.9 toolchain
+remain pinned. This release also fixes reasoning-effort routing in the Responses
+API. The package runs upstream's effort-routing tests alongside its authentication
+tests, and the separately built workspace harness keeps its route tests.
+
+Deployed on 2026-10-14 after the secret-free host check, external-secret host
+build, 34 upstream API tests and 26 harness authentication/workspace tests passed.
+The final package passed the GTX 1070's 360 dequantization cases, matrix-vector
+parity suite and 134 sampled FP32 GEMM shapes. Both `batch_test.py --batch 2 --n 2`
+and `--n 1` produced all 64 greedy tokens per slot identically to solo decoding
+with a fixed adaptive cache and `STRATA_IQ_MT_MIN=1`. The supported host rebuild
+and explicit service restart succeeded; the active binary is 0.1.44.1, health
+reports a loaded model with 131072 context, and API authentication checks passed.
+The temporary test override was removed. The model, quantization, context limit
+and two-request capacity are unchanged.
+
+After the final restart, the same 256-token coding and B-tree checks measured
+40.2 tokens/s solo and 38.5 tokens/s combined (including admission). The initial
+0.1.44 samples were 41.1 and 39.5 respectively: this migration demonstrates no
+additional decode speedup. A fresh 1,571-token prompt read at 135.0 tokens/s.
+The live Responses API also completed a request with `reasoning.effort: none`,
+returning a message and zero reasoning tokens.
+
+Three focused scheduling trials on 2026-10-14 were not retained:
+
+- `--adapt-async 1` reduced the two-slot adaptive wait from 1.85 to 0.15 ms per
+  window, but solo client decode was 40.5 versus 41.1 tokens/s and total
+  two-request throughput was 38.6 versus 39.5. The existing
+  `STRATA_ADAPT_OVERLAP=1` remains preferable in this sample.
+- `STRATA_PREFILL_STREAM_MIN=512` let the current 768-token prompt chunks use
+  ahead streaming through 199 slots instead of routed staging through eight.
+  A fresh 1,571-token prompt slowed from 135.5 to 118.9 tokens/s. The larger
+  ring borrowed 430 instead of 239 expert-cache slots. The default threshold
+  remains in place; larger qualifying chunks still use ahead streaming.
+- `--adapt-every 1` refreshed the cache every window instead of every four.
+  Solo decode fell to 40.0 tokens/s and total two-request throughput to 37.6,
+  against 41.1 and 39.5 at baseline. The default cadence stays in place.
+
+An experimental patch also removed empty PCIe kernels from the verify graphs.
+With a fixed expert cache, its output tokens matched the old path through solo,
+slot, fresh-prompt and zero/nonzero PCIe transitions. Decode stayed within
+measurement noise, so the extra graph-management code was not retained.
+
+These apply FreeToken's bandwidth and memory-budget lessons to this host rather
+than assuming that more streaming must be faster. They are short comparisons,
+not a new long-context qualification or a proof of maximum hardware throughput.
 
 ### Nightly backups
 
@@ -523,8 +573,10 @@ nightly vzdump runs (01:00, all VMs; a full read of a large disk can take hours)
 those reads slow from about 0.15 ms to 0.5 ms typical and 80-800 ms at the 99th
 percentile, and decode can fall to a third. A row the engine has read before is
 cached in its 1M-row cache, so repeated text is not affected. `--ple-io ram`
-avoids the disk entirely, but it locks 27 GiB more RAM; llm1 (104 GiB) would
-keep about 16 GiB for the page cache and the system. Not tried.
+avoids the disk entirely, but it locks about 27 GiB more RAM. On 2026-10-14
+the running service left only 31-32 GiB available, so this would leave roughly
+4-5 GiB before further conversation/checkpoint growth. It remains disabled;
+the earlier estimate of 16 GiB spare did not reflect the current service.
 
 ### Host tuning
 
@@ -552,7 +604,8 @@ Still open:
   would take memory from the node-0 VMs.
 - **Backup-proof n-gram reads.** Either restore hotData's mirror (the pool lost
   an NVMe to the GPU) or use `--ple-io ram` on llm1, which still needs about
-  27 GiB more RAM than llm1 can spare.
+  27 GiB for the table plus enough headroom for the current service's checkpoints
+  and prompt buffers (see "Nightly backups").
 
 ## Update policy
 
@@ -658,7 +711,7 @@ is configured for node 0 too; 102 (w11test) is unchanged.
 
 - The model is in `/mnt/data/models` on llm1's data disk, bind-mounted
   read-only into `strata`.
-- Strata is pinned to the `v0.1.44` tag. When bumping it, update the ggml
+- Strata is pinned to the `v0.1.44.1` tag. When bumping it, update the ggml
   commit from `third_party/ggml/VERSION.txt`, re-check the MTP fetch patch
   (`strata-mtp-fetch.patch`), and benchmark one and two requests against the
   Performance table.

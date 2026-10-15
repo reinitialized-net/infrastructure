@@ -35,13 +35,13 @@ let
 in
 cuda.backendStdenv.mkDerivation {
   pname = "strata";
-  version = "0.1.44";
+  version = "0.1.44.1";
 
   src = fetchFromGitHub {
     owner = "Niko1221";
     repo = "Strata";
-    rev = "v0.1.44";
-    hash = "sha256-Yjlu2tRBYrabTp/hZvZh4QECJZSTJe8Bh2P6MqvQdX0=";
+    rev = "v0.1.44.1";
+    hash = "sha256-Jfo2uldtyXW8Y/wQxA7WcYwtmzCGAOaXgnlMSo7K9LE=";
   };
 
   patches = [
@@ -97,9 +97,9 @@ cuda.backendStdenv.mkDerivation {
     runHook postInstall
   '';
 
-  # The API key and Host/Origin checks.
+  # API key, Host/Origin and reasoning-effort routing checks.
   doInstallCheck = true;
   installCheckPhase = ''
-    cd $out/share/strata && PYTHONDONTWRITEBYTECODE=1 ${python.interpreter} -m unittest serve.test_security
+    cd $out/share/strata && PYTHONDONTWRITEBYTECODE=1 ${python.interpreter} -m unittest serve.test_security serve.test_effort_paths
   '';
 }
