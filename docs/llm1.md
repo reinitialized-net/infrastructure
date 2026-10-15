@@ -31,11 +31,12 @@ print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
 The context is 131072 tokens, with two concurrent requests; a third waits.
-The deployed Strata 0.1.44.1 and engine patches reached 40.30 tokens/s solo,
-38.29 tokens/s total for two requests and 131.7 prompt tokens/s on a fresh
-1,589-token prompt (2026-10-15). Live throughput was essentially unchanged
-from the freshly restarted baseline; the latest gains are in isolated CPU
-and dense-weight preparation components. These are short samples; the
+The deployed Strata 0.1.44.1 and exact engine optimizations reached 40.6
+tokens/s solo, 39.1 tokens/s total for two requests and 132.6 prompt tokens/s
+on a fresh 1,580-token prompt in the pre-deployment live comparison
+(2026-10-15). Live throughput was essentially unchanged from the freshly
+restarted baseline; measured gains are in isolated CPU and dense-weight
+preparation components. These are short samples; the
 Performance section retains the broader earlier measurements and long-context limits.
 Budget several minutes to read a fresh 30k-token prompt. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
@@ -704,6 +705,65 @@ Coalescing PLE reads contained in an existing straddling read reduced a syntheti
 neighboring-row fixture from seven reads to six with identical bytes. Decode
 heads address disjoint ranges, however, and no useful real-workload hit rate was
 established. Neither trial is retained; the direct-I/O backup limitation remains.
+
+### Wider IQ4_XS decode and direct draft transfers
+
+The second 2026-10-15 optimization extends the lane-preserving CPU nibble
+decode to multi-token IQ4_XS gate/up rows (`STRATA_IQ4XS_WIDE=1`). On llm1's
+E5-2690 v4, the focused two-token, 25-expert comparison measured median
+gate/up time of 0.477 to 0.463 ms per expert and combined gate/up plus down
+time of 0.848 to 0.834 ms (1.7% less). The existing IQ4_NL optimization
+was enabled in both arms. The installed `iq_avx2_parity` passed with zero
+failures, including exact original/wide results for one through eight tokens.
+
+`STRATA_DIRECT_MTP_COPY=1` removes the temporary full draft-KV snapshot on
+slot/solo transfers. It uses the existing copier to transfer the authoritative
+host pool and reconstruct the destination's resident ring. If the drafters
+have different KV residency modes, it retains the existing save/restore path:
+each drafter can independently fall back from a host-backed ring to resident
+KV during loading. This avoids temporary allocation and copying without adding
+a persistent buffer or reducing context or batch capacity.
+
+The packaged `conversation_snapshot_test` passed 4,225 checks on llm1,
+including 54 new fixtures (324 assertions) covering direct draft copies,
+partial/wrapped pages, zero extent, different ring capacities and both
+transfer directions. The full-model baseline/candidate gate preserved all
+272 token IDs and finish reasons across fresh-prompt, solo, one-slot and
+two-slot execution. A repeated slot/solo fixture also preserved all 64
+continuation and 32 follow-up tokens, reused the 821-token checkpoint and
+read the follow-up suffix in 543 ms. Its two return transfers took 16.6 and
+16.4 ms; no baseline transfer timing was collected, so these are functional
+evidence rather than a measured transfer speedup.
+
+The small fixed-cache full-model sample was 0.6% slower solo, 1.7% slower
+with two slots and 3.2% slower with one slot. A fresh-restart live comparison
+with both switches enabled was essentially unchanged: solo 40.48 to 40.58
+tokens/s, two requests combined 39.07 to 39.13 tokens/s (including admission),
+and a fresh 1,580-token prompt 133.0 to 132.6 tokens/s (11,879.1 to
+11,914.5 ms). Both live prompts' output hashes matched the baseline.
+These short samples demonstrate no meaningful whole-service speedup; the
+measured gain is the CPU component above. Long-context throughput remains
+unqualified. Weights, quantization, sampling, 131072-token context, two-request
+capacity, 13 CPU workers, `--spec 4` and `--pcie-frac 0` are unchanged.
+
+The combined secret-free host check passed, including 34 upstream API and
+26 harness tests. The candidate live check also passed authentication
+(401 without a key, 200 with one) and a Responses API request.
+
+The final secret-free check, external-secret system build, supported
+`rebuildHost llm1` and explicit Strata restart passed. The running service
+has both new switches and the previous optimizations enabled declaratively,
+with no runtime drop-ins. Final health reported the loaded model and
+131072-token context; authenticated/unauthenticated access returned 200/401,
+and the Responses API completed with `ready`. The deployed engine is
+`/nix/store/p67hb08sricqa9mhirwm7wlwicl60wgf-strata-0.1.44.1`; the system is
+`/nix/store/wk2dhgn2jfwdnk4cp9cj38m5dm4cmk4l-nixos-system-llm1-26.05.20260924.c508844`.
+
+A further prefill activation-reuse idea was rejected before implementation:
+consecutive GDN projections widen the same activations, but avoiding that
+small conversion would need additional buffer-lifetime and fallback handling
+for little expected benefit. Routed expert staging already keeps transfers
+ahead and overlaps shared-expert work by default; no prefill change was added.
 
 ### Nightly backups
 

@@ -25,6 +25,12 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Changed
 
+- Extend llm1's exact CPU optimization to multi-token IQ4_XS gate/up decode
+  and copy draft KV state directly during slot/solo transfers, retaining
+  snapshot fallback for different residency modes. Target parity and repeated
+  checkpoint reuse passed. Combined CPU expert time fell 1.7% in the focused
+  test; short live comparisons showed no meaningful whole-service speedup.
+
 - Preserve Strata's turn checkpoints across batch-slot/solo transfers so lone
   requests can resume the faster solo decoder without losing prompt reuse.
   Reuse IQ4_XS activation layouts across CPU expert rows with bitwise parity
