@@ -125,6 +125,10 @@ let
         # full-model parity: all 272 baseline/candidate tokens matched.
         STRATA_IQ4NL_WIDE = "1";
         STRATA_PREFILL_FUSED_WIDEN = "1";
+        # Exact IQ4_XS multi-token decode and direct MTP KV transfers passed
+        # full-model parity and repeated slot/solo checkpoint restoration.
+        STRATA_IQ4XS_WIDE = "1";
+        STRATA_DIRECT_MTP_COPY = "1";
       };
       # Start from what the VRAM expert cache learned before the last restart.
       expert_profile_save = "expert-profile-learned.bin";
