@@ -31,10 +31,10 @@ index b71e8a9..9bfba57 100644
              check(!conversation_kv_restore(bad,f.state,f.g,upto,index,err),"reject incompatible geometry");
              if (fmt==kKvInt8) {
 diff --git a/src/program/generate.cpp b/src/program/generate.cpp
-index 2e861b7..3d6024d 100644
+index 2e861b7..3787880 100644
 --- a/src/program/generate.cpp
 +++ b/src/program/generate.cpp
-@@ -9872,6 +9872,19 @@ int main(int argc, char** argv) {
+@@ -9872,6 +9872,21 @@ int main(int argc, char** argv) {
          };
          // STRATA_DIRECT_COPY=0: the slot copies go through a host image (save + restore), as before
          static const bool direct_copy = [] { const char* v = std::getenv("STRATA_DIRECT_COPY"); return v == nullptr || v[0] != '0'; }();
@@ -45,7 +45,9 @@ index 2e861b7..3d6024d 100644
 +        }();
 +        auto copy_draft_kv = [&](const strata::core::QsaState& from, const strata::core::QsaState& to,
 +                                 int64_t upto, std::string& e) -> bool {
-+            if (direct_mtp_copy)
++            // Each drafter may independently fall back from a host-backed ring to resident KV at load time.
++            // The snapshot path supports crossing that boundary; the direct copier requires matching modes.
++            if (direct_mtp_copy && from.kv_mode == to.kv_mode)
 +                return strata::core::conversation_kv_copy(from, to, draft_geometry, upto, false, e);
 +            strata::core::ConversationKv image;
 +            return strata::core::conversation_kv_save(image, from, draft_geometry, upto, false, e) &&
@@ -54,7 +56,7 @@ index 2e861b7..3d6024d 100644
          // the session a request just left behind (its prompt) -> slot b's sessions, on every stage
          auto copy_to_slot = [&](int b, const std::vector<int32_t>& ids, std::string& e) -> bool {
              const int64_t upto = (int64_t) ids.size();
-@@ -9909,11 +9922,8 @@ int main(int argc, char** argv) {
+@@ -9909,11 +9924,8 @@ int main(int argc, char** argv) {
                  // are on the drafter's device (the last stage's GPU with a layer split): the copy's ring refill is a
                  // kernel launch there.
                  const strata::core::OnDevice on_mtp(mtp.device());
@@ -67,7 +69,7 @@ index 2e861b7..3d6024d 100644
                      cudaDeviceSynchronize() != cudaSuccess)
                      return false;
                  slot_mtp[(size_t) b]->set_prompt_len(upto);
-@@ -9962,11 +9972,8 @@ int main(int argc, char** argv) {
+@@ -9962,11 +9974,8 @@ int main(int argc, char** argv) {
              if (batch_mtp) {
                  // A returning solo request resumes from its slot's draft KV (on the drafter's device, as above).
                  const strata::core::OnDevice on_mtp(mtp.device());
