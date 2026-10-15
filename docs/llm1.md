@@ -31,10 +31,11 @@ print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
 The context is 131072 tokens, with two concurrent requests; a third waits.
-The deployed Strata 0.1.44.1 and engine patch reached 40.2 tokens/s on a short
-solo coding smoke check, 38.5 tokens/s total for two requests, and
-135 prompt tokens/s (2026-10-14). These are short samples; the Performance
-section retains the broader earlier measurements and long-context limits.
+The deployed Strata 0.1.44.1 and engine patches reached 40.7 tokens/s on a short
+solo coding stream and 38.3 tokens/s total for two requests (2026-10-14).
+The earlier 135 prompt tokens/s sample predates the checkpoint/activation fixes;
+fresh-prompt throughput was not remeasured. These are short samples; the
+Performance section retains the broader earlier measurements and long-context limits.
 Budget several minutes to read a fresh 30k-token prompt. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
 Follow-up turns reuse checkpoints of the conversation (6 by default), and each
@@ -316,6 +317,24 @@ slots and for one.
   isolation (relative difference 1e-7), and 10% less CPU time in batch windows,
   where most expert groups hold one token. `STRATA_IQ4XS_GU1=0` uses
   ggml-cpu's dot.
+- **Reuse the CPU activation layout.** `strata-activation-reuse.patch` adds
+  `STRATA_IQ4XS_PACK_ACT=1`: the single-token IQ4_XS kernel permutes its Q8_K
+  activation bytes once per call, then reuses them for every gate/up row.
+  Integer lane sums, FP32 accumulation order and SwiGLU remain the same.
+  The workspace is bounded at 8 KiB per worker; wider inputs and single-row
+  tasks use the original path. `iq4xs_gu1_parity` compares both paths bit for
+  bit, including partial rows and the workspace fallback. Set the switch to
+  `0` to retain the previous kernel.
+- **Keep checkpoints when returning to solo.**
+  `strata-slot-checkpoints.patch` carries the slot's turn checkpoints back
+  with its live K/V state. Previously only a partial prompt restore or an
+  explicit checkpoint restore kept them; a full live restore discarded them.
+  A second admission into the same slot then lost the next turn's reuse point.
+  The existing token, image and extent checks still decide which checkpoints
+  are valid. `tests/check-strata-slot-checkpoints.py` exercises repeated
+  transfers with a private engine and compares the continuation and next turn
+  against uninterrupted solo references. It requires an available GPU and
+  an explicit model config, executable, tools directory and output path.
 
 ## Performance
 
@@ -400,9 +419,9 @@ read beside a decoding agent takes 2x instead of 1.5x as long as alone. Mean
 client decode per turn: 22.5 t/s (1.0) against 12.3 (0.5, in a run that also
 contained the re-read below).
 
-llm1 also sets `STRATA_PARALLEL_SOLO=0` in the unit's environment (the server
-reads it, not the engine, so it is not in the config's `env`): a request left
-alone in a batch slot stays there instead of going back to the solo path. With
+The previous configuration set `STRATA_PARALLEL_SOLO=0` in the unit's environment
+(the server reads it, not the engine, so it is not in the config's `env`): a request
+left alone in a batch slot stayed there instead of going back to the solo path. With
 the default, a request moved slot -> solo -> slot -> solo lost its cached state
 on the second return and was read again from scratch (22,055 tokens in 156 s;
 about 15 minutes at 128K). With it off, every follow-up turn reused its prefix
@@ -564,6 +583,51 @@ measurement noise, so the extra graph-management code was not retained.
 These apply FreeToken's bandwidth and memory-budget lessons to this host rather
 than assuming that more streaming must be faster. They are short comparisons,
 not a new long-context qualification or a proof of maximum hardware throughput.
+
+### Checkpoint and activation reuse
+
+The 2026-10-14 follow-up fixes the reason solo promotion had been disabled.
+Returning a full live slot cleared the main session's checkpoints. The next
+admission overwrote the slot with that empty checkpoint list, so a later turn
+whose rendered history omitted reasoning had no prefix to restore. The engine
+now transfers those checkpoints with the state and applies the existing
+prefix/extent filter. `STRATA_PARALLEL_SOLO=1` lets a request left alone return
+to the faster solo decoder.
+
+The focused full-model regression reproduced two slot/solo transfers followed
+by a turn with rewritten assistant history. Before the fix, it reused zero
+tokens and read the prompt in 7,541 ms. Afterward, it reused the 821-token turn
+checkpoint and read only the suffix in 562 ms. All 64 continuation tokens and
+all 32 follow-up tokens matched their uninterrupted solo references. This
+demonstrates avoided rereading, not higher throughput on a fresh prompt.
+
+The CPU optimization separately keeps the existing IQ4_XS arithmetic while
+reusing its permuted activation layout across rows. On llm1's E5-2690 v4,
+the focused 127 MiB, one-thread comparison measured 0.338 to 0.323 ms per
+gate/up expert (4.4% less time; three short passes). Its 240 synthetic cases
+were bit-identical, and the broader AVX2 parity suite passed. With the service's
+actual `STRATA_IQ_MT_MIN` default and a fixed expert cache, enabling it preserved
+every one of 384 solo/single-slot/two-slot output tokens. Two-slot throughput
+in that small check moved from 26.7 to 27.0 tokens/s; one-slot throughput was
+unchanged at 26.2. These fixed-cache checks are correctness gates and differ
+from normal adaptive-cache serving; they do not establish a broad decode gain.
+
+Both patches are deployed on llm1. The host source check, live-secret system
+build, 34 upstream API tests and 26 harness tests passed. After activation,
+the service reported the expected engine and both switches enabled, with no
+runtime drop-ins. Health, authenticated access and rejection of unauthenticated
+requests passed. Streamed requests also exercised a live slot returning to
+solo: it restored 244 tokens in 15 ms and completed its remaining 37 tokens.
+
+The short live check measured 40.7 tokens/s solo and 38.3 tokens/s combined,
+against 39.8 and 38.7 before these changes on the same prompts. Solo rate uses
+the interval between first and last content; combined rate includes prompt
+admission. Cache warmth differed, so these samples do not demonstrate a gain
+in combined throughput. The measured gains are the preserved turn reuse and
+the CPU kernel component above.
+
+The model, quantization, 131072-token context, two-request capacity and sampling
+settings are unchanged. Long-context performance has not been requalified.
 
 ### Nightly backups
 

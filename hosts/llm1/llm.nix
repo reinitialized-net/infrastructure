@@ -118,6 +118,9 @@ let
         # projections. gemm_f32_parity --quick passed on this GTX 1070 with
         # the pinned CUDA 12.9 cuBLAS (134 shapes, bitwise; 2026-10-13).
         STRATA_DENSE_F32 = "1";
+        # Reuse the single-token IQ4_XS activation layout across expert rows.
+        # Same FP32 results in the parity gate; 4.4% less gate/up time on llm1.
+        STRATA_IQ4XS_PACK_ACT = "1";
       };
       # Start from what the VRAM expert cache learned before the last restart.
       expert_profile_save = "expert-profile-learned.bin";
@@ -195,9 +198,9 @@ in
     # VRAM checks load NVML (libnvidia-ml.so.1) by name.
     environment = {
       LD_LIBRARY_PATH = "/run/opengl-driver/lib";
-      # Read by the server, not the engine: a request left alone stays in its
-      # slot, since moving back to the solo path could lose its cached state.
-      STRATA_PARALLEL_SOLO = "0";
+      # Read by the server: a request left alone returns to the faster solo path.
+      # strata-slot-checkpoints.patch preserves its turn checkpoints across transfers.
+      STRATA_PARALLEL_SOLO = "1";
     };
     script = ''
       # Strata takes several keys separated by commas; the file has one per line.

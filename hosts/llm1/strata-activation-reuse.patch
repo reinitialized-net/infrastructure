@@ -1,0 +1,177 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1380,6 +1380,8 @@
+   # against ggml-cpu's dot, on random blocks; --bench: ms per expert on one thread, the weights streamed from DRAM
+   add_executable(iq_avx2_parity src/kernels/cpu/iq_avx2_parity.cpp)
+   target_link_libraries(iq_avx2_parity PRIVATE strata_kernels_cpu)
++  add_executable(iq4xs_gu1_parity src/kernels/cpu/iq4xs_gu1_parity.cpp)
++  target_link_libraries(iq4xs_gu1_parity PRIVATE strata_kernels_cpu)
+   # MODEL-UPDATE: the pool's expert rows per format on T threads against the RAM bandwidth (a benchmark, no test)
+   add_executable(kq_cpu_bench src/kernels/cpu/kq_cpu_bench.cpp)
+   target_link_libraries(kq_cpu_bench PRIVATE strata_kernels_cpu)
+--- a/include/strata/kernels/cpu/iq_avx2.hpp
++++ b/include/strata/kernels/cpu/iq_avx2.hpp
+@@ -37,6 +37,9 @@
+ /// per register (ggml-cpu's single-token dot takes one row and 16 values at a time).  Another summation order.
+ void iq4xs256_gu1_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* act, float* ff,
+                        int r0, int r1);
++/// Qualification: optionally reuse the permuted activations across rows (same bits, bounded stack workspace).
++void iq4xs256_gu1_rows_v(bool pack_act, const uint8_t* blob, size_t gu_row, size_t up_off, int n,
++                         const void* act, float* ff, int r0, int r1);
+ 
+ /// ggml's quantize_row_q8_K (x86 runs the scalar reference), byte-identical, in AVX-2: n values -> n/256 block_q8_K.
+ void q8k_quant_avx2(const float* x, void* y, int64_t n);
+--- a/src/kernels/cpu/iq_avx2.cpp
++++ b/src/kernels/cpu/iq_avx2.cpp
+@@ -557,10 +557,24 @@
+ }
+ }  // namespace
+ 
+-void iq4xs256_gu1_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* act, float* ff,
+-                       int r0, int r1) {
++namespace {
++// The same Q8_K activation is used by every row. Move its lane permutations out of the weight loop; keep the
++// integer lane sums, FP32 FMA order and SwiGLU unchanged. The fallback has no workspace or extra loads.
++template <bool Packed>
++void iq4xs_gu1(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* act, float* ff,
++               int r0, int r1) {
+     const block_q8_K* y = (const block_q8_K*) act;
+     const int nb = n / QK_K;
++    alignas(32) __m256i packed[Packed ? 256 : 1];   // at most 8192 activation bytes, shared by gate and up
++    if constexpr (Packed) {
++        for (int i = 0; i < nb; ++i)
++            for (int j = 0; j < 4; ++j) {
++                const __m256i a = _mm256_loadu_si256((const __m256i*) (y[i].qs + 64 * j));
++                const __m256i b = _mm256_loadu_si256((const __m256i*) (y[i].qs + 64 * j + 32));
++                packed[8 * i + 2 * j] = _mm256_permute2x128_si256(a, b, 0x20);
++                packed[8 * i + 2 * j + 1] = _mm256_permute2x128_si256(a, b, 0x31);
++            }
++    }
+     const __m256i values = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) kvalues_iq4nl));
+     const __m256i m4 = _mm256_set1_epi8(0x0f);
+     const int pf = prefetch_distance();
+@@ -577,10 +591,16 @@
+             const int8_t* q8 = y[i].qs;
+             __m256i sg = _mm256_setzero_si256(), su = _mm256_setzero_si256();
+             for (int j = 0; j < 4; ++j) {
+-                const __m256i ya = _mm256_loadu_si256((const __m256i*) (q8 + 64 * j));
+-                const __m256i yb = _mm256_loadu_si256((const __m256i*) (q8 + 64 * j + 32));
+-                const __m256i ylo = _mm256_permute2x128_si256(ya, yb, 0x20);   // values 0-15 of sub-blocks 2j, 2j+1
+-                const __m256i yhi = _mm256_permute2x128_si256(ya, yb, 0x31);   // values 16-31
++                __m256i ylo, yhi;
++                if constexpr (Packed) {
++                    ylo = packed[8 * i + 2 * j];
++                    yhi = packed[8 * i + 2 * j + 1];
++                } else {
++                    const __m256i ya = _mm256_loadu_si256((const __m256i*) (q8 + 64 * j));
++                    const __m256i yb = _mm256_loadu_si256((const __m256i*) (q8 + 64 * j + 32));
++                    ylo = _mm256_permute2x128_si256(ya, yb, 0x20);
++                    yhi = _mm256_permute2x128_si256(ya, yb, 0x31);
++                }
+                 sg = _mm256_add_epi32(sg, iq4xs_pair(bg, j, values, m4, ylo, yhi, scg));
+                 su = _mm256_add_epi32(su, iq4xs_pair(bu, j, values, m4, ylo, yhi, scu));
+             }
+@@ -591,5 +611,20 @@
+         ff[r] = (g / (1.f + std::exp(-g))) * u;
+     }
+ }
++}  // namespace
++
++void iq4xs256_gu1_rows_v(bool pack_act, const uint8_t* blob, size_t gu_row, size_t up_off, int n,
++                         const void* act, float* ff, int r0, int r1) {
++    if (pack_act && n > 0 && n <= 8192 && r1 - r0 > 1)
++        iq4xs_gu1<true>(blob, gu_row, up_off, n, act, ff, r0, r1);
++    else
++        iq4xs_gu1<false>(blob, gu_row, up_off, n, act, ff, r0, r1);
++}
++
++void iq4xs256_gu1_rows(const uint8_t* blob, size_t gu_row, size_t up_off, int n, const void* act, float* ff,
++                       int r0, int r1) {
++    static const bool packed = [] { const char* v = std::getenv("STRATA_IQ4XS_PACK_ACT"); return v && v[0] == '1'; }();
++    iq4xs256_gu1_rows_v(packed, blob, gu_row, up_off, n, act, ff, r0, r1);
++}
+ 
+ }  // namespace strata::kernels::cpu
+--- a/src/kernels/cpu/iq_avx2_parity.cpp
++++ b/src/kernels/cpu/iq_avx2_parity.cpp
+@@ -455,6 +455,18 @@
+                           if (dt == 42) cpu::q2_rows_any(blob + f.down_off, f.d_row, (int) (kFF / 64), a.q2p, nt, out, 0, (int) kH);
+                           else cpu::native_down_rows(f, blob, a.dnp, nt, out, 0, (int) kH);
+                       }});
++
++        if (gt == 23) {
++            for (bool packed : {false, true}) {
++                auto gu1 = ms.back();
++                gu1.name = packed ? "gu1-packed" : "gu1-original";
++                gu1.gu = [&, packed](const uint8_t* blob, int nt) {
++                    for (int t = 0; t < nt; ++t)
++                        cpu::iq4xs256_gu1_rows_v(packed, blob, f.gu_row, f.up_off, (int) kH, a.gup[t], ff[t], 0, (int) kFF);
++                };
++                ms.push_back(std::move(gu1));
++            }
++        }
+ 
+         std::printf("\n%s: %zu experts of %.2f MB (%.0f MB), one thread\n", pair.c_str(), E, f.bytes / 1048576.0,
+                     E * (double) f.bytes / 1048576.0);
+--- /dev/null
++++ b/src/kernels/cpu/iq4xs_gu1_parity.cpp
+@@ -0,0 +1,59 @@
++// Compare activation reuse with the established IQ4_XS gate/up kernel, bit for bit.
++// Synthetic weights exercise every nibble and signed scale; no model or GPU required.
++#include "strata/kernels/cpu/expert_layout.hpp"
++#include "strata/kernels/cpu/iq_avx2.hpp"
++#include "ggml.h"
++#include "ggml-cpu.h"
++
++#include <algorithm>
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
++#include <random>
++#include <vector>
++
++int main() {
++    namespace cpu = strata::kernels::cpu;
++    if (!cpu::cpu_avx2_ok()) {
++        std::puts("iq4xs_gu1_parity: skipped (requires AVX2)");
++        return 77;
++    }
++    ggml_cpu_init();
++    constexpr int rows = 37;
++    const int spans[][2] = {{0, 0}, {0, 1}, {1, 3}, {3, 20}, {0, rows}, {rows - 1, rows}};
++    std::mt19937 rng(20261014);
++    std::uniform_real_distribution<float> values(-2.f, 2.f);
++    int cases = 0;
++    for (int n : {256, 768, 2560, 8192, 8448}) {
++        const size_t stride = ggml_row_size(GGML_TYPE_IQ4_XS, n);
++        const size_t up = stride * rows;
++        // Offset the blob to exercise unaligned expert storage, too.
++        std::vector<uint8_t> storage(up * 2 + 1), activation(ggml_row_size(GGML_TYPE_Q8_K, n));
++        auto* blob = storage.data() + 1;
++        std::vector<float> x(n), ref(rows), got(rows);
++        for (int seed = 0; seed < 8; ++seed) {
++            for (size_t i = 0; i < up * 2; ++i) blob[i] = (uint8_t) rng();
++            for (size_t i = 0; i < up * 2; i += ggml_type_size(GGML_TYPE_IQ4_XS)) {
++                const ggml_fp16_t scale = ggml_fp32_to_fp16(seed == 0 ? 0.f : values(rng) * .001f);
++                std::memcpy(blob + i, &scale, sizeof(scale));
++            }
++            for (auto& a : x) a = seed == 1 ? 0.f : values(rng);
++            ggml_get_type_traits_cpu(GGML_TYPE_Q8_K)->from_float(x.data(), activation.data(), n);
++            for (const auto& span : spans) {
++                std::fill(ref.begin(), ref.end(), -12345.f);
++                std::fill(got.begin(), got.end(), -12345.f);
++                cpu::iq4xs256_gu1_rows_v(false, blob, stride, up, n, activation.data(), ref.data(), span[0], span[1]);
++                cpu::iq4xs256_gu1_rows_v(true, blob, stride, up, n, activation.data(), got.data(), span[0], span[1]);
++                if (std::memcmp(ref.data(), got.data(), rows * sizeof(float))) {
++                    std::fprintf(stderr, "iq4xs_gu1_parity: mismatch n=%d seed=%d rows=[%d,%d)\n",
++                                 n, seed, span[0], span[1]);
++                    return 1;
++                }
++                for (int r = 0; r < rows; ++r)
++                    if ((r < span[0] || r >= span[1]) && got[r] != -12345.f) return 1;
++                ++cases;
++            }
++        }
++    }
++    std::printf("iq4xs_gu1_parity: %d cases, bitwise OK (including workspace fallback and untouched rows)\n", cases);
++}

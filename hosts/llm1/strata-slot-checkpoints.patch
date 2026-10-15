@@ -1,0 +1,29 @@
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -11072,18 +11072,22 @@
+                     resume = 0;
+                     from_live = false;
+                 } else {
+-                    checks.clear();   // the main session's checkpoints were of the conversation it held before
++                    // A live slot also owns the turn checkpoints of the K/V just copied back. Keep them when a
++                    // request returns to solo: the next slot admission must carry them on again. Otherwise a
++                    // solo -> slot -> solo cycle loses the next turn's prefix when the client omits reasoning.
++                    // The existing prefix/extent filter below drops checkpoints beyond a rewind or on another branch.
++                    checks = bs[(size_t) slot_source].checks;
++                    tail_ckpt_len = -1;
+                     // a read that gave way, the same request again (into its own slot): on with it - its segments and
+                     // checkpoints as if it had not stopped
+                     if (slot_ck == nullptr && bs[(size_t) slot_source].partial && admit_slot == slot_source) {
+                         resumed_from0 = bs[(size_t) slot_source].partial_from0;
+-                        for (const ConvCheckpoint& c : bs[(size_t) slot_source].checks) checks.push_back(c);
+                         bs[(size_t) slot_source].partial = false;
+                     }
+                     if (slot_ck != nullptr) {
+                         live = slot_ck->ids;
+-                        checks.push_back(*slot_ck);   // the main session's chain has it now
+-                        checks.back().used = ++check_clock;
++                        for (ConvCheckpoint& c : checks)
++                            if (c.ids.size() == slot_ck->ids.size()) c.used = ++check_clock;
+                     } else {
+                         live = bs[(size_t) slot_source].ids;
+                     }

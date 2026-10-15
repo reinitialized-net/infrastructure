@@ -49,6 +49,10 @@ cuda.backendStdenv.mkDerivation {
     ./strata-mtp-fetch.patch
     # Engine changes for the GTX 1070 and two requests at once (docs/llm1.md, "Engine patch").
     ./strata-performance.patch
+    # Reuse the IQ4_XS kernel's activation lane layout across rows, with exact qualification.
+    ./strata-activation-reuse.patch
+    # Preserve turn checkpoints when a request returns from a batch slot to solo decoding.
+    ./strata-slot-checkpoints.patch
   ];
 
   nativeBuildInputs = [
@@ -77,6 +81,8 @@ cuda.backendStdenv.mkDerivation {
     "gemm_f32_parity"
     "mmvq_il_parity"
     "dequant_wide_parity"
+    "iq4xs_gu1_parity"
+    "iq_avx2_parity"
   ];
 
   # Strata forces GGML_NATIVE, which the Nix compiler wrapper strips; target
@@ -89,6 +95,7 @@ cuda.backendStdenv.mkDerivation {
     install -Dm755 strata $out/bin/strata
     mkdir -p $out/share/strata $out/libexec/strata
     install -m755 gemm_f32_parity mmvq_il_parity dequant_wide_parity $out/libexec/strata/
+    install -m755 iq4xs_gu1_parity iq_avx2_parity $out/libexec/strata/
     cp -r ../{serve,tools,data} $out/share/strata/
     makeWrapper ${python.interpreter} $out/bin/strata-server \
       --chdir $out/share/strata --add-flags "-m serve.server"

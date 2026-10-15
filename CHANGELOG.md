@@ -25,6 +25,11 @@ Current infrastructure point releases use SemVer-style `vMAJOR.MINOR.PATCH` tags
 
 ### Changed
 
+- Preserve Strata's turn checkpoints across batch-slot/solo transfers so lone
+  requests can resume the faster solo decoder without losing prompt reuse.
+  Reuse IQ4_XS activation layouts across CPU expert rows with bitwise parity
+  coverage, and add a full-model regression check for repeated state transfers.
+
 - Migrate llm1's existing Pascal performance patch to Strata 0.1.44.1 and
   include upstream Responses reasoning-effort routing tests in the package
   checks. Retain the measured CPU/GPU split, prompt staging and cache cadence
