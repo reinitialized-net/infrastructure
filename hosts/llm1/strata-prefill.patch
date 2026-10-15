@@ -1,0 +1,237 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index fd251eb..ffd0d03 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -869,6 +869,10 @@ if(STRATA_ENABLE_CUDA OR STRATA_ENABLE_HIP)
+     # Pascal, opt-in STRATA_DENSE_F32=1: the dense projections' FP16 GEMMs as cublasSgemm on FP32 copies, bitwise vs
+     # the cuBLAS FP16 call over a sweep of chunk sizes (GPU, synthetic, no model; --full sweeps every size, --bench
+     # adds timings).  Not a ctest: whether the two agree is a property of the cuBLAS build, which this checks.
++    if(STRATA_EXPERIMENTAL_SM60)
++      add_executable(dequant_fused_parity src/prefill/dequant_fused_parity.cu)
++      target_link_libraries(dequant_fused_parity PRIVATE strata_prefill)
++    endif()
+     add_executable(gemm_f32_parity src/prefill/gemm_f32_parity.cu)
+     target_link_libraries(gemm_f32_parity PRIVATE strata_prefill )
+   endif()
+diff --git a/include/strata/kernels/dequant_bf16.hpp b/include/strata/kernels/dequant_bf16.hpp
+index ee88298..8134399 100644
+--- a/include/strata/kernels/dequant_bf16.hpp
++++ b/include/strata/kernels/dequant_bf16.hpp
+@@ -26,6 +26,13 @@ void dequant_f16(int ggml_type, const void* blocks, int64_t row0, int64_t rows,
+ bool dequant_f16_ld(int ggml_type, const void* blocks, int64_t row0, int64_t rows, int64_t cols, int64_t ld,
+                     uint16_t* out, void* stream);
+ 
++#if !defined(STRATA_USE_HIP) && defined(STRATA_EXPERIMENTAL_SM60)
++/// Exact dequant_f16 followed by widening, without the intermediate device buffer.
++/// Returns false without launching for formats outside Q4_K/Q5_K/Q6_K/IQ4_XS.
++bool dequant_f16_f32(int type, const void* blocks, int64_t row0, int64_t rows, int64_t cols,
++                     float* out, void* stream);
++#endif
++
+ /// The same into FP32 (tests and small tensors).
+ void dequant_f32(int ggml_type, const void* blocks, int64_t row0, int64_t rows, int64_t cols, float* out, void* stream);
+ 
+diff --git a/src/kernels/cuda/dequant_bf16.cu b/src/kernels/cuda/dequant_bf16.cu
+index 97759ae..15f66da 100644
+--- a/src/kernels/cuda/dequant_bf16.cu
++++ b/src/kernels/cuda/dequant_bf16.cu
+@@ -30,6 +30,13 @@ __device__ __forceinline__ void put(uint16_t* o, int i, float v) { o[i] = f2bf(v
+ struct H16 { uint16_t v; };
+ __device__ __forceinline__ void put(H16* o, int i, float v) { o[i].v = __half_as_ushort(__float2half_rn(v)); }
+ __device__ __forceinline__ void put(float* o, int i, float v) { o[i] = v; }
++#if !defined(__HIPCC__) && defined(STRATA_EXPERIMENTAL_SM60)
++struct H32 { float v; };
++__device__ __forceinline__ void put(H32* o, int i, float v) {
++    o[i].v = __half2float(__float2half_rn(v));
++}
++#endif
++
+ 
+ __constant__ int8_t kv_iq4nl[16] = {-127, -104, -83, -65, -49, -35, -22, -10, 1, 13, 25, 38, 53, 69, 89, 113};
+ 
+@@ -416,6 +423,15 @@ bool dequant_f16_ld(int ggml_type, const void* blocks, int64_t row0, int64_t row
+     return true;
+ }
+ 
++#if !defined(__HIPCC__) && defined(STRATA_EXPERIMENTAL_SM60)
++bool dequant_f16_f32(int type, const void* blocks, int64_t row0, int64_t rows, int64_t cols,
++                     float* out, void* stream) {
++    if (!wide_type(type) || rows <= 0 || cols <= 0 || cols % 256 != 0) return false;
++    launch<H32>(type, blocks, row0, rows, cols, reinterpret_cast<H32*>(out), stream);
++    return true;
++}
++#endif
++
+ void dequant_f32(int ggml_type, const void* blocks, int64_t row0, int64_t rows, int64_t cols, float* out, void* stream) {
+     if (iq_only(ggml_type)) {
+         iq_dequant_f32(ggml_type, (const uint8_t*) blocks + (size_t) row0 * iq_row_bytes(ggml_type, cols), rows * cols,
+diff --git a/src/prefill/dequant_fused_parity.cu b/src/prefill/dequant_fused_parity.cu
+new file mode 100644
+index 0000000..744acf8
+--- /dev/null
++++ b/src/prefill/dequant_fused_parity.cu
+@@ -0,0 +1,122 @@
++// Exact fused dequantization versus FP16 dequantization plus widening.
++// Raw and sane blocks, wide and scalar dispatch, whole tensors and row slices.
++#include "strata/kernels/dequant_bf16.hpp"
++
++#include <cuda_runtime.h>
++#include <cuda_fp16.h>
++
++#include <cstdint>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <random>
++#include <string>
++#include <vector>
++
++namespace K = strata::kernels;
++
++static void ck(cudaError_t e, const char* what) {
++    if (e != cudaSuccess) { std::fprintf(stderr, "dequant_fused_parity: %s: %s\n", what, cudaGetErrorString(e)); std::exit(2); }
++}
++static uint16_t f2h(float f) {   // FP32 -> FP16 bits, round to nearest even (normal range only: the scales below)
++    uint32_t u;
++    std::memcpy(&u, &f, 4);
++    const uint32_t sign = (u >> 16) & 0x8000u;
++    int e = (int) ((u >> 23) & 0xff) - 127 + 15;
++    uint32_t m = u & 0x7fffffu;
++    if (e <= 0) return (uint16_t) sign;
++    if (e >= 31) return (uint16_t) (sign | 0x7c00u);
++    uint32_t h = sign | ((uint32_t) e << 10) | (m >> 13);
++    if ((m & 0x1fffu) > 0x1000u || ((m & 0x1fffu) == 0x1000u && (h & 1u))) ++h;
++    return (uint16_t) h;
++}
++struct Type { int id; const char* name; int block_bytes; };
++static const Type kTypes[] = {{12, "Q4_K", 144}, {13, "Q5_K", 176}, {14, "Q6_K", 210}, {23, "IQ4_XS", 136}};
++
++// `sane`: random codes and scales with a block scale in a weight's range; else raw random bytes
++static std::vector<uint8_t> make_blocks(const Type& t, int64_t rows, int64_t cols, bool sane, uint32_t seed) {
++    std::mt19937 rng(seed);
++    const int64_t nb = rows * (cols / 256);
++    std::vector<uint8_t> b((size_t) nb * t.block_bytes);
++    for (size_t i = 0; i + 4 <= b.size(); i += 4) { const uint32_t r = rng(); std::memcpy(&b[i], &r, 4); }
++    for (size_t i = b.size() & ~(size_t) 3; i < b.size(); ++i) b[i] = (uint8_t) rng();
++    if (sane) {
++        std::uniform_real_distribution<float> ud(1e-4f, 3e-2f);
++        for (int64_t k = 0; k < nb; ++k) {
++            uint8_t* p = b.data() + (size_t) k * t.block_bytes;
++            const uint16_t d = f2h((rng() & 1 ? 1.0f : -1.0f) * ud(rng)), dm = f2h(-ud(rng));
++            if (t.id == 14) std::memcpy(p + 208, &d, 2);
++            else if (t.id == 23) std::memcpy(p, &d, 2);
++            else { std::memcpy(p, &d, 2); std::memcpy(p + 2, &dm, 2); }
++        }
++    }
++    return b;
++}
++
++__global__ void widen(const uint16_t* in, float* out, int64_t n) {
++    int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
++    if (i < n) out[i] = __half2float(__ushort_as_half(in[i]));
++}
++int main() {
++    setvbuf(stdout, nullptr, _IONBF, 0);
++    cudaStream_t s; ck(cudaStreamCreate(&s), "stream");
++    cudaEvent_t start, stop; ck(cudaEventCreate(&start), "event"); ck(cudaEventCreate(&stop), "event");
++    int cases = 0;
++    for (const Type& t : kTypes) {
++        for (int64_t rows : {7, 6144, 10240}) {
++            const int64_t cols = 2560, n = rows * cols;
++            for (bool sane : {false, true}) {
++                auto h = make_blocks(t, rows, cols, sane, 1234 + t.id);
++                uint8_t* blocks; uint16_t* half; float *a, *b;
++                ck(cudaMalloc((void**) &blocks, h.size()), "blocks");
++                ck(cudaMalloc((void**) &half, n * 2), "half");
++                ck(cudaMalloc((void**) &a, n * 4), "a"); ck(cudaMalloc((void**) &b, n * 4), "b");
++                ck(cudaMemcpy(blocks, h.data(), h.size(), cudaMemcpyHostToDevice), "upload");
++                for (int wide : {0, 1}) {
++                    K::dequant_set_wide(wide);
++                    for (int slice : {0, 1}) {
++                        const int64_t row0 = slice ? rows / 3 : 0, nr = rows - row0, count = nr * cols;
++                        auto run = [&](bool fused) {
++                            if (fused) {
++                                if (!K::dequant_f16_f32(t.id, blocks, row0, nr, cols, b, s)) std::exit(2);
++                            } else {
++                                K::dequant_f16(t.id, blocks, row0, nr, cols, half, s);
++                                widen<<<(unsigned)((count + 255) / 256), 256, 0, s>>>(half, a, count);
++                            }
++                        };
++                        ck(cudaMemsetAsync(a, 0xa5, n * 4, s), "guard");
++                        ck(cudaMemsetAsync(b, 0xa5, n * 4, s), "guard");
++                        run(false); run(true);
++                        std::vector<float> ah(n), bh(n);
++                        ck(cudaMemcpyAsync(ah.data(), a, n * 4, cudaMemcpyDeviceToHost, s), "read");
++                        ck(cudaMemcpyAsync(bh.data(), b, n * 4, cudaMemcpyDeviceToHost, s), "read");
++                        ck(cudaStreamSynchronize(s), "sync");
++                        if (std::memcmp(ah.data(), bh.data(), n * 4)) {
++                            std::printf("FAIL type=%d rows=%lld sane=%d wide=%d slice=%d\n", t.id, (long long) rows, sane, wide, slice);
++                            return 1;
++                        }
++                        ++cases;
++                        if (wide && sane && !slice && ((t.id == 13 && rows == 10240) || (t.id == 23 && rows == 6144))) {
++                            for (int pass = 0; pass < 3; ++pass) {
++                                float ms[2];
++                                for (int step = 0; step < 2; ++step) {
++                                    int mode = (step + pass) % 2;
++                                    for (int r = 0; r < 3; ++r) run(mode);
++                                    ck(cudaEventRecord(start, s), "start");
++                                    for (int r = 0; r < 20; ++r) run(mode);
++                                    ck(cudaEventRecord(stop, s), "stop"); ck(cudaEventSynchronize(stop), "wait");
++                                    ck(cudaEventElapsedTime(&ms[mode], start, stop), "time"); ms[mode] /= 20;
++                                }
++                                std::printf("type=%d rows=%lld pass=%d old_ms=%.4f fused_ms=%.4f speedup=%.3f\n",
++                                            t.id, (long long) rows, pass, ms[0], ms[1], ms[0] / ms[1]);
++                            }
++                        }
++                    }
++                }
++                ck(cudaFree(blocks), "free"); ck(cudaFree(half), "free"); ck(cudaFree(a), "free"); ck(cudaFree(b), "free");
++            }
++        }
++    }
++    std::printf("PASS %d bitwise cases, raw and sane blocks, scalar and wide, full and row slices\n", cases);
++    ck(cudaEventDestroy(start), "event"); ck(cudaEventDestroy(stop), "event"); ck(cudaStreamDestroy(s), "stream");
++}
+diff --git a/src/prefill/gemm.cu b/src/prefill/gemm.cu
+index 300da53..14edb3b 100644
+--- a/src/prefill/gemm.cu
++++ b/src/prefill/gemm.cu
+@@ -935,6 +935,37 @@ void Gemm::native(const uint16_t* X, int ggml_type, const void* W_blocks, float*
+     }
+ #if defined(STRATA_PREFILL_MMQ) && defined(__HIPCC__)
+     if (beta == 0.0f && (ldx == 0 || ldx == K) && native_mmq(X, ggml_type, W_blocks, Y, T, N, K, ldy)) return;
++#endif
++#if !defined(__HIPCC__) && defined(STRATA_EXPERIMENTAL_SM60)
++    static const bool fused = [] {
++        const char* v = std::getenv("STRATA_PREFILL_FUSED_WIDEN");
++        return v && std::atoi(v) != 0;
++    }();
++    const int64_t min_t = beta == 0.0f ? dense_f32_min_t(N, K) : 0;
++    // Match f16()'s existing shape, chunk and scratch gates; same operands and cuBLAS call.
++    if (fused && min_t > 0 && T >= min_t && N * K <= scratch_elems_ && dense_f32_on() &&
++        (ggml_type == 12 || ggml_type == 13 || ggml_type == 14 || ggml_type == 23)) {
++        const int64_t n_sl = (T * K + kXSliceElems - 1) / kXSliceElems;
++        const int64_t x_rows = (T + n_sl - 1) / n_sl;
++        if (tc_w_elems_ < 2 * N * K || tc_x_elems_ < 2 * x_rows * K) cudaStreamSynchronize((cudaStream_t) stream_);
++        if (grow(tc_w_, tc_w_elems_, 2 * N * K) && grow(tc_x_, tc_x_elems_, 2 * x_rows * K)) {
++            float* wf = reinterpret_cast<float*>(tc_w_);
++            float* xf = reinterpret_cast<float*>(tc_x_);
++            if (strata::kernels::dequant_f16_f32(ggml_type, W_blocks, 0, N, K, wf, stream_)) {
++                if (ldy <= 0) ldy = N;
++                const float alpha = 1.0f;
++                for (int64_t t0 = 0; t0 < T; t0 += x_rows) {
++                    const int64_t n = std::min<int64_t>(x_rows, T - t0);
++                    f16_to_f32(X + t0 * K, xf, n * K, (cudaStream_t) stream_);
++                    ck(cublasSgemm((cublasHandle_t) handle_, CUBLAS_OP_T, CUBLAS_OP_N, (int) N, (int) n, (int) K,
++                                  &alpha, wf, (int) K, xf, (int) K, &beta, Y + t0 * ldy, (int) ldy),
++                       "cublasSgemm (fused FP16-rounded dequant)");
++                }
++                return;
++            }
++        }
++        cudaGetLastError(); // Allocation failure: the existing half path remains available.
++    }
+ #endif
+     if (N * K > scratch_elems_) {
+         // Too large for the scratch at once: in row slices.
