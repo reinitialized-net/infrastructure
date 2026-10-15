@@ -121,6 +121,10 @@ let
         # Reuse the single-token IQ4_XS activation layout across expert rows.
         # Same FP32 results in the parity gate; 4.4% less gate/up time on llm1.
         STRATA_IQ4XS_PACK_ACT = "1";
+        # Wider IQ4_NL CPU decode and fused dense preparation passed exact
+        # full-model parity: all 272 baseline/candidate tokens matched.
+        STRATA_IQ4NL_WIDE = "1";
+        STRATA_PREFILL_FUSED_WIDEN = "1";
       };
       # Start from what the VRAM expert cache learned before the last restart.
       expert_profile_save = "expert-profile-learned.bin";
