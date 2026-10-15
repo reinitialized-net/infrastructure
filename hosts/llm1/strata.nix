@@ -55,8 +55,12 @@ cuda.backendStdenv.mkDerivation {
     ./strata-slot-checkpoints.patch
     # Opt-in AVX2 IQ4_NL nibble decode, checked by the existing CPU parity tool.
     ./strata-cpu-decode.patch
+    # Opt-in lane-preserving IQ4_XS wide decode; extends iq_avx2_parity.
+    ./strata-cpu-round2.patch
     # Opt-in fused native dequantization to FP32, preserving intermediate FP16 rounding.
     ./strata-prefill.patch
+    # Opt-in direct MTP KV state transfers, checked by conversation_snapshot_test.
+    ./strata-decode-round2.patch
   ];
 
   nativeBuildInputs = [
@@ -76,6 +80,7 @@ cuda.backendStdenv.mkDerivation {
     (lib.cmakeBool "STRATA_ENABLE_CUDA" true)
     (lib.cmakeBool "STRATA_EXPERIMENTAL_SM60" true)
     (lib.cmakeBool "STRATA_BUILD_TESTS" true)
+    (lib.cmakeBool "STRATA_BUILD_CONVERSATION_TESTS" true)
     (lib.cmakeFeature "CMAKE_CUDA_ARCHITECTURES" "61")
     (lib.cmakeFeature "STRATA_GGML_DIR" "${ggml}")
   ];
@@ -88,6 +93,7 @@ cuda.backendStdenv.mkDerivation {
     "dequant_fused_parity"
     "iq4xs_gu1_parity"
     "iq_avx2_parity"
+    "conversation_snapshot_test"
   ];
 
   # Strata forces GGML_NATIVE, which the Nix compiler wrapper strips; target
@@ -101,6 +107,7 @@ cuda.backendStdenv.mkDerivation {
     mkdir -p $out/share/strata $out/libexec/strata
     install -m755 gemm_f32_parity mmvq_il_parity dequant_wide_parity $out/libexec/strata/
     install -m755 iq4xs_gu1_parity iq_avx2_parity dequant_fused_parity $out/libexec/strata/
+    install -m755 conversation_snapshot_test $out/libexec/strata/
     cp -r ../{serve,tools,data} $out/share/strata/
     makeWrapper ${python.interpreter} $out/bin/strata-server \
       --chdir $out/share/strata --add-flags "-m serve.server"
