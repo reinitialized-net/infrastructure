@@ -53,6 +53,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-activation-reuse.patch
     # Preserve turn checkpoints when a request returns from a batch slot to solo decoding.
     ./strata-slot-checkpoints.patch
+    # Opt-in AVX2 IQ4_NL nibble decode, checked by the existing CPU parity tool.
+    ./strata-cpu-decode.patch
   ];
 
   nativeBuildInputs = [
