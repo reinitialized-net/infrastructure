@@ -21,7 +21,7 @@ in
   secrets.frigate.file = lib.mkDefault "/var/lib/service-secrets/frigate.env";
   services.containerAutoUpdate.skipContainers = [ "frigate" ];
   virtualisation.oci-containers.containers.frigate = {
-    image = "ghcr.io/blakeblackshear/frigate:0.18.0";
+    image = "ghcr.io/blakeblackshear/frigate:0.18.2";
     autoStart = true;
     networks = [ "backend" ];
     # Only the authenticated API; no unauthenticated API, RTSP or go2rtc ports.
