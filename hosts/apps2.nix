@@ -191,7 +191,7 @@
     forgejoRunner = {
       autoStart = true;
       hostname = "forgejoRunner";
-      image = "code.forgejo.org/forgejo/runner:12";
+      image = "code.forgejo.org/forgejo/runner:13";
       environment = builtins.removeAttrs config.secrets.forgejoRunner.keys [
         "FORGEJO_RUNNER_REGISTRATION_TOKEN"
         "FORGEJO_ADMIN_API_TOKEN"
