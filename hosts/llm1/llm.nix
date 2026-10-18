@@ -71,19 +71,23 @@ let
         model
         "--expert-profile"
         "${strata}/share/strata/data/expert-profile.bin"
-        # Keep GPU room for both slots, prompt scratch, and lazy CUDA graphs.
+        # The most-used experts go to the GPU; the auto size leaves the reserve below.
         "--expert-cache"
-        "1"
-        # Bound prompt buffers so both request slots and decode graphs fit on 8 GiB.
+        "auto"
         "--prefill"
-        "256"
-        # Native serving requires a verify window even without an MTP head.
+        "auto"
+        # The base Qwen3.8 MTP head drafts up to 3 tokens; the target model verifies
+        # every one, so drafts change speed, not the output distribution.
         "--spec"
         "4"
-        "--mtp-max-t"
-        "4"
-        "--suffix-draft"
-        "0"
+        "--spec-min-p"
+        "0.5"
+        "--mtp"
+        "${strataDir}/mtp-base/rt"
+        # Lazy CUDA graphs and prompt buffers need headroom above the expert cache:
+        # with the default reserve the card fell to 185 MiB free (paging risk, #2065).
+        "--vram-reserve-mib"
+        "1000"
         # Missed experts run on the CPU only: the GPU otherwise waited on their
         # PCIe copies. Split windows overlap the CPU's experts with the GPU.
         "--pcie-frac"
@@ -100,6 +104,8 @@ let
         # Restore one worker per physical core for IQ4_XS; 27 was Swift tuning.
         "--pool-workers"
         "13"
+        # Each batch slot also verifies MTP drafts per window.
+        "--batch-mtp"
       ];
       # Two requests decode together; a request that starts alone runs on the
       # faster single-request path.
@@ -203,10 +209,14 @@ in
     unitConfig.ConditionPathExists = [
       model
       "/var/lib/private/strata/packs/qwen3.8-flash-next-uncensored-iq4_xs/tokenizer"
+      "/var/lib/private/strata/mtp-base/rt"
     ];
     # VRAM checks load NVML (libnvidia-ml.so.1) by name.
     environment = {
       LD_LIBRARY_PATH = "/run/opengl-driver/lib";
+      # Read by the server: a request left alone returns to the faster solo path.
+      # strata-slot-checkpoints.patch preserves its turn checkpoints across transfers.
+      STRATA_PARALLEL_SOLO = "1";
     };
     script = ''
       # Strata takes several keys separated by commas; the file has one per line.

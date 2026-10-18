@@ -241,8 +241,27 @@ sudo "$S/bin/strata-python" tools/iq_pack.py \
 ```
 
 Inspect `conversions.json`: compatibility projections may be rounded to BF16;
-expert and PLE tensors retain their GGUF representation. MTP and suffix drafting
-are disabled. The configured context remains 131072 with two request slots.
+expert and PLE tensors retain their GGUF representation. The configured context
+remains 131072 with two request slots.
+
+The MTP draft head is the base `Qwen/Qwen3.8-Flash-Next` head at Strata's pinned
+revision `de4b8e4d43b917e7706784d8bb445c9af86a3540` (public; `mtp_fetch.py`
+checks every tensor's SHA-256 against the safetensors index). Orca's own head
+needs the gated repository; its acceptance matched the base head's in October.
+The draft experts are packed as `q2_0`, with the English/code draft vocabulary:
+
+```bash
+M=/var/lib/private/strata/mtp-base
+sudo "$S/bin/strata-python" tools/mtp_fetch.py fetch --out $M
+sudo "$S/bin/strata-python" tools/mtp_pack.py --src $M --experts q2_0 --out $M/mtp-q2_0.gguf
+sudo "$S/bin/strata-python" tools/mtp_rt.py --gguf $M/mtp-q2_0.gguf --out $M/rt
+sudo cp data/draft_vocab_en.bin $M/rt/draft_vocab.bin
+sudo chown -R strata:strata $M
+```
+
+Resulting SHA-256 values on llm1 (2026-10-18): `rt/dense.bin`
+`c724dc0b0822ada5d2977bf5bde821605feabaa64ea2e0045b67ca656329070a`, `rt/experts.bin`
+`09398406be61f1f54c93861f449e48b8df0bfccbc9ec9b2b7636775a6ea9244f`.
 Explicitly restart `strata` after deployment and verify loaded health,
 authentication and real inference. Build success alone is not runtime evidence.
 
@@ -296,6 +315,30 @@ The earlier Orca-specific draft requires its gated source and was not available
 for this comparison. Do not infer that the historical roughly 40 tokens/s
 configuration has been fully restored. Only the verified worker change is
 active; the current model, 131072 context and two-request capacity are unchanged.
+
+### Decode restoration and quality gate (2026-10-18)
+
+The token-identity gate used for the model replacement also rejects changes
+that only reorder floating-point arithmetic: a GPU expert and the CPU compute
+the same quantized expert in a different order, and a draft changes the batch
+shape the target model is evaluated at. Quality is now gated by measurement
+instead: same weights, quantization, sampling and context, speculative drafts
+always verified by the target model, and Strata's teacher-forced yardstick
+(`tools/quant_quality.py`: top-1 agreement, KL and perplexity over code, docs,
+English, multilingual and agent text, 4,995 positions). On llm1 the base engine
+with every expert on the CPU against the same engine with 1,500 GPU experts
+measured 94.71% top-1 agreement, mean KL 0.026 and perplexity 4.042 against
+4.100: that is the floating-point noise floor, and neither side is more
+accurate. Bit-exact optimizations still use the token-identity checks.
+
+Under that gate the GPU expert cache (`--expert-cache auto`, 604 slots), the
+base MTP head with `--spec-min-p 0.5`, `--batch-mtp`, automatic prompt chunks,
+suffix drafting and `STRATA_PARALLEL_SOLO=1` are restored. The same four
+prompts as in the Performance section (T=0, 512 tokens) measured 37.75 t/s solo
+(33.8 / 35.0 / 40.4 / 41.8), 35.0 t/s for two concurrent requests and 146.5
+prompt t/s for 4,411 tokens; the replacement configuration ran at about 19 t/s
+solo. The card fell to 185 MiB free while CUDA graphs were captured, so
+`--vram-reserve-mib 1000` keeps the paging margin the engine asks for (#2065).
 
 ### Engine patch
 
