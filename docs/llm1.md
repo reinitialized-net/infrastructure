@@ -1,7 +1,8 @@
-# llm1 LLM Service (Qwen3.8-Flash-Next)
+# llm1 LLM Service (Swift 1.5 Qwen3.8-Flash-Next)
 
-`hosts/llm1/llm.nix` serves Qwen3.8-Flash-Next-Uncensored (OrcaRouter IQ4_XS,
-about 97 GB in three GGUF shards) on llm1 (VM 210 on hv1, `10.1.11.9`, mesh
+`hosts/llm1/llm.nix` serves [SC117 Swift 1.5 Qwen3.8-Flash-Next GSQ-RCO
+abliterated](https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF)
+(IQ3_S, 83,549,259,040 bytes in two GGUF shards) on llm1 (VM 210 on hv1, `10.1.11.9`, mesh
 `10.255.0.9`) with [Strata](https://github.com/Niko1221/Strata) on the
 passed-through GTX 1070. `strata.service` starts at boot and listens on
 `127.0.0.1:8080`. Until 2026-10-06 it ran on devenv.
@@ -16,14 +17,14 @@ passed-through GTX 1070. `strata.service` starts at boot and listens on
 
 On the mesh and on llm1 itself, every route except `/health` requires
 `Authorization: Bearer <key>` (Strata also accepts `x-api-key`). The model ID is
-`qwen3.8-flash-next`; Strata answers to any model name. Strata also serves the
+`swift-1.5-qwen3.8-flash-next`; Strata answers to any model name. Strata also serves the
 Anthropic Messages API (`/v1/messages`) and the Responses API (`/v1/responses`).
 
 ```python
 from openai import OpenAI
 client = OpenAI(base_url="https://llm.in.reinitialized.net/v1", api_key="<key>")
 r = client.chat.completions.create(
-    model="qwen3.8-flash-next",
+    model="swift-1.5-qwen3.8-flash-next",
     messages=[{"role": "user", "content": "Hello"}],
     reasoning_effort="low",
 )
@@ -31,7 +32,7 @@ print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
 The context is 131072 tokens, with two concurrent requests; a third waits.
-The deployed Strata 0.1.44.1 and exact engine optimizations reached 40.6
+The earlier Orca IQ4_XS deployment with Strata 0.1.44.1 and exact engine optimizations reached 40.6
 tokens/s solo, 39.1 tokens/s total for two requests and 132.6 prompt tokens/s
 on a fresh 1,580-token prompt in the pre-deployment live comparison
 (2026-10-15). Live throughput was essentially unchanged from the freshly
@@ -207,70 +208,95 @@ pins and `-march=broadwell`. It also installs the Python server
 (`strata-server`) and a Python for the packing tools (`strata-python`). A 12 GB
 card is upstream's floor for supported cards; 8 GB Pascal is a community path.
 
-How it uses the hardware:
+### Current model preparation
 
-- All 61 GiB of routed experts are copied from the GGUF shards into RAM and
-  pinned (`cudaHostRegister`), so the VM needs that much memory free. Loading
-  takes 1-2 minutes from the page cache.
-- The GPU holds the dense weights (2.2 GiB, 1.9 GiB of them read natively from
-  the GGUF), the MTP draft layer (835 MiB), the most-read 20K positions of the KV
-  cache (the rest streams from 1.55 GiB of pinned RAM), the two batch slots'
-  state (2 x 0.58 GiB) and drafters, and an expert cache in the remaining VRAM:
-  about 600 experts (1.48 GiB, about 2.4% of 24,576). The cache starts from what
-  it learned before the last restart (`expert_profile_save`), or upstream's
-  routing profile, and adapts to the requests.
-- About 30% of routed experts are cache hits on the GPU. The CPU pool computes
-  the rest at about 50 GB/s, close to the guest's measured 64 GB/s DRAM read
-  limit, so the CPU's memory bandwidth bounds decode. `--pcie-frac 0` keeps
-  missed experts off PCIe: copying them made the GPU wait longer than the CPU
-  took.
-- The MTP draft layer is the fine-tune's own head: Orca abliterated its 3
-  residual-writer tensors, and the other 28 `mtp.*` tensors equal the base
-  model's. It is built with upstream's recipe (`q2_0` experts, the English/code
-  draft vocabulary to save VRAM) and drafts up to 4 tokens. Measured against the
-  base head on 2026-10-06 (same prompts, two passes each), it does not change
-  speed: solo acceptance per prompt (code / prose / edit / think) was 77, 75 /
-  69, 70 / 85, 84 / 87, 86% with the base head and 75, 75 / 67, 70 / 85, 87 /
-  89, 84% with Orca's, batch-window acceptance 61% and 60%, and one request
-  33.83 and 33.85 t/s. It is kept because it is the model's own head.
+The Swift artifacts are pinned to Hugging Face revision
+`2b89cf3f7f2d9cb84275439e2c0cda83db15d32f`. The IQ3_S files are at the
+repository root; both shards are required. Put them in
+`/mnt/data/models/swift-1.5/`:
 
-### One-time preparation
+| File | SHA-256 |
+|------|---------|
+| `Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf` | `638fbd42a01c7b39a9b7b21c5c8dc5eb1876222d8bd268d471304b647fcd6f94` |
+| `Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00002-of-00002.gguf` | `091a4f6a53697a12a2ea1e5e1d61414410d50c0d44e971304602bba6873fd23d` |
 
-The unit starts only once these exist in `/var/lib/private/strata` (the unit's
-`StateDirectory`; with `DynamicUser` systemd keeps it there and adds the
-`/var/lib/strata` symlink only when the unit starts, so use the real path). Run
-the tools as root from the package's tree (`strata` and `strata-python` are on
-llm1's PATH). `mtp/` (the base model's head, built the same way without
-`STRATA_MTP_REPO`/`STRATA_MTP_REVISION`) is kept as a fallback; the fetched raw
-tensors (~5.2 GB) can be deleted after packing:
+Download `strata/rt/{dense.bin,dense.txt,experts.bin,draft_vocab.bin}` from
+that same revision to `/var/lib/private/strata/mtp-swift-1.5/rt/`, verifying
+the binary files against the repository's LFS SHA-256 values. These are the
+publisher-supplied draft runtime, not a Swift-trained MTP head: the model card
+states that Swift has no dedicated MTP head. Draft acceptance and speed must
+be measured on this model; earlier Orca measurements do not carry over.
+
+Keep the downloaded `rt/` intact. Prepare `rt-en/` with the same `dense.bin`,
+`dense.txt`, and `experts.bin`, but use the installed package's
+`data/draft_vocab_en.bin` as `draft_vocab.bin`, matching the previous deployment's
+English/code draft subset. This only restricts draft proposals; the target
+model retains its full vocabulary and multilingual output.
+
+Prepare its own dense pack and tokenizer using the installed engine:
 
 ```bash
 S=$(dirname "$(dirname "$(readlink -f "$(command -v strata)")")")
-cd $S/share/strata
-# The dense pack (~1.4 GiB, under a minute). Experts and the PLE table stay in the GGUF.
-sudo $S/bin/strata-python tools/iq_pack.py --compat-bf16 \
-  --gguf /mnt/data/models/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf \
-  --out /var/lib/private/strata/packs/orca-iq4_xs
-# Orca's MTP tensors (~5.2 GB of HTTP range reads from the gated BF16 repo), then the draft runtime.
-# HF_TOKEN: a read-only token for an HF account that accepted the repo's gate; pass it
-# without leaving it in shell history (e.g. `read -rs HF_TOKEN`) and delete the token afterwards.
-sudo HF_TOKEN="$HF_TOKEN" STRATA_MTP_REPO=orcarouter/Qwen3.8-Flash-Next-Uncensored \
-  STRATA_MTP_REVISION=e096800036ec20da7e2442dcd4044a004d4e99fa \
-  $S/bin/strata-python tools/mtp_fetch.py fetch --out /var/lib/private/strata/mtp-orca
-sudo $S/bin/strata-python tools/mtp_pack.py --src /var/lib/private/strata/mtp-orca --experts q2_0 \
-  --out /var/lib/private/strata/mtp-orca/mtp-q2_0.gguf
-sudo $S/bin/strata-python tools/mtp_rt.py --gguf /var/lib/private/strata/mtp-orca/mtp-q2_0.gguf \
-  --out /var/lib/private/strata/mtp-orca/rt
-sudo cp data/draft_vocab_en.bin /var/lib/private/strata/mtp-orca/rt/draft_vocab.bin
+cd "$S/share/strata"
+sudo mkdir -p /var/lib/private/strata/mtp-swift-1.5/rt-en
+for f in dense.bin dense.txt experts.bin; do
+  sudo cp /var/lib/private/strata/mtp-swift-1.5/rt/"$f" /var/lib/private/strata/mtp-swift-1.5/rt-en/"$f"
+done
+sudo cp data/draft_vocab_en.bin /var/lib/private/strata/mtp-swift-1.5/rt-en/draft_vocab.bin
+sudo "$S/bin/strata-python" tools/iq_pack.py \
+  --gguf /mnt/data/models/swift-1.5/Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf \
+  --out /var/lib/private/strata/packs/swift-1.5-iq3_s
 ```
 
-The engine log is `/var/lib/strata/strata.log`; the server's progress lines go
-to the journal. Upstream validates OrcaRouter IQ3_XXS and Q4_K_S. This IQ4_XS
-file (IQ4_XS gate/up, IQ4_NL down experts) packs and runs with the same
-`--compat-bf16` path, which rounds 364 small projections to BF16 (max abs error
-0.022); the engine patch reads 192 of them, the hyper-connection projections,
-from the GGUF instead. Answers were checked by hand, not with a quality
-benchmark.
+The PLE table is in **shard 1**; both `--native` and `--ple-gguf` point there.
+The pack keeps the GSQ-RCO tensors in their native form. The learned routing
+profile is separate (`expert-profile-swift-1.5-iq3_s.bin`). Preserve
+`--spec 4`, the supplied MTP runtime, 131072 context, two slots, and 13 CPU
+workers. Prompt chunks are capped at 64 tokens, with one GPU expert-cache slot
+(the remaining experts run on the CPU) and `--mtp-max-t 4` to avoid extra
+5/6-token suffix-window graphs. Together with the English/code draft subset,
+these bounds leave room for prompt scratch and lazy CUDA graphs on 8 GiB.
+Automatic prefill allocation failed at startup; smaller prompt chunks alone
+loaded but exhausted memory during decoding. These settings change batching,
+caching and speculation, not the context limit or target model weights.
+API URLs and authentication are unchanged; the advertised model ID
+is `swift-1.5-qwen3.8-flash-next` (Strata also accepts existing client aliases).
+
+Use the real `/var/lib/private/strata` state path for preparation; systemd
+manages `/var/lib/strata` as its DynamicUser symlink. The engine log is
+`/var/lib/strata/strata.log`; server progress is in the journal. After
+`rebuildHost llm1`, explicitly restart Strata and verify loaded health,
+authenticated inference, and rejection of unauthenticated API calls.
+The old Orca shards may be removed to make room; rollback then requires
+re-downloading them and restoring the old pack/configuration.
+
+Validated and deployed on 2026-10-17: both GGUF SHA-256 checks and the supplied
+runtime binary checks passed; the dense pack reported 96 exact conversions,
+zero rounded conversions, and zero maximum conversion error. The final
+secret-free host check, live-secret deployment, and explicit restart passed.
+The running system is
+`/nix/store/df0dhi20pfq4nsmxq2sz0l1xhfg1wnf9-nixos-system-llm1-26.05.20260924.c508844`.
+
+Live checks passed loaded health and model discovery through loopback and the
+LAN proxy, 401 without authentication and 200 with it on the direct API,
+arithmetic and code generation, two concurrent short requests, the previous
+model-name alias, and the Responses API. A fresh 1,456-token prompt completed
+correctly in 35.1 seconds; two concurrent 1,160-token requests completed
+correctly in 29.0 and 57.9 seconds. These are functional smoke checks, not a
+quality or throughput benchmark. After prompt scratch allocation, the GPU had
+about 215 MiB free; this remains a tight 8 GiB configuration, below upstream's
+512 MiB warning threshold. Full 131072-token operation and sustained-load
+performance have not been qualified. Earlier Orca throughput does not apply.
+
+The three old Orca GGUF shards were removed; `/mnt/data` had about 69 GiB
+free afterward. The pinned download manifest is stored beside the Swift
+shards. Old packs/draft artifacts remain, but rollback also needs the removed
+Orca weights to be downloaded again.
+
+The following engine qualification and performance sections record the
+**previous Orca IQ4_XS model**, unless explicitly dated as Swift validation.
+Their throughput, memory use, draft acceptance, and model-output parity are
+historical evidence, not qualification of Swift IQ3_S.
 
 ### Engine patch
 
