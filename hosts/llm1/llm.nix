@@ -103,11 +103,11 @@ let
         "int8"
         "--kv-resident"
         "20480"
-        # One worker per physical core (the guest sees 28 cores, really 14 with
-        # hyperthreads) leaves half the vCPUs free; 20 or 27 workers were no
-        # faster for one request (batch windows: 3.5% with 20).
+        # IQ3_S spends more time decoding codebooks than the old IQ4_XS model.
+        # Use both hardware threads of the 14 cores; the host joins 27 workers.
+        # Swift-specific output parity and timing: docs/llm1.md.
         "--pool-workers"
-        "13"
+        "27"
         # Each batch slot also verifies an MTP draft per window.
         "--batch-mtp"
       ];

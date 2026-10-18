@@ -251,8 +251,8 @@ sudo "$S/bin/strata-python" tools/iq_pack.py \
 The PLE table is in **shard 1**; both `--native` and `--ple-gguf` point there.
 The pack keeps the GSQ-RCO tensors in their native form. The learned routing
 profile is separate (`expert-profile-swift-1.5-iq3_s.bin`). Preserve
-`--spec 4`, the supplied MTP runtime, 131072 context, two slots, and 13 CPU
-workers. Prompt chunks are capped at 64 tokens, with one GPU expert-cache slot
+`--spec 4`, the supplied MTP runtime, 131072 context, two slots, and 27 CPU
+workers (Swift-specific tuning below). Prompt chunks are capped at 64 tokens, with one GPU expert-cache slot
 (the remaining experts run on the CPU) and `--mtp-max-t 4` to avoid extra
 5/6-token suffix-window graphs. Together with the English/code draft subset,
 these bounds leave room for prompt scratch and lazy CUDA graphs on 8 GiB.
@@ -292,6 +292,66 @@ The three old Orca GGUF shards were removed; `/mnt/data` had about 69 GiB
 free afterward. The pinned download manifest is stored beside the Swift
 shards. Old packs/draft artifacts remain, but rollback also needs the removed
 Orca weights to be downloaded again.
+
+### Swift throughput investigation (2026-10-17)
+
+The IQ3_S filename does not describe every expert tensor. The loaded
+`native_experts.txt` contains 20 layers with IQ2_S gate/up weights, 17 with
+IQ3_XXS, ten with IQ3_S, and only one with IQ4_XS. Down projections use
+IQ4_NL in 39 layers and Q2_0 in nine. The older IQ4_XS gate/up optimizations
+therefore apply to only one layer. The smaller 46.84 GiB expert arena saves
+RAM, but codebook decoding costs more CPU work than the old IQ4_XS path.
+
+The live configuration also changed from automatic GPU expert caching and
+prompt chunks to one cached expert and 64-token chunks. Observed cache hits
+are about 0.1%, so nearly all expert execution runs on the CPU. Native dense
+projections occupy 1833.41 MiB, versus the earlier Orca log's 1619.53 MiB.
+With both slots, draft weights, scratch and graphs loaded, the 8 GiB GPU is
+still below the engine's 512 MiB free-memory warning threshold. Increasing
+cache allocation without reclaiming memory is not a safe speed fix.
+
+Before tuning, the live 256-token smoke sample measured 28.0 tokens/s solo
+and 23.1 tokens/s combined for two requests (combined includes admission).
+Recent longer real requests reported 21.1–24.7 decode tokens/s and about
+37–42 prompt tokens/s. Historical Orca results around 40 decode and 133 prompt
+tokens/s use different weights and are not a controlled same-model comparison.
+
+The retained scheduling change uses 27 pool workers plus the participating
+host thread on the 14-core/28-thread guest. In the first fixed-cache
+comparison, solo decode moved from 26.34 to 26.84 tokens/s, two-slot throughput
+including admission from 18.44 to 19.31, and one-slot throughput from 17.82
+to 18.68. All 320 output token IDs and finish reasons matched. Forcing
+`STRATA_IQ256_GATHER=1` preserved tokens but slowed all three modes by about
+2–3%, so it was rejected. These settings keep the existing weights, sampling,
+reasoning behavior, context limit, KV precision and two-request capacity.
+
+A reverse-order repeat added a fresh 1,178-token prompt. All 336 token IDs
+and finish reasons matched between 27 and 13 workers, including fresh prefill,
+solo, two-slot and one-slot modes. In baseline-to-candidate order, solo decode
+was 26.54 to 27.45 tokens/s, two-slot throughput 18.11 to 19.46, and one-slot
+throughput 17.47 to 18.77. Prompt time was effectively unchanged: 27,409.9
+versus 27,396.0 ms (43.0 tokens/s). Together the two comparisons support a
+modest decode gain, not a return to Orca's throughput or proof of a hardware
+maximum. The model's mixed weight formats and tight VRAM budget remain the
+main limits; full-context sustained-load performance remains unqualified.
+
+The secret-free host check and actual external-secret host build passed.
+The installed package passed `dequant_wide_parity` (360 bitwise cases),
+`mmvq_il_parity`, `iq_avx2_parity` (zero failures), and
+`gemm_f32_parity --quick` (134 bitwise cases). The supported
+`rebuildHost llm1` deployment and explicit service restart succeeded. The
+running command has `--pool-workers 27`, no runtime drop-ins, and the same
+engine package. Health reports a loaded Swift model with 131072 context;
+the direct models endpoint returns 401 without authentication and 200 with it.
+The deployed system is
+`/nix/store/9zi1fi23cchl85qkwwirjsh3dg0494m2-nixos-system-llm1-26.05.20260924.c508844`.
+
+Fresh-restart API samples measured 26.47 to 28.89 tokens/s solo (256 tokens)
+and 23.65 to 25.27 tokens/s combined (512 tokens, including admission). The
+solo response and both concurrent response SHA-256 hashes matched. These are
+short live samples; the controlled repeats above measured smaller solo gains.
+No weight conversion, quantization reduction, reasoning restriction or
+context/capacity reduction was used.
 
 The following engine qualification and performance sections record the
 **previous Orca IQ4_XS model**, unless explicitly dated as Swift validation.
