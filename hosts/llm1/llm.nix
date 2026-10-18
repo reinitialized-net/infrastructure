@@ -79,8 +79,10 @@ let
         "1"
         # Swift's larger dense weights leave less VRAM than Orca IQ4_XS.
         # Bound prompt buffers so both MTP slots and decode graphs fit on 8 GiB.
+        # Each chunk streams nearly every routed expert over PCIe, so 256 reads
+        # prompts about twice as fast as 64 for ~58 MiB more VRAM (docs/llm1.md).
         "--prefill"
-        "64"
+        "256"
         "--spec"
         "4"
         # Keep suffix lookup within four tokens instead of adding 5/6-token graphs.

@@ -252,7 +252,7 @@ The PLE table is in **shard 1**; both `--native` and `--ple-gguf` point there.
 The pack keeps the GSQ-RCO tensors in their native form. The learned routing
 profile is separate (`expert-profile-swift-1.5-iq3_s.bin`). Preserve
 `--spec 4`, the supplied MTP runtime, 131072 context, two slots, and 27 CPU
-workers (Swift-specific tuning below). Prompt chunks are capped at 64 tokens, with one GPU expert-cache slot
+workers (Swift-specific tuning below). Prompt chunks are capped at 256 tokens, with one GPU expert-cache slot
 (the remaining experts run on the CPU) and `--mtp-max-t 4` to avoid extra
 5/6-token suffix-window graphs. Together with the English/code draft subset,
 these bounds leave room for prompt scratch and lazy CUDA graphs on 8 GiB.
@@ -352,6 +352,34 @@ solo response and both concurrent response SHA-256 hashes matched. These are
 short live samples; the controlled repeats above measured smaller solo gains.
 No weight conversion, quantization reduction, reasoning restriction or
 context/capacity reduction was used.
+
+### Swift prompt chunk and PCIe share (2026-10-17)
+
+With batch slots, the prompt path computes every routed expert on the GPU and
+streams it over PCIe through an 8-slot ring; nearly every expert is routed in
+each chunk, so prompt time follows the number of chunks. One restart per
+variant, one solo pass (four 512-token answers), two streams and a fresh
+1,364-token prompt:
+
+| Variant | 4,411-token prompt | 1,364-token prompt | Solo decode | Two streams |
+|---------|--------------------|--------------------|-------------|-------------|
+| `--prefill 64` (previous) | 41.2 t/s, 107 s | 39.5 t/s | 28.7 t/s | 24.3 t/s |
+| `--prefill 128` | 58.6 t/s | 56.5 t/s | 29.3 t/s | 24.0 t/s |
+| **`--prefill 256` (deployed)** | **85.2 t/s, 52 s** | **81.5 t/s** | **29.7 t/s** | **24.2 t/s** |
+| `--prefill 64`, no `--pcie-frac` (auto) | 41.2 t/s | 39.2 t/s | 18.9 t/s | 20.6 t/s |
+
+The 256-token chunk costs about 58 MiB of VRAM (489 instead of 547 MiB free
+once loaded). Two concurrent agents with fresh 8.6K-token prompts and three
+follow-up turns each ran without an allocation failure; the lowest free VRAM
+sampled was 129 MiB. Fresh prompts read at 70-86 tokens/s while the other slot
+decoded. A larger chunk was not tried: 1024 needed a 975 MiB buffer at startup.
+Short prompts gave the same draft acceptance counts in every variant; long
+prompts can round differently with the chunk size (different kernels), not
+with different weights or precision.
+
+Giving the GPU a PCIe share of the missed experts (the engine's automatic
+share) cut solo decode by a third: Swift's IQ2_S/IQ3 experts run slower on the
+GPU over the link than on the CPU pool. Keep `--pcie-frac 0`.
 
 The following engine qualification and performance sections record the
 **previous Orca IQ4_XS model**, unless explicitly dated as Swift validation.
