@@ -1,4 +1,4 @@
-# Swift 1.5 Qwen3.8-Flash-Next behind one OpenAI-compatible API and Strata's web UI on the
+# Qwen3.8-Flash-Next-Uncensored IQ4_XS behind one OpenAI-compatible API and Strata's web UI on the
 # GTX 1070, with an isolated read-only web research service.
 # Operations, preparation, and tuning evidence: docs/llm1.md
 {
@@ -10,7 +10,7 @@
 }:
 let
   modelDir = "/mnt/data/models";
-  model = "${modelDir}/swift-1.5/Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf";
+  model = "${modelDir}/qwen3.8-flash-next-uncensored/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf";
   port = 8080;
   meshPort = 1045;
 
@@ -21,9 +21,7 @@ let
     else
       "/var/lib/service-secrets/llm-api-keys";
 
-  # Strata serves the model with the most-used experts on the GTX 1070. Its
-  # pack and MTP draft layer (the model repository's supplied runtime) are prepared once into
-  # strataDir (docs/llm1.md).
+  # Native Strata inference; the model pack preserves the GGUF expert tensors.
   # Built from nixpkgsStrata, a fixed nixpkgs that nightly updates never move
   # (docs/llm1.md, "Update policy").
   pkgsStrata = import self.inputs.nixpkgsStrata {
@@ -66,7 +64,7 @@ let
       exe = "${strata}/bin/strata";
       args = [
         "--pack"
-        "${strataDir}/packs/swift-1.5-iq3_s"
+        "${strataDir}/packs/qwen3.8-flash-next-uncensored-iq4_xs"
         "--native"
         model
         "--ple-gguf"
@@ -74,24 +72,18 @@ let
         "--expert-profile"
         "${strata}/share/strata/data/expert-profile.bin"
         # Keep GPU room for both slots, prompt scratch, and lazy CUDA graphs.
-        # Swift's native dense weights dominate VRAM on this 8 GiB card.
         "--expert-cache"
         "1"
-        # Swift's larger dense weights leave less VRAM than Orca IQ4_XS.
-        # Bound prompt buffers so both MTP slots and decode graphs fit on 8 GiB.
-        # Each chunk streams nearly every routed expert over PCIe, so 256 reads
-        # prompts about twice as fast as 64 for ~58 MiB more VRAM (docs/llm1.md).
+        # Bound prompt buffers so both request slots and decode graphs fit on 8 GiB.
         "--prefill"
         "256"
+        # Native serving requires a verify window even without an MTP head.
         "--spec"
         "4"
-        # Keep suffix lookup within four tokens instead of adding 5/6-token graphs.
         "--mtp-max-t"
         "4"
-        "--spec-min-p"
-        "0.5"
-        "--mtp"
-        "${strataDir}/mtp-swift-1.5/rt-en"
+        "--suffix-draft"
+        "0"
         # Missed experts run on the CPU only: the GPU otherwise waited on their
         # PCIe copies. Split windows overlap the CPU's experts with the GPU.
         "--pcie-frac"
@@ -105,17 +97,18 @@ let
         "int8"
         "--kv-resident"
         "20480"
-        # IQ3_S spends more time decoding codebooks than the old IQ4_XS model.
-        # Use both hardware threads of the 14 cores; the host joins 27 workers.
-        # Swift-specific output parity and timing: docs/llm1.md.
+        # Restore one worker per physical core for IQ4_XS; 27 was Swift tuning.
         "--pool-workers"
-        "27"
-        # Each batch slot also verifies an MTP draft per window.
-        "--batch-mtp"
+        "13"
       ];
       # Two requests decode together; a request that starts alone runs on the
       # faster single-request path.
       parallel = 2;
+      sampling = {
+        temperature = 1.0;
+        top_p = 0.95;
+        top_k = 20;
+      };
       # Agents: while one prompt is read, the other slot decodes for as long as
       # each prompt chunk took (half the time instead of a third).
       env = {
@@ -140,10 +133,10 @@ let
         STRATA_DIRECT_MTP_COPY = "1";
       };
       # Start from what the VRAM expert cache learned before the last restart.
-      expert_profile_save = "expert-profile-swift-1.5-iq3_s.bin";
+      expert_profile_save = "expert-profile-qwen3.8-flash-next-uncensored-iq4_xs.bin";
       cwd = strataDir;
-      tokenizer = "${strataDir}/packs/swift-1.5-iq3_s/tokenizer";
-      model_name = "swift-1.5-qwen3.8-flash-next";
+      tokenizer = "${strataDir}/packs/qwen3.8-flash-next-uncensored-iq4_xs/tokenizer";
+      model_name = "qwen3.8-flash-next-uncensored";
       log = "${strataDir}/strata.log";
       host = "127.0.0.1";
       trusted_origins = [ "https://llm.in.reinitialized.net" ];
@@ -191,7 +184,7 @@ in
   environment.systemPackages = [ strata ];
 
   systemd.services.strata = {
-    description = "Strata: Swift 1.5 Qwen3.8-Flash-Next on the GTX 1070";
+    description = "Strata: Qwen3.8-Flash-Next-Uncensored IQ4_XS on the GTX 1070";
     wantedBy = [ "multi-user.target" ];
     after = [
       "nvidia-persistenced.service"
@@ -208,16 +201,12 @@ in
     # The real paths: systemd only creates the /var/lib/strata symlink when the
     # unit starts, so a condition on it never passes on a fresh host.
     unitConfig.ConditionPathExists = [
-      modelDir
-      "/var/lib/private/strata/packs/swift-1.5-iq3_s"
-      "/var/lib/private/strata/mtp-swift-1.5/rt-en"
+      model
+      "/var/lib/private/strata/packs/qwen3.8-flash-next-uncensored-iq4_xs/tokenizer"
     ];
     # VRAM checks load NVML (libnvidia-ml.so.1) by name.
     environment = {
       LD_LIBRARY_PATH = "/run/opengl-driver/lib";
-      # Read by the server: a request left alone returns to the faster solo path.
-      # strata-slot-checkpoints.patch preserves its turn checkpoints across transfers.
-      STRATA_PARALLEL_SOLO = "1";
     };
     script = ''
       # Strata takes several keys separated by commas; the file has one per line.

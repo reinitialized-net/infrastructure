@@ -1,11 +1,9 @@
-# llm1 LLM Service (Swift 1.5 Qwen3.8-Flash-Next)
+# llm1 LLM Service (Qwen3.8-Flash-Next-Uncensored)
 
-`hosts/llm1/llm.nix` serves [SC117 Swift 1.5 Qwen3.8-Flash-Next GSQ-RCO
-abliterated](https://huggingface.co/SC117/Swift-1.5-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-GGUF)
-(IQ3_S, 83,549,259,040 bytes in two GGUF shards) on llm1 (VM 210 on hv1, `10.1.11.9`, mesh
-`10.255.0.9`) with [Strata](https://github.com/Niko1221/Strata) on the
-passed-through GTX 1070. `strata.service` starts at boot and listens on
-`127.0.0.1:8080`. Until 2026-10-06 it ran on devenv.
+`hosts/llm1/llm.nix` configures [Qwen3.8-Flash-Next-Uncensored IQ4_XS](https://huggingface.co/orcarouter/Qwen3.8-Flash-Next-Uncensored-GGUF)
+with native Strata inference on llm1 (VM 210 on hv1, `10.1.11.9`, mesh
+`10.255.0.9`) and its passed-through GTX 1070. The API/web harness listens on
+`127.0.0.1:8080`; inference does not use a separate llama.cpp server.
 
 ## Endpoints
 
@@ -17,14 +15,14 @@ passed-through GTX 1070. `strata.service` starts at boot and listens on
 
 On the mesh and on llm1 itself, every route except `/health` requires
 `Authorization: Bearer <key>` (Strata also accepts `x-api-key`). The model ID is
-`swift-1.5-qwen3.8-flash-next`; Strata answers to any model name. Strata also serves the
+`qwen3.8-flash-next-uncensored`; Strata answers to any model name. Strata also serves the
 Anthropic Messages API (`/v1/messages`) and the Responses API (`/v1/responses`).
 
 ```python
 from openai import OpenAI
 client = OpenAI(base_url="https://llm.in.reinitialized.net/v1", api_key="<key>")
 r = client.chat.completions.create(
-    model="swift-1.5-qwen3.8-flash-next",
+    model="qwen3.8-flash-next-uncensored",
     messages=[{"role": "user", "content": "Hello"}],
     reasoning_effort="low",
 )
@@ -41,8 +39,8 @@ preparation components. These are short samples; the
 Performance section retains the broader earlier measurements and long-context limits.
 Budget several minutes to read a fresh 30k-token prompt. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
-Follow-up turns reuse checkpoints of the conversation (6 by default), and each
-of the two batch slots keeps its last conversation.
+Native Strata retains the checkpoint reuse implementation. Historical throughput
+measurements below are model-specific and do not establish current model speed.
 
 ## Reasoning effort
 
@@ -159,7 +157,7 @@ optional `PLAYWRIGHT_MODULE` and `CHROMIUM_EXECUTABLE` select local runners.
 It tests attachment persistence, history/search, branching, instructions and
 preview isolation with a mock API.
 
-After deploying llm1, explicitly restart `strata` (its unit intentionally has
+After deploying llm1, explicitly restart `strata` (configured with
 `restartIfChanged = false`). Verify four tools in Monitor (three from `web`,
 one from `analysis`), a chat that searches/reads/cites a source, a Python-backed
 calculation and artifact download, and a document upload. Source checks alone
@@ -200,191 +198,104 @@ does not support it. CUDA 13 dropped Pascal, so everything is built with
 `cudaPackages_12_9` for `sm_61` only. On hv1, nouveau takes the card at host
 boot and Proxmox rebinds it to vfio-pci when VM 210 starts.
 
-## Strata
+## Native Strata inference
+
+The service uses Strata's native engine directly. The obsolete Wren server,
+transport adapter and unused llama.cpp/Ollama package definitions have been
+removed. Only the current model and its freshly prepared pack/tokenizer are retained.
 
 `hosts/llm1/strata.nix` builds upstream's experimental CUDA 12 engine
-(`STRATA_EXPERIMENTAL_SM60`, sm_61), with ggml from the llama.cpp commit Strata
-pins and `-march=broadwell`. It also installs the Python server
-(`strata-server`) and a Python for the packing tools (`strata-python`). A 12 GB
+(`STRATA_EXPERIMENTAL_SM60`, sm_61) with `-march=broadwell`. It also installs
+the Python server (`strata-server`) and packing tools (`strata-python`). A 12 GB
 card is upstream's floor for supported cards; 8 GB Pascal is a community path.
 
 ### Current model preparation
 
-The Swift artifacts are pinned to Hugging Face revision
-`2b89cf3f7f2d9cb84275439e2c0cda83db15d32f`. The IQ3_S files are at the
-repository root; both shards are required. Put them in
-`/mnt/data/models/swift-1.5/`:
+The only installed model is [orcarouter/Qwen3.8-Flash-Next-Uncensored-GGUF](https://huggingface.co/orcarouter/Qwen3.8-Flash-Next-Uncensored-GGUF),
+using its three IQ4_XS shards under `/mnt/data/models/qwen3.8-flash-next-uncensored/`.
+The publisher listing at revision `d366e279688c1f2fd6e75e2f98475d38db534f1d`
+has sizes 44,766,155,936, 44,735,995,008 and 7,971,004,256 bytes.
+The files came from the existing devenv download; the gated publisher API
+redacts hashes, so local hashes verify transfer integrity, not revision identity.
 
-| File | SHA-256 |
-|------|---------|
-| `Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf` | `638fbd42a01c7b39a9b7b21c5c8dc5eb1876222d8bd268d471304b647fcd6f94` |
-| `Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00002-of-00002.gguf` | `091a4f6a53697a12a2ea1e5e1d61414410d50c0d44e971304602bba6873fd23d` |
+Local SHA-256 hashes (shards 1, 2, 3), verified after transfer:
 
-Download `strata/rt/{dense.bin,dense.txt,experts.bin,draft_vocab.bin}` from
-that same revision to `/var/lib/private/strata/mtp-swift-1.5/rt/`, verifying
-the binary files against the repository's LFS SHA-256 values. These are the
-publisher-supplied draft runtime, not a Swift-trained MTP head: the model card
-states that Swift has no dedicated MTP head. Draft acceptance and speed must
-be measured on this model; earlier Orca measurements do not carry over.
+```text
+28a99b125cb905fc3bdc06baf6266a56b0cbd1b27e833b9142acc2017b673704
+2a309e0b112fde96ba3bcba5a6b58cc05e5df7bb7fad5a990eaa51df335b0e43
+ebc43c58e2eaeba1d5bdf62c8cb1f0eac198c4dc01941f771921edeebf574bc3
+```
 
-Keep the downloaded `rt/` intact. Prepare `rt-en/` with the same `dense.bin`,
-`dense.txt`, and `experts.bin`, but use the installed package's
-`data/draft_vocab_en.bin` as `draft_vocab.bin`, matching the previous deployment's
-English/code draft subset. This only restricts draft proposals; the target
-model retains its full vocabulary and multilingual output.
-
-Prepare its own dense pack and tokenizer using the installed engine:
+The pinned engine includes upstream's compression-placeholder fix (#2396),
+which specifically supports these Orca GGUFs. Keep the generic Pascal engine,
+authentication, workspace and checkpoint fixes. The previous model's forced
+thinking template override is removed; use the new model's own tokenizer/template.
+No previous model's learned expert profile or MTP draft is reused.
 
 ```bash
 S=$(dirname "$(dirname "$(readlink -f "$(command -v strata)")")")
 cd "$S/share/strata"
-sudo mkdir -p /var/lib/private/strata/mtp-swift-1.5/rt-en
-for f in dense.bin dense.txt experts.bin; do
-  sudo cp /var/lib/private/strata/mtp-swift-1.5/rt/"$f" /var/lib/private/strata/mtp-swift-1.5/rt-en/"$f"
-done
-sudo cp data/draft_vocab_en.bin /var/lib/private/strata/mtp-swift-1.5/rt-en/draft_vocab.bin
 sudo "$S/bin/strata-python" tools/iq_pack.py \
-  --gguf /mnt/data/models/swift-1.5/Swift-Qwen3.8-Flash-Next-GSQ-RCO-abliterated-IQ3_S-00001-of-00002.gguf \
-  --out /var/lib/private/strata/packs/swift-1.5-iq3_s
+  --gguf /mnt/data/models/qwen3.8-flash-next-uncensored/Qwen3.8-Flash-Next-Uncensored-IQ4_XS-00001-of-00003.gguf \
+  --out /var/lib/private/strata/packs/qwen3.8-flash-next-uncensored-iq4_xs --compat-bf16
 ```
 
-The PLE table is in **shard 1**; both `--native` and `--ple-gguf` point there.
-The pack keeps the GSQ-RCO tensors in their native form. The learned routing
-profile is separate (`expert-profile-swift-1.5-iq3_s.bin`). Preserve
-`--spec 4`, the supplied MTP runtime, 131072 context, two slots, and 27 CPU
-workers (Swift-specific tuning below). Prompt chunks are capped at 256 tokens, with one GPU expert-cache slot
-(the remaining experts run on the CPU) and `--mtp-max-t 4` to avoid extra
-5/6-token suffix-window graphs. Together with the English/code draft subset,
-these bounds leave room for prompt scratch and lazy CUDA graphs on 8 GiB.
-Automatic prefill allocation failed at startup; smaller prompt chunks alone
-loaded but exhausted memory during decoding. These settings change batching,
-caching and speculation, not the context limit or target model weights.
-API URLs and authentication are unchanged; the advertised model ID
-is `swift-1.5-qwen3.8-flash-next` (Strata also accepts existing client aliases).
+Inspect `conversions.json`: compatibility projections may be rounded to BF16;
+expert and PLE tensors retain their GGUF representation. MTP and suffix drafting
+are disabled. The configured context remains 131072 with two request slots.
+Explicitly restart `strata` after deployment and verify loaded health,
+authentication and real inference. Build success alone is not runtime evidence.
 
-Use the real `/var/lib/private/strata` state path for preparation; systemd
-manages `/var/lib/strata` as its DynamicUser symlink. The engine log is
-`/var/lib/strata/strata.log`; server progress is in the journal. After
-`rebuildHost llm1`, explicitly restart Strata and verify loaded health,
-authenticated inference, and rejection of unauthenticated API calls.
-The old Orca shards may be removed to make room; rollback then requires
-re-downloading them and restoring the old pack/configuration.
+### Replacement validation (2026-10-18)
 
-Validated and deployed on 2026-10-17: both GGUF SHA-256 checks and the supplied
-runtime binary checks passed; the dense pack reported 96 exact conversions,
-zero rounded conversions, and zero maximum conversion error. The final
-secret-free host check, live-secret deployment, and explicit restart passed.
-The running system is
-`/nix/store/df0dhi20pfq4nsmxq2sz0l1xhfg1wnf9-nixos-system-llm1-26.05.20260924.c508844`.
+The secret-free host check and supported `rebuildHost llm1` activation passed.
+All three destination SHA-256 hashes matched the local source. A fresh pack
+reported 459 conversions (96 exact, 363 rounded, maximum absolute error 0.0223);
+expert and PLE bytes were unchanged. The service loaded with two 131072-token
+slots, no runtime drop-ins and no unexpected restarts. After live checks,
+GPU use was 5735 MiB with 2373 MiB free.
 
-Live checks passed loaded health and model discovery through loopback and the
-LAN proxy, 401 without authentication and 200 with it on the direct API,
-arithmetic and code generation, two concurrent short requests, the previous
-model-name alias, and the Responses API. A fresh 1,456-token prompt completed
-correctly in 35.1 seconds; two concurrent 1,160-token requests completed
-correctly in 29.0 and 57.9 seconds. These are functional smoke checks, not a
-quality or throughput benchmark. After prompt scratch allocation, the GPU had
-about 215 MiB free; this remains a tight 8 GiB configuration, below upstream's
-512 MiB warning threshold. Full 131072-token operation and sustained-load
-performance have not been qualified. Earlier Orca throughput does not apply.
+Authenticated discovery, unauthenticated 401, two concurrent chats (arithmetic
+and Python), Responses API, LAN web/workspace assets and a structured function
+call passed. Both MCP servers reported ready with four tools. A LAN chat
+actually called `analysis__python`, calculated `123 * 456`, and returned 56088.
+These are functional checks, not broad quality, speed or full-context qualification.
 
-The three old Orca GGUF shards were removed; `/mnt/data` had about 69 GiB
-free afterward. The pinned download manifest is stored beside the Swift
-shards. Old packs/draft artifacts remain, but rollback also needs the removed
-Orca weights to be downloaded again.
+Old model weights, packs, drafts, learned profiles, model-specific template
+handling and temporary rollback/staging files were removed. Normal NixOS
+rollback generations and historical operational records are retained; they
+are not additional installed model weights. Browser chats and user analysis
+artifacts are preserved.
 
-### Swift throughput investigation (2026-10-17)
+### Worker restoration (2026-10-18)
 
-The IQ3_S filename does not describe every expert tensor. The loaded
-`native_experts.txt` contains 20 layers with IQ2_S gate/up weights, 17 with
-IQ3_XXS, ten with IQ3_S, and only one with IQ4_XS. Down projections use
-IQ4_NL in 39 layers and Q2_0 in nine. The older IQ4_XS gate/up optimizations
-therefore apply to only one layer. The smaller 46.84 GiB expert arena saves
-RAM, but codebook decoding costs more CPU work than the old IQ4_XS path.
+The model replacement retained the patched native engine and all enabled kernel,
+checkpoint, overlap and slot-to-solo optimizations. It also inherited Swift's
+27-worker setting and conservative single-entry GPU cache. Restore 13 workers
+for IQ4_XS, one per physical core; leave the cache and drafting unchanged.
 
-The live configuration also changed from automatic GPU expert caching and
-prompt chunks to one cached expert and 64-token chunks. Observed cache hits
-are about 0.1%, so nearly all expert execution runs on the CPU. Native dense
-projections occupy 1833.41 MiB, versus the earlier Orca log's 1619.53 MiB.
-With both slots, draft weights, scratch and graphs loaded, the 8 GiB GPU is
-still below the engine's 512 MiB free-memory warning threshold. Increasing
-cache allocation without reclaiming memory is not a safe speed fix.
+The installed CPU parity suite passed with zero failures, and fused GPU
+preparation passed all 96 bitwise cases. A fixed-profile baseline/candidate
+check matched all 272 token IDs and finish reasons across fresh prefill, solo,
+two-slot and one-slot modes. A separate 192-token solo check also matched,
+for 464 compared tokens. The secret-free host check and live deployment passed.
 
-Before tuning, the live 256-token smoke sample measured 28.0 tokens/s solo
-and 23.1 tokens/s combined for two requests (combined includes admission).
-Recent longer real requests reported 21.1–24.7 decode tokens/s and about
-37–42 prompt tokens/s. Historical Orca results around 40 decode and 133 prompt
-tokens/s use different weights and are not a controlled same-model comparison.
+A short LAN streaming sample measured 18.70 to 19.58 tokens/s solo and 23.60 to
+26.91 tokens/s combined for two requests (including admission). Both 128-token
+concurrent outputs and finish reasons matched. The live 192-token solo output
+hash differed between the warmed baseline and fresh restart, so that solo
+sample is not an output-controlled speed comparison; the separate fixed-profile
+192-token check passed. These small samples do not establish maximum throughput
+or full-context performance.
 
-The retained scheduling change uses 27 pool workers plus the participating
-host thread on the 14-core/28-thread guest. In the first fixed-cache
-comparison, solo decode moved from 26.34 to 26.84 tokens/s, two-slot throughput
-including admission from 18.44 to 19.31, and one-slot throughput from 17.82
-to 18.68. All 320 output token IDs and finish reasons matched. Forcing
-`STRATA_IQ256_GATHER=1` preserved tokens but slowed all three modes by about
-2–3%, so it was rejected. These settings keep the existing weights, sampling,
-reasoning behavior, context limit, KV precision and two-request capacity.
-
-A reverse-order repeat added a fresh 1,178-token prompt. All 336 token IDs
-and finish reasons matched between 27 and 13 workers, including fresh prefill,
-solo, two-slot and one-slot modes. In baseline-to-candidate order, solo decode
-was 26.54 to 27.45 tokens/s, two-slot throughput 18.11 to 19.46, and one-slot
-throughput 17.47 to 18.77. Prompt time was effectively unchanged: 27,409.9
-versus 27,396.0 ms (43.0 tokens/s). Together the two comparisons support a
-modest decode gain, not a return to Orca's throughput or proof of a hardware
-maximum. The model's mixed weight formats and tight VRAM budget remain the
-main limits; full-context sustained-load performance remains unqualified.
-
-The secret-free host check and actual external-secret host build passed.
-The installed package passed `dequant_wide_parity` (360 bitwise cases),
-`mmvq_il_parity`, `iq_avx2_parity` (zero failures), and
-`gemm_f32_parity --quick` (134 bitwise cases). The supported
-`rebuildHost llm1` deployment and explicit service restart succeeded. The
-running command has `--pool-workers 27`, no runtime drop-ins, and the same
-engine package. Health reports a loaded Swift model with 131072 context;
-the direct models endpoint returns 401 without authentication and 200 with it.
-The deployed system is
-`/nix/store/9zi1fi23cchl85qkwwirjsh3dg0494m2-nixos-system-llm1-26.05.20260924.c508844`.
-
-Fresh-restart API samples measured 26.47 to 28.89 tokens/s solo (256 tokens)
-and 23.65 to 25.27 tokens/s combined (512 tokens, including admission). The
-solo response and both concurrent response SHA-256 hashes matched. These are
-short live samples; the controlled repeats above measured smaller solo gains.
-No weight conversion, quantization reduction, reasoning restriction or
-context/capacity reduction was used.
-
-### Swift prompt chunk and PCIe share (2026-10-17)
-
-With batch slots, the prompt path computes every routed expert on the GPU and
-streams it over PCIe through an 8-slot ring; nearly every expert is routed in
-each chunk, so prompt time follows the number of chunks. One restart per
-variant, one solo pass (four 512-token answers), two streams and a fresh
-1,364-token prompt:
-
-| Variant | 4,411-token prompt | 1,364-token prompt | Solo decode | Two streams |
-|---------|--------------------|--------------------|-------------|-------------|
-| `--prefill 64` (previous) | 41.2 t/s, 107 s | 39.5 t/s | 28.7 t/s | 24.3 t/s |
-| `--prefill 128` | 58.6 t/s | 56.5 t/s | 29.3 t/s | 24.0 t/s |
-| **`--prefill 256` (deployed)** | **85.2 t/s, 52 s** | **81.5 t/s** | **29.7 t/s** | **24.2 t/s** |
-| `--prefill 64`, no `--pcie-frac` (auto) | 41.2 t/s | 39.2 t/s | 18.9 t/s | 20.6 t/s |
-
-The 256-token chunk costs about 58 MiB of VRAM (489 instead of 547 MiB free
-once loaded). Two concurrent agents with fresh 8.6K-token prompts and three
-follow-up turns each ran without an allocation failure; the lowest free VRAM
-sampled was 129 MiB. Fresh prompts read at 70-86 tokens/s while the other slot
-decoded. A larger chunk was not tried: 1024 needed a 975 MiB buffer at startup.
-Short prompts gave the same draft acceptance counts in every variant; long
-prompts can round differently with the chunk size (different kernels), not
-with different weights or precision.
-
-Giving the GPU a PCIe share of the missed experts (the engine's automatic
-share) cut solo decode by a third: Swift's IQ2_S/IQ3 experts run slower on the
-GPU over the link than on the CPU pool. Keep `--pcie-frac 0`.
-
-The following engine qualification and performance sections record the
-**previous Orca IQ4_XS model**, unless explicitly dated as Swift validation.
-Their throughput, memory use, draft acceptance, and model-output parity are
-historical evidence, not qualification of Swift IQ3_S.
+Automatic expert-cache sizing changed output in the focused gate, including
+with prompt chunks held at 256 and with CPU-order cache reduction. It was not
+retained. A newly fetched, hash-verified Qwen base MTP draft reached roughly
+31 tokens/s in the direct solo check but also changed tokens; it was removed.
+The earlier Orca-specific draft requires its gated source and was not available
+for this comparison. Do not infer that the historical roughly 40 tokens/s
+configuration has been fully restored. Only the verified worker change is
+active; the current model, 131072 context and two-request capacity are unchanged.
 
 ### Engine patch
 
@@ -935,7 +846,7 @@ engine and the driver stay fixed:
   kernel and takes effect at the next reboot.
 - **`strata` and `llm-api-mesh`** have `restartIfChanged = false`, so a switch
   never reloads the model (1-2 minutes) or cuts open requests. A changed unit
-  takes effect at the next reboot or `sudo systemctl restart strata`.
+  takes effect at the next reboot or an explicit restart of the affected unit.
   Everything else restarts normally.
 
 To bump on purpose:

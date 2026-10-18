@@ -45,6 +45,8 @@ cuda.backendStdenv.mkDerivation {
   };
 
   patches = [
+    # Upstream 94d189f: all-zero converter compression metadata is unspecified.
+    ./strata-compression-placeholder.patch
     # mtp_fetch.py: STRATA_MTP_REPO picks the repo; HF_TOKEN authenticates gated ones.
     ./strata-mtp-fetch.patch
     # Engine changes for the GTX 1070 and two requests at once (docs/llm1.md, "Engine patch").
@@ -87,6 +89,7 @@ cuda.backendStdenv.mkDerivation {
   # Build only the engine and focused Pascal qualification tools, not the full suite.
   ninjaFlags = [
     "strata"
+    "gguf_geometry_test"
     "gemm_f32_parity"
     "mmvq_il_parity"
     "dequant_wide_parity"
@@ -103,6 +106,7 @@ cuda.backendStdenv.mkDerivation {
   # The engine, plus the Python server and its web UI, packers, and profiles it runs with.
   installPhase = ''
     runHook preInstall
+    ./gguf_geometry_test
     install -Dm755 strata $out/bin/strata
     mkdir -p $out/share/strata $out/libexec/strata
     install -m755 gemm_f32_parity mmvq_il_parity dequant_wide_parity $out/libexec/strata/

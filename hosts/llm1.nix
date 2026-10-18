@@ -2,7 +2,7 @@
   ...
 }:
 {
-  # Swift 1.5 Qwen3.8 on the passed-through GTX 1070 (docs/llm1.md)
+  # Qwen3.8-Flash-Next-Uncensored IQ4_XS on the passed-through GTX 1070 (docs/llm1.md)
   imports = [
     ./llm1/llm.nix
   ];

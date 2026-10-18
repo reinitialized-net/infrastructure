@@ -41,7 +41,7 @@ The source of truth for exported hosts is `flake.nix`. VM hosts are exported as 
 | `apps1` | 204 | 11 | `10.255.0.3` | Hudu, Technitium DNS primary, Stalwart, Forgejo, Jaeger, Grafana, Authentik |
 | `apps2` | 205 | 11 | `10.255.0.4` | Technitium DNS secondary, UniFi, pgAdmin, Redis Insight, Forgejo Runner, Cinny |
 | `apps3` | 207 | 11 | `10.255.0.5` | Immich, Tuwunel Matrix, Paperless-ngx, Pelican Panel, OCIS, SearXNG |
-| `llm1` | 210 | 11 | `10.255.0.9` | Swift 1.5 Qwen3.8 on Strata with the passed-through GTX 1070 ([llm1](docs/llm1.md)) |
+| `llm1` | 210 | 11 | `10.255.0.9` | Qwen3.8-Flash-Next-Uncensored IQ4_XS on native Strata with the passed-through GTX 1070 ([llm1](docs/llm1.md)) |
 | `db1` | 206 | 11 | `10.255.0.11` | PostgreSQL, Valkey, OpenTelemetry Collector, Prometheus |
 
 `gs1` exists in `hosts/`, `modules/secrets.example/`, and `meshTopology.nix`, but it is commented out in `flake.nix`; `.#gs1` builds and deploys do not work until it is exported.
