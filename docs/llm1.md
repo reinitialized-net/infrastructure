@@ -389,6 +389,10 @@ drafts and asynchronous batch commit (about 1 ms; both are VRAM-bandwidth bound)
 `--pool-tasks` 84/168, `--mtp-window 8192`, adaptive-tier policy changes (offline
 replay: every policy within 1 point of the current hit rate), and a 12288-cell
 slot K/V ring (+77 slots, decode within noise, less VRAM K/V at long context).
+Staggered per-slot batch windows (each slot's tail and drafts overlapping the other
+slot's CPU experts) won 3-6% against the round-1 build but lost 3-4% against the
+deployed one: its windows stay near the GPU-bound 135-143 ms, and the second
+verifier's VRAM costs 38 cache slots.
 `--vram-reserve-mib 800` adds 80 slots but leaves 141 MiB free at the low point,
 for about 2% more two-request throughput, so 1000 stays.
 
