@@ -69,6 +69,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-batch-prompt-share.patch
     # CPU pool: gate/up tasks quantize their own rows, gate/up and down run as one batch (STRATA_POOL_FUSED=0, STRATA_POOL_TASK_QUANT=0).
     ./strata-pool-fused.patch
+    # Leaner IQ4_NL down rows and vector scale decode for multi-token IQ4_XS gate/up (STRATA_IQ4NL_LEAN=0, STRATA_IQ4XS_SCALES8=0).
+    ./strata-cpu-round3.patch
   ];
 
   nativeBuildInputs = [

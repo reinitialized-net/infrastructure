@@ -1,0 +1,234 @@
+diff --git a/src/kernels/cpu/iq_avx2.cpp b/src/kernels/cpu/iq_avx2.cpp
+index 13888a9..52fa27d 100644
+--- a/src/kernels/cpu/iq_avx2.cpp
++++ b/src/kernels/cpu/iq_avx2.cpp
+@@ -188,6 +188,12 @@ int prefetch_distance() {
+     return d;
+ }
+ 
++// STRATA_IQ4NL_LEAN=0: the IQ4_NL down rows' per-block activation scale and prefetch (iq_avx2_rows.inl iq4nl_rows)
++bool iq4nl_lean_on() {
++    static const bool on = [] { const char* v = std::getenv("STRATA_IQ4NL_LEAN"); return v == nullptr || v[0] != '0'; }();
++    return on;
++}
++
+ inline void rows_ahead(const uint8_t* blk, int pf) {
+     if (pf <= 0) return;
+     _mm_prefetch((const char*) blk + pf, _MM_HINT_T0);
+@@ -383,6 +389,40 @@ template <> struct Fmt32<123> : Fmt32<23> {
+     }
+ };
+ 
++alignas(32) const uint8_t kIq4xsScaleMask[4][32] = {
++    {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3},
++    {4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7},
++    {8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11},
++    {12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15}};
++
++// the eight (ls - 32) of a super-block as int16, in both lanes: ls[i] = nibble i of scales_l | 2 bits i of scales_h << 4
++inline __m256i iq4xs_scales8(const uint8_t* b) {
++    const __m128i sl = _mm_cvtsi32_si128((int) u32(b + 4));
++    const __m128i m4 = _mm_set1_epi8(0x0f);
++    const __m128i nib = _mm_unpacklo_epi8(_mm_and_si128(sl, m4), _mm_and_si128(_mm_srli_epi16(sl, 4), m4));
++    const __m128i sh = _mm_set1_epi16((short) u16(b + 2));
++    // bits 2i..2i+1 of sh to bits 14..15 of lane i, then down to 0..1
++    const __m128i hb = _mm_srli_epi16(_mm_mullo_epi16(sh, _mm_setr_epi16(1 << 14, 1 << 12, 1 << 10, 1 << 8, 1 << 6, 1 << 4,
++                                                                         1 << 2, 1)), 14);
++    const __m128i ls = _mm_sub_epi16(_mm_or_si128(_mm_cvtepu8_epi16(nib), _mm_slli_epi16(hb, 4)), _mm_set1_epi16(32));
++    return _mm256_broadcastsi128_si256(ls);
++}
++
++// The 32-value half H's (ls - 32) in all 16 int16 lanes, from iq4xs_scales8's vector: one pshufb.
++alignas(32) const uint8_t kIq4xsHalfScale[8][32] = {
++#define S(h) {2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, \
++              2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, \
++              2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1, 2 * h, 2 * h + 1}
++    S(0), S(1), S(2), S(3), S(4), S(5), S(6), S(7)
++#undef S
++};
++
++// STRATA_IQ4XS_SCALES8=0: the multi-token IQ4_XS rows (wide-xs) through row_dot's per-half scalar scale decode
++bool iq4xs_scales8_on() {
++    static const bool on = [] { const char* v = std::getenv("STRATA_IQ4XS_SCALES8"); return v == nullptr || v[0] != '0'; }();
++    return on;
++}
++
+ // ---- the row kernels, twice: the AVX2 forms and the AVX-VNNI ones (iq_avx2_rows.inl)
+ namespace plain {
+ #define STRATA_ROWS_VNNI 0
+@@ -549,25 +589,6 @@ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* c
+ // lane order once per pair and shared by the gate and the up row; a super-block's eight scales are decoded once,
+ // in vector code.  ~0.3 vector instructions per weight against ggml's ~0.6.  Another summation order than ggml's.
+ namespace {
+-alignas(32) const uint8_t kIq4xsScaleMask[4][32] = {
+-    {0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3, 2, 3},
+-    {4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 4, 5, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7, 6, 7},
+-    {8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 8, 9, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11, 10, 11},
+-    {12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 12, 13, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15, 14, 15}};
+-
+-// the eight (ls - 32) of a super-block as int16, in both lanes: ls[i] = nibble i of scales_l | 2 bits i of scales_h << 4
+-inline __m256i iq4xs_scales8(const uint8_t* b) {
+-    const __m128i sl = _mm_cvtsi32_si128((int) u32(b + 4));
+-    const __m128i m4 = _mm_set1_epi8(0x0f);
+-    const __m128i nib = _mm_unpacklo_epi8(_mm_and_si128(sl, m4), _mm_and_si128(_mm_srli_epi16(sl, 4), m4));
+-    const __m128i sh = _mm_set1_epi16((short) u16(b + 2));
+-    // bits 2i..2i+1 of sh to bits 14..15 of lane i, then down to 0..1
+-    const __m128i hb = _mm_srli_epi16(_mm_mullo_epi16(sh, _mm_setr_epi16(1 << 14, 1 << 12, 1 << 10, 1 << 8, 1 << 6, 1 << 4,
+-                                                                         1 << 2, 1)), 14);
+-    const __m128i ls = _mm_sub_epi16(_mm_or_si128(_mm_cvtepu8_epi16(nib), _mm_slli_epi16(hb, 4)), _mm_set1_epi16(32));
+-    return _mm256_broadcastsi128_si256(ls);
+-}
+-
+ // one row's pair j against the permuted activations: the int32 partial sums of its eight lanes
+ inline __m256i iq4xs_pair(const uint8_t* blk, int j, __m256i values, __m256i m4, __m256i ylo, __m256i yhi, __m256i sc) {
+     const __m256i bits = _mm256_loadu_si256((const __m256i*) (blk + 8 + 32 * j));
+diff --git a/src/kernels/cpu/iq_avx2_parity.cpp b/src/kernels/cpu/iq_avx2_parity.cpp
+index 75a4022..92537b8 100644
+--- a/src/kernels/cpu/iq_avx2_parity.cpp
++++ b/src/kernels/cpu/iq_avx2_parity.cpp
+@@ -317,8 +317,11 @@ int check_down(int d_type) {
+     }
+     int failures = 0;
+     const double r_ref = rel(one.data(), ref.data(), one.size());
+-    std::printf("  %-8s down rows vs %s: rel %.2e\n", type_name(d_type),
+-                d_type == 20 ? "ggml vec_dot" : "a double reference", r_ref);
++    uint64_t hash = 0xcbf29ce484222325ull;   // FNV-1a of the one-token rows: compare runs under different switches
++    for (const uint8_t* p = (const uint8_t*) one.data(); p != (const uint8_t*) (one.data() + one.size()); ++p)
++        hash = (hash ^ *p) * 0x100000001b3ull;
++    std::printf("  %-8s down rows vs %s: rel %.2e (rows hash %016llx)\n", type_name(d_type),
++                d_type == 20 ? "ggml vec_dot" : "a double reference", r_ref, (unsigned long long) hash);
+     if (!(r_ref <= 1e-5)) { std::printf("  %-8s MISMATCH against the reference\n", type_name(d_type)); ++failures; }
+     for (int v : subsets(down_variants(d_type))) {
+         size_t differ = 0;
+diff --git a/src/kernels/cpu/iq_avx2_rows.inl b/src/kernels/cpu/iq_avx2_rows.inl
+index 9eb51f0..e71fac7 100644
+--- a/src/kernels/cpu/iq_avx2_rows.inl
++++ b/src/kernels/cpu/iq_avx2_rows.inl
+@@ -145,10 +145,48 @@ inline void row_dot_iq2xs(const uint8_t* row, int nblocks, const block_q8_K* con
+     for (int t = 0; t < NT; ++t) res[t] = hsum8(accf[t]);
+ }
+ 
++// ---- IQ4_XS, several tokens (wide-xs, Fmt32<123>): row_dot<123> with the block's eight sub-block scales decoded once
++// in vector code (iq4xs_scales8) and each half's broadcast by one pshufb, instead of ~10 scalar instructions and a
++// movd + vpbroadcastw per half; and the activation signed by the weight directly (sign(y, w) == sign(y, sign(1, w))).
++// The same int16 operands in the same lanes, the same int32 sums and the same float FMAs: row_dot<123>'s bits.
++template <int NT> STRATA_ROWS_FN
++inline void row_dot_iq4xs(const uint8_t* row, int nblocks, const block_q8_K* const* y, float* res) {
++    const int pf = prefetch_distance();
++    const __m256i values = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) kvalues_iq4nl));
++    const __m256i m4 = _mm256_set1_epi8(15);
++    __m256 accf[NT];
++    for (int t = 0; t < NT; ++t) accf[t] = _mm256_setzero_ps();
++    for (int i = 0; i < nblocks; ++i) {
++        const uint8_t* blk = row + (size_t) i * 136;
++        rows_ahead(blk, pf);
++        const __m256i sc8 = iq4xs_scales8(blk);
++        __m256i acci[NT];
++        for (int t = 0; t < NT; ++t) acci[t] = _mm256_setzero_si256();
++        for (int H = 0; H < 8; ++H) {
++            const __m256i bits = _mm256_broadcastsi128_si256(_mm_loadu_si128((const __m128i*) (blk + 8 + 16 * H)));
++            const __m256i q4 = _mm256_shuffle_epi8(
++                values, _mm256_and_si256(_mm256_blend_epi32(bits, _mm256_srli_epi16(bits, 4), 0xf0), m4));
++            const __m256i g = _mm256_sign_epi8(q4, q4);
++            const __m256i sc = _mm256_shuffle_epi8(sc8, _mm256_load_si256((const __m256i*) kIq4xsHalfScale[H]));
++            for (int t = 0; t < NT; ++t) {
++                const __m256i yv = _mm256_loadu_si256((const __m256i*) (y[t][i].qs + 32 * H));
++                acci[t] = madd_add(acci[t], _mm256_maddubs_epi16(g, _mm256_sign_epi8(yv, q4)), sc);
++            }
++        }
++        const float dx = h2f(u16(blk));
++        for (int t = 0; t < NT; ++t)
++            accf[t] = _mm256_fmadd_ps(_mm256_set1_ps(dx * y[t][i].d), _mm256_cvtepi32_ps(acci[t]), accf[t]);
++    }
++    for (int t = 0; t < NT; ++t) res[t] = hsum8(accf[t]);
++}
++
+ template <int TY, int NT> STRATA_ROWS_FN
+ inline void row_dot_any(const uint8_t* row, int nblocks, const block_q8_K* const* y, float* res) {
+     if constexpr (TY == 17) row_dot_iq2xs<NT>(row, nblocks, y, res);
+-    else                    row_dot<TY, NT>(row, nblocks, y, res);
++    else if constexpr (TY == 123) {
++        if (iq4xs_scales8_on()) row_dot_iq4xs<NT>(row, nblocks, y, res);
++        else row_dot<TY, NT>(row, nblocks, y, res);
++    } else row_dot<TY, NT>(row, nblocks, y, res);
+ }
+ 
+ template <int TY, int NT> STRATA_ROWS_FN
+@@ -242,20 +280,32 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
+ // kvalues_iq4nl pshufb decode and the |w| half of the signed x signed product.  Here both are computed once
+ // per block; every token then costs a sign, a maddubs, a madd and an fmadd.  The arithmetic is ggml's - only
+ // the order of the float additions differs.
+-template <int NT, bool Wide> STRATA_ROWS_FN
++// Lean (STRATA_IQ4NL_LEAN, default on; at most kLeanBlocks blocks): the activations' fp16 scales converted once per
++// call instead of once per row and block, and the rows prefetched one 64-B line at a time at the start of each row
++// instead of two lines per 18-B block.  The same float products in the same order, so the same bits.
++constexpr int kLeanBlocks = 64;
++
++template <int NT, bool Wide, bool Lean> STRATA_ROWS_FN
+ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* const* y, float* const* out,
+                 int r0, int r1) {
+     const __m128i values = _mm_loadu_si128((const __m128i*) kvalues_iq4nl);
+     const __m128i m4b = _mm_set1_epi8(0x0f);
+     const int nb = n / QK4_NL;
+     const int pf = prefetch_distance();
++    float dy[NT][Lean ? kLeanBlocks : 1];
++    if constexpr (Lean)
++        for (int t = 0; t < NT; ++t)
++            for (int ib = 0; ib < nb; ++ib) dy[t][ib] = h2f(y[t][ib].d);
+     for (int r = r0; r < r1; ++r) {
+         const uint8_t* row = w + (size_t) r * row_bytes;
++        if constexpr (Lean)
++            if (pf > 0)
++                for (size_t o = 0; o < row_bytes; o += 64) _mm_prefetch((const char*) row + pf + o, _MM_HINT_T0);
+         __m256 accf[NT];
+         for (int t = 0; t < NT; ++t) accf[t] = _mm256_setzero_ps();
+         for (int ib = 0; ib < nb; ++ib) {
+             const uint8_t* blk = row + (size_t) ib * sizeof(block_iq4_nl);
+-            rows_ahead(blk, pf);
++            if constexpr (!Lean) rows_ahead(blk, pf);
+             __m256i q4;
+             if constexpr (Wide) {
+                 // The same decoded bytes in the same lanes: a broadcast load and one shuffle
+@@ -277,26 +327,34 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
+                 const block_q8_0& b = y[t][ib];
+                 const __m256i q8 = _mm256_loadu_si256((const __m256i*) b.qs);
+                 const __m256i p = dot4u(aq, _mm256_sign_epi8(q8, q4));
+-                accf[t] = _mm256_fmadd_ps(_mm256_set1_ps(dx * h2f(b.d)), _mm256_cvtepi32_ps(p), accf[t]);
++                const float d8 = Lean ? dy[t][Lean ? ib : 0] : h2f(b.d);
++                accf[t] = _mm256_fmadd_ps(_mm256_set1_ps(dx * d8), _mm256_cvtepi32_ps(p), accf[t]);
+             }
+         }
+         for (int t = 0; t < NT; ++t) out[t][r] = hsum8(accf[t]);
+     }
+ }
+ 
+-template <bool Wide> STRATA_ROWS_FN void iq4nl_nt(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* const* y, int nt,
+-                             float* const* out, int r0, int r1) {
++template <bool Wide, bool Lean> STRATA_ROWS_FN void iq4nl_nt_l(const uint8_t* w, size_t row_bytes, int n,
++                                                           const block_q8_0* const* y, int nt, float* const* out,
++                                                           int r0, int r1) {
+     switch (nt) {
+-        case 1: iq4nl_rows<1, Wide>(w, row_bytes, n, y, out, r0, r1); break;
+-        case 2: iq4nl_rows<2, Wide>(w, row_bytes, n, y, out, r0, r1); break;
+-        case 3: iq4nl_rows<3, Wide>(w, row_bytes, n, y, out, r0, r1); break;
+-        case 4: iq4nl_rows<4, Wide>(w, row_bytes, n, y, out, r0, r1); break;
++        case 1: iq4nl_rows<1, Wide, Lean>(w, row_bytes, n, y, out, r0, r1); break;
++        case 2: iq4nl_rows<2, Wide, Lean>(w, row_bytes, n, y, out, r0, r1); break;
++        case 3: iq4nl_rows<3, Wide, Lean>(w, row_bytes, n, y, out, r0, r1); break;
++        case 4: iq4nl_rows<4, Wide, Lean>(w, row_bytes, n, y, out, r0, r1); break;
+         default: for (int t0 = 0; t0 < nt; t0 += 4) {
+             const int k = nt - t0 < 4 ? nt - t0 : 4;
+-            iq4nl_nt<Wide>(w, row_bytes, n, y + t0, k, out + t0, r0, r1);
++            iq4nl_nt_l<Wide, Lean>(w, row_bytes, n, y + t0, k, out + t0, r0, r1);
+         }
+     }
+ }
+ 
++template <bool Wide> STRATA_ROWS_FN void iq4nl_nt(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* const* y, int nt,
++                             float* const* out, int r0, int r1) {
++    if (iq4nl_lean_on() && n / QK4_NL <= kLeanBlocks) iq4nl_nt_l<Wide, true>(w, row_bytes, n, y, nt, out, r0, r1);
++    else iq4nl_nt_l<Wide, false>(w, row_bytes, n, y, nt, out, r0, r1);
++}
++
+ #undef STRATA_ROWS_VNNI
+ #undef STRATA_ROWS_FN
