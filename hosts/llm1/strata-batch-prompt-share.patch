@@ -1,0 +1,22 @@
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index eff7cfc..25f29a1 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -7298,7 +7298,16 @@ int main(int argc, char** argv) {
+             }
+         }
+ #endif
+-        const bool share_pool = o.batch <= 0 && !o.no_pool;
++        // --batch: the slots decode between a prompt's chunks on this thread (read_part: a chunk, then windows for
++        // STRATA_BATCH_DECODE_SHARE of its time), never during one, and the share joins its CPU work inside each
++        // layer, so the pool is idle for the whole chunk there too.  A faster chunk only brings the slots' next
++        // windows sooner.  STRATA_BATCH_PREFILL_SHARE=0: off under --batch (the pool then sits idle while a prompt
++        // is read, as before).  One GPU only: a layer split's pipelined groups (piped) keep work in flight across a read.
++        static const bool batch_share = [] {
++            const char* v = std::getenv("STRATA_BATCH_PREFILL_SHARE");
++            return v == nullptr || v[0] != '0';
++        }();
++        const bool share_pool = (o.batch <= 0 || (batch_share && stages.empty())) && !o.no_pool;
+         bool share_has_work = strata::prefill::share_rules::default_share_has_work(
+             (int64_t) xcache.slots(), (int64_t) (g.n_layers * g.n_expert));   // #1595
+         if (!share_has_work)

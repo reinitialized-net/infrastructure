@@ -133,6 +133,10 @@ let
         # full-model parity: all 272 baseline/candidate tokens matched.
         STRATA_IQ4NL_WIDE = "1";
         STRATA_PREFILL_FUSED_WIDEN = "1";
+        # The CPU pool computes part of each prompt chunk's experts while the GPU streams the rest
+        # (strata-batch-prompt-share.patch). "auto" also stages and shares chunks up to 3072 tokens, not just
+        # below 1024: 4.4k-token prompts 148 -> 221 t/s, 1.4k 128 -> 211 (2026-10-18); long-prompt logits KL 0.0004.
+        STRATA_PREFILL_CPU_SHARE = "auto";
         # Exact IQ4_XS multi-token decode and direct MTP KV transfers passed
         # full-model parity and repeated slot/solo checkpoint restoration.
         STRATA_IQ4XS_WIDE = "1";

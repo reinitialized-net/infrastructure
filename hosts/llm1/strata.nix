@@ -65,6 +65,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-decode-round2.patch
     # Prompt planner: staged chunks need no streaming ring; keep the larger ring probe (STRATA_PREFILL_PLAN_STAGED=0).
     ./strata-prefill-planner.patch
+    # Hand the prompt path the CPU pool under --batch, so prompts share experts with the CPU (STRATA_BATCH_PREFILL_SHARE=0).
+    ./strata-batch-prompt-share.patch
   ];
 
   nativeBuildInputs = [
