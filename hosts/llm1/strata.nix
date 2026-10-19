@@ -73,6 +73,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-cpu-round3.patch
     # Batch slot sessions borrow the main session's RoPE table: +25 expert-cache slots (STRATA_SHARE_ROPE=0).
     ./strata-rope-share.patch
+    # One-token IQ4_NL down rows in ggml's accumulation order, without its per-row call (STRATA_IQ4NL_ONE=0).
+    ./strata-cpu-down1.patch
   ];
 
   nativeBuildInputs = [
