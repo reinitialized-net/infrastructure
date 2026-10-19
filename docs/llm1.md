@@ -30,13 +30,10 @@ print(r.choices[0].message.content)  # reasoning is in message.reasoning_content
 ```
 
 The context is 131072 tokens, with two concurrent requests; a third waits.
-The earlier Orca IQ4_XS deployment with Strata 0.1.44.1 and exact engine optimizations reached 40.6
-tokens/s solo, 39.1 tokens/s total for two requests and 132.6 prompt tokens/s
-on a fresh 1,580-token prompt in the pre-deployment live comparison
-(2026-10-15). Live throughput was essentially unchanged from the freshly
-restarted baseline; measured gains are in isolated CPU and dense-weight
-preparation components. These are short samples; the
-Performance section retains the broader earlier measurements and long-context limits.
+On 2026-10-19 llm1 measured 39.7 tokens/s solo, 39.8 tokens/s total for two
+requests and 221 prompt tokens/s on a fresh 4.4k-token prompt (T=0, 512 tokens;
+see "Throughput overhaul"). Two agents with ~40k- and ~20k-token contexts
+averaged 28.2 tokens/s per turn, and follow-up turns read only their new tokens.
 Budget several minutes to read a fresh 30k-token prompt. Use `stream=True` for long prompts: Strata sends an SSE
 comment every 10 s while it reads, and the proxy inactivity timeout is 1 h.
 Native Strata retains the checkpoint reuse implementation. Historical throughput
@@ -339,6 +336,66 @@ prompts as in the Performance section (T=0, 512 tokens) measured 37.75 t/s solo
 prompt t/s for 4,411 tokens; the replacement configuration ran at about 19 t/s
 solo. The card fell to 185 MiB free while CUDA graphs were captured, so
 `--vram-reserve-mib 1000` keeps the paging margin the engine asks for (#2065).
+
+### Throughput overhaul (2026-10-19)
+
+Same harness throughout (`client.py` on llm1: four prompts at T=0 with 512 tokens each, two
+concurrent streams, a 1.4k-token prompt), each change gated before it was kept:
+bit-exact changes by `tests/check-strata-optimizations.py` (token identity in
+fresh-prompt, solo, two-slot and one-slot modes), the rest by `quant_quality.py`
+against the same engine (decode: 4,995 teacher-forced positions; prompts: a
+1.5k-5k-token variant with `--batch 2` and the auto expert cache).
+
+| Configuration | Solo t/s | Two requests t/s | Prompt t/s (4.4k / 1.4k) | Two-slot window |
+|---|---:|---:|---:|---:|
+| live before (commit 8c8e207 config) | 19.8 | 32.2 | 70 / 68 | - |
+| commit a49ab63 config (expert cache, MTP) | 38.95 | 36.1 | 148 / 128 | 145.7 ms |
+| + prompt planner and CPU prompt share | 38.8 | 36.2 | 218 / 208 | 145.8 ms |
+| + fused CPU pool, leaner kernels, RoPE share | 38.9 | 37.8 | 221 / 211 | 138.3 ms |
+| **+ one-token IQ4_NL down kernel (deployed)** | **39.7** | **39.8** | **221 / 210** | **133.9 ms** |
+
+Kept (each patch has its own off switch; see the comments in `strata.nix`):
+
+- `strata-prefill-planner.patch`: the auto prompt planner no longer reserves streaming
+  ring room for staged chunks, so the shared prompt path picks 1536-token chunks.
+- `strata-batch-prompt-share.patch` plus `STRATA_PREFILL_CPU_SHARE=auto`: under
+  `--batch` the prompt path gets the CPU pool, so upstream's hybrid CPU+GPU expert
+  share runs while a prompt is read (the slots only decode between chunks).
+  Long-prompt logits against the share off: KL 0.0004.
+- `strata-pool-fused.patch`: gate/up tasks quantize their own rows and the down tasks
+  start per expert as soon as its gate/up rows finish (one batch per layer instead of
+  two barriers around a serial host quantization). The stall watchdog still covers it.
+- `strata-cpu-round3.patch`: multi-token IQ4_NL down rows convert scales once per call
+  and prefetch per line (-16% single thread); multi-token IQ4_XS gate/up decodes
+  scales in vector code (-3..-5%).
+- `strata-rope-share.patch`: the two slot sessions borrow the main session's RoPE
+  table: 486 -> 511 expert-cache slots at the 1000 MiB reserve.
+- `strata-cpu-down1.patch`: one-token IQ4_NL down rows (most expert groups in
+  two-slot windows) in ggml's exact accumulation order without its per-row call:
+  -7.2% two-slot CPU expert time, two requests +8.9%.
+- `strata-slot-affinity.patch` (server): an agent's next turn re-renders the end
+  of its history, so no slot held its whole start and the turn went to the least
+  recently used slot, the other agent's. Both conversations were then read
+  again (22k and 43k tokens, 170-214 s each). The slot sharing the longest common
+  start (at least 512 tokens) now wins and the turn checkpoints restore it: two
+  ~60k-context agents took 363 s instead of 884 s for three turns each.
+
+Measured and not kept: two captured streams for the solo split window (-16%: they
+contend with the host's ring order), CUDA builds of the HIP node fusions and a
+GTX 1070 MMVQ table (within noise; a dummy-node probe showed the solo wait is the
+A/B half alternation, not launch gaps), coupled drafting in batch slots and
+`STRATA_SPEC_COUPLED=1` (no acceptance gain at T=1 on this model), concurrent slot
+drafts and asynchronous batch commit (about 1 ms; both are VRAM-bandwidth bound),
+`--pool-tasks` 84/168, `--mtp-window 8192`, adaptive-tier policy changes (offline
+replay: every policy within 1 point of the current hit rate), and a 12288-cell
+slot K/V ring (+77 slots, decode within noise, less VRAM K/V at long context).
+`--vram-reserve-mib 800` adds 80 slots but leaves 141 MiB free at the low point,
+for about 2% more two-request throughput, so 1000 stays.
+
+Decode remains bound by the CPU expert pass (about 100 ms of a 134 ms two-slot
+window) and, solo, by the GPU's two dense passes per split window. The checks
+above are short samples, plus one two-agent run at ~60k context; they do not
+qualify full 131072-token contexts.
 
 ### Engine patch
 
