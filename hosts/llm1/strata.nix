@@ -67,6 +67,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-prefill-planner.patch
     # Hand the prompt path the CPU pool under --batch, so prompts share experts with the CPU (STRATA_BATCH_PREFILL_SHARE=0).
     ./strata-batch-prompt-share.patch
+    # CPU pool: gate/up tasks quantize their own rows, gate/up and down run as one batch (STRATA_POOL_FUSED=0, STRATA_POOL_TASK_QUANT=0).
+    ./strata-pool-fused.patch
   ];
 
   nativeBuildInputs = [

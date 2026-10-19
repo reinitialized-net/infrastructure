@@ -1,0 +1,198 @@
+diff --git a/include/strata/kernels/cpu/native_expert.hpp b/include/strata/kernels/cpu/native_expert.hpp
+index 895f90c..855318e 100644
+--- a/include/strata/kernels/cpu/native_expert.hpp
++++ b/include/strata/kernels/cpu/native_expert.hpp
+@@ -45,6 +45,10 @@ bool native_fmt(int gu_type, int d_type, int64_t n_embd, int64_t n_ff, NativeFmt
+ void native_quant_act(const NativeFmt& f, const float* x, void* dst);
+ /// h (n_ff floats) -> the down activation (h_bytes).
+ void native_quant_h(const NativeFmt& f, const float* h, void* dst);
++/// Rows [r0, r1) of h -> their blocks of the down activation, the same bytes native_quant_h writes there.  r0 and r1
++/// are multiples of native_quant_h_block(f), which is 0 where the down activation is not cut into independent blocks.
++int native_quant_h_block(const NativeFmt& f);
++void native_quant_h_rows(const NativeFmt& f, const float* h, void* dst, int r0, int r1);
+ 
+ /// From how many tokens native_gu_rows gives this gate/up type to a multi-token kernel (#152; ggml-cpu's per-token dot
+ /// below that).  1: a token's rows are the same alone and in any group.
+diff --git a/include/strata/kernels/cpu/pool.hpp b/include/strata/kernels/cpu/pool.hpp
+index 6796e39..66830e4 100644
+--- a/include/strata/kernels/cpu/pool.hpp
++++ b/include/strata/kernels/cpu/pool.hpp
+@@ -295,6 +295,15 @@ private:
+         alignas(64) uint8_t hq[MAXT][kNativeHBytes];   // plan v0.3 P6: native down activations
+     };
+     const NativeFmt* nfmt_ = nullptr;
++    // native mode 5 with the hidden quantized in the task (STRATA_POOL_TASK_QUANT): gate/up ranges are whole blocks of
++    // `qblock_` rows (0: the host quantizes between the phases).  Mode 7 (STRATA_POOL_FUSED) is mode 5's `mtasks_`
++    // tasks, then mode 6's `mtasks2_` over `mrows2_` in one batch: a down task waits for `pend_[e]`, its experts' gate/up
++    // tasks still running, to reach 0.
++    int qblock_ = 0;
++    int64_t mrows2_ = 0;
++    int mtasks2_ = 1;
++    struct alignas(64) Pending { std::atomic<int> v{0}; };
++    Pending pend_[kMaxSplitMulti];
+     std::vector<SplitBufMulti> split_multi_;
+     PoolAffinity affinity_ = PoolAffinity::All;
+     CpuTopology topo_;
+diff --git a/src/kernels/cpu/native_expert.cpp b/src/kernels/cpu/native_expert.cpp
+index 7d7ba42..6b050dd 100644
+--- a/src/kernels/cpu/native_expert.cpp
++++ b/src/kernels/cpu/native_expert.cpp
+@@ -121,6 +121,19 @@ void native_quant_h(const NativeFmt& f, const float* h, void* dst) {
+     traits(f.d_act)->from_float(h, dst, f.n_ff);
+ }
+ 
++// Q8_0 and Q8_K quantize every block on its own (ggml's quantize_row_q8_0, q8k_quant_avx2 / the reference), so a
++// pool task can quantize the hidden rows it wrote (STRATA_POOL_TASK_QUANT, pool.cpp).  Other activations: 0.
++int native_quant_h_block(const NativeFmt& f) {
++    return f.d_act == (int) GGML_TYPE_Q8_0 || f.d_act == (int) GGML_TYPE_Q8_K ? (int) ggml_blck_size((ggml_type) f.d_act) : 0;
++}
++
++void native_quant_h_rows(const NativeFmt& f, const float* h, void* dst, int r0, int r1) {
++    uint8_t* d = (uint8_t*) dst + ggml_row_size((ggml_type) f.d_act, r0);
++    if (q8k_avx2(f.d_act)) { q8k_quant_avx2(h + r0, d, r1 - r0); return; }
++    if (q8k_avx1(f.d_act)) { q8k_quant_avx1(h + r0, d, r1 - r0); return; }
++    traits(f.d_act)->from_float(h + r0, d, r1 - r0);
++}
++
+ int native_gu_mt_min(int gu_type) {
+     // #152: from how many tokens the multi-token kernels run (ggml's vec_dot below that).  The default 2 is the
+     // measured-fastest rule, but a token's expert rows then round differently alone than in a group, so greedy output
+diff --git a/src/kernels/cpu/pool.cpp b/src/kernels/cpu/pool.cpp
+index 3bf8c93..23d8bae 100644
+--- a/src/kernels/cpu/pool.cpp
++++ b/src/kernels/cpu/pool.cpp
+@@ -684,13 +684,40 @@ void ExpertPool::drain(int id, ExpertScratch& scratch, uint32_t epoch) {
+         } else if (mode_ >= 5) {
+             // plan v0.3 P6: native layers, 5 = gate/up rows, 6 = down rows (the layer's own n_ff / n_embd: Flash-Next's
+             // FF / H, or another family's smaller expert)
+-            const int per = mode_ == 5 ? (int) nfmt_->n_ff : (int) nfmt_->n_embd;
+-            const int64_t g0 = mrows_ * (int64_t) i / mtasks_, g1 = mrows_ * (int64_t) (i + 1) / mtasks_;
++            // 7 = the two in one batch (run_split_multi_native): tasks below mtasks_ are gate/up, the rest down
++            const bool gu = mode_ == 5 || (mode_ == 7 && (int) i < mtasks_);
++            const int64_t rows = gu || mode_ == 6 ? mrows_ : mrows2_, ti = gu || mode_ == 6 ? i : i - mtasks_;
++            const int tasks = gu || mode_ == 6 ? mtasks_ : mtasks2_;
++            const int per = gu ? (int) nfmt_->n_ff : (int) nfmt_->n_embd;
++            // gate/up ranges in whole activation blocks when the task quantizes its rows (qblock_; 1 = any row)
++            const int64_t blk = gu && qblock_ ? qblock_ : 1;
++            const int64_t g0 = blk * (rows / blk * ti / tasks), g1 = blk * (rows / blk * (ti + 1) / tasks);
+             for (int64_t r = g0; r < g1;) {
+                 const int e = (int) (r / per), r0 = (int) (r % per);
+                 const int r1 = (int) std::min<int64_t>(per, r0 + (g1 - r));
+                 SplitBufMulti& sb = split_multi_[(size_t) e];
+-                if (mode_ == 5 && q2_native_kernels(nfmt_->gu_type)) {
++                if (mode_ == 7 && !gu) {
++                    // the expert's hidden is complete (and quantized) once its last gate/up task has finished.  Every
++                    // gate/up task was claimed before this one, so the wait is on running work, never on unclaimed.
++                    // The host drains too, so it can sit here instead of in wait_done: keep that watchdog (issue #29).
++                    uint32_t spins = 0;
++                    std::chrono::steady_clock::time_point t0{};
++                    while (pend_[e].v.load(std::memory_order_acquire) != 0) {
++                        _mm_pause();
++                        if ((++spins & 1023u) != 0) continue;
++                        const auto now = std::chrono::steady_clock::now();
++                        if (spins == 1024u) t0 = now;
++                        else if (now - t0 > kStall) {
++                            std::fprintf(stderr, "strata: the CPU expert pool stalled: expert %d's gate/up never "
++                                                 "finished - stopping the engine so the server can start it again "
++                                                 "(issue #29)\n", e);
++                            strata::core::release_gpu_waits(stderr);   // #267
++                            std::fflush(stderr);
++                            std::abort();
++                        }
++                    }
++                }
++                if (gu && q2_native_kernels(nfmt_->gu_type)) {
+                     // a native Q2_0 pack: gate and up rows on the Q2_0 kernels, then SwiGLU
+                     thread_local float gbuf[MAXT][FF], ubuf[MAXT][FF];
+                     float* gp[MAXT];
+@@ -702,10 +729,13 @@ void ExpertPool::drain(int id, ExpertScratch& scratch, uint32_t epoch) {
+                     for (int t = 0; t < mjobs_[e].nt; ++t)
+                         for (int r = r0; r < r1; ++r)
+                             sb.ff[t][r] = (gbuf[t][r] / (1.f + std::exp(-gbuf[t][r]))) * ubuf[t][r];
+-                } else if (mode_ == 5) {
++                } else if (gu) {
+                     float* ff[MAXT];
+                     for (int t = 0; t < mjobs_[e].nt; ++t) ff[t] = sb.ff[t];
+                     native_gu_rows(*nfmt_, mjobs_[e].blob, mjobs_[e].nact, mjobs_[e].nt, ff, r0, r1);
++                    if (qblock_)
++                        for (int t = 0; t < mjobs_[e].nt; ++t) native_quant_h_rows(*nfmt_, sb.ff[t], sb.hq[t], r0, r1);
++                    if (mode_ == 7) pend_[e].v.fetch_sub(1, std::memory_order_release);
+                 } else if (q2_native_kernels(nfmt_->d_type)) {
+                     // Q2_0 down (most IQ layers): the AVX-512 kernel, ggml-cpu has only a scalar one on x86
+                     const ActQ* a2[MAXT];
+@@ -824,13 +854,37 @@ void ExpertPool::run_split_multi_native(const NativeFmt& f, ExpertJobMulti* jobs
+         nfmt_ = &f;
+         mrows_ = (int64_t) nb * f.n_ff;
+         mtasks_ = phase_tasks(mrows_);
++        // STRATA_POOL_TASK_QUANT=0: the host quantizes every hidden between the phases while the workers wait.  On
++        // (default) each gate/up task quantizes the whole blocks it wrote - the same bytes - and STRATA_POOL_FUSED=0
++        // keeps the two phases; on (default), one batch whose down tasks start as their experts' hiddens complete.
++        static const bool task_quant = [] { const char* v = std::getenv("STRATA_POOL_TASK_QUANT"); return v == nullptr || v[0] != '0'; }();
++        static const bool fused = [] { const char* v = std::getenv("STRATA_POOL_FUSED"); return v == nullptr || v[0] != '0'; }();
++        qblock_ = task_quant && !q2_native_kernels(f.d_type) && !q2_native_kernels(f.gu_type) ? native_quant_h_block(f) : 0;
++        if (qblock_ && f.n_ff % qblock_) qblock_ = 0;
+         const auto a = std::chrono::steady_clock::now();
++        if (qblock_ && fused) {
++            mrows2_ = (int64_t) nb * f.n_embd;
++            mtasks2_ = phase_tasks(mrows2_);
++            for (int e = 0; e < nb; ++e) pend_[e].v.store(0, std::memory_order_relaxed);
++            const int64_t per = f.n_ff, blocks = mrows_ / qblock_;
++            for (int ti = 0; ti < mtasks_; ++ti) {   // the same ranges as drain()
++                const int64_t g0 = qblock_ * (blocks * ti / mtasks_), g1 = qblock_ * (blocks * (ti + 1) / mtasks_);
++                if (g1 > g0)
++                    for (int64_t e = g0 / per; e <= (g1 - 1) / per; ++e) pend_[e].v.fetch_add(1, std::memory_order_relaxed);
++            }
++            run_phase(7, mtasks_ + mtasks2_);   // begin_batch's release publishes pend_
++            ms_multi_gu += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - a).count();
++            qblock_ = 0;
++            continue;
++        }
+         run_phase(5, mtasks_);
+         const auto b = std::chrono::steady_clock::now();
+-        for (int e = 0; e < nb; ++e)
+-            for (int t = 0; t < mjobs_[e].nt; ++t)
+-                if (q2_native_kernels(f.d_type)) act_quant_any(split_multi_[(size_t) e].ff[t], FF, split_multi_[(size_t) e].a2[t]);
+-                else native_quant_h(f, split_multi_[(size_t) e].ff[t], split_multi_[(size_t) e].hq[t]);
++        if (!qblock_)
++            for (int e = 0; e < nb; ++e)
++                for (int t = 0; t < mjobs_[e].nt; ++t)
++                    if (q2_native_kernels(f.d_type)) act_quant_any(split_multi_[(size_t) e].ff[t], FF, split_multi_[(size_t) e].a2[t]);
++                    else native_quant_h(f, split_multi_[(size_t) e].ff[t], split_multi_[(size_t) e].hq[t]);
++        qblock_ = 0;
+         const auto c = std::chrono::steady_clock::now();
+         mrows_ = (int64_t) nb * f.n_embd;
+         mtasks_ = phase_tasks(mrows_);
+diff --git a/src/kernels/cpu/pool_tasks_test.cpp b/src/kernels/cpu/pool_tasks_test.cpp
+index dbb5e75..4bfa55b 100644
+--- a/src/kernels/cpu/pool_tasks_test.cpp
++++ b/src/kernels/cpu/pool_tasks_test.cpp
+@@ -70,6 +70,29 @@ int main(int argc, char** argv) {
+         }
+         const auto ref = out;
+         for (float v : ref) if (!std::isfinite(v)) return 1;
++        { // ... and the whole-row path without the pool: every expert's hidden quantized at once (STRATA_POOL_TASK_QUANT)
++            std::vector<float> ff((size_t) cpu::MAXT * cpu::FF), direct((size_t) cpu::MAXT * cpu::H);
++            std::vector<uint8_t> hq((size_t) cpu::MAXT * cpu::kNativeHBytes);
++            for (int e = 0; e < n && !cpu::q2_native_kernels(f.d_type); ++e) {
++                float* fp[cpu::MAXT];
++                float* op[cpu::MAXT];
++                const void* hp[cpu::MAXT];
++                for (int t = 0; t < jobs[e].nt; ++t) {
++                    fp[t] = &ff[(size_t) t * cpu::FF];
++                    op[t] = &direct[(size_t) t * cpu::H];
++                    hp[t] = &hq[(size_t) t * cpu::kNativeHBytes];
++                }
++                cpu::native_gu_rows(f, jobs[e].blob, jobs[e].nact, jobs[e].nt, fp, 0, cpu::FF);
++                for (int t = 0; t < jobs[e].nt; ++t) cpu::native_quant_h(f, fp[t], (void*) hp[t]);
++                cpu::native_down_rows(f, jobs[e].blob, hp, jobs[e].nt, op, 0, cpu::H);
++                for (int t = 0; t < jobs[e].nt; ++t)
++                    if (std::memcmp(op[t], jobs[e].out[t], cpu::H * sizeof(float)) != 0) {
++                        std::fprintf(stderr, "mismatch against the whole-row path n=%d e=%d t=%d\n", n, e, t);
++                        return 1;
++                    }
++                ++checks;
++            }
++        }
+         for (bool host : {false, true}) for (int workers : {1, 3})
+             for (int tasks : {0, 1, 41, 128, 192, 256, cpu::ExpertPool::kMaxTasks}) {
+                 cpu::ExpertPool pool(workers, false, host, cpu::PoolAffinity::All, tasks);
