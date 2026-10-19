@@ -71,6 +71,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-pool-fused.patch
     # Leaner IQ4_NL down rows and vector scale decode for multi-token IQ4_XS gate/up (STRATA_IQ4NL_LEAN=0, STRATA_IQ4XS_SCALES8=0).
     ./strata-cpu-round3.patch
+    # Batch slot sessions borrow the main session's RoPE table: +25 expert-cache slots (STRATA_SHARE_ROPE=0).
+    ./strata-rope-share.patch
   ];
 
   nativeBuildInputs = [

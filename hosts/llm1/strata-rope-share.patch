@@ -1,0 +1,98 @@
+diff --git a/include/strata/core/session.hpp b/include/strata/core/session.hpp
+index 4d63320..f90dd69 100644
+--- a/include/strata/core/session.hpp
++++ b/include/strata/core/session.hpp
+@@ -95,11 +95,15 @@ struct SessionState {
+ /// [layer_lo, layer_hi) carves only that range's per-layer state (a split stage runs a slice of the model);
+ /// the default full range is byte-identical to the old whole-model carve.  Pure arithmetic - safe to call for
+ /// a candidate range before anything is allocated, which is how the layer-split search prices a placement.
++/// `own_rope = false` prices a session whose QSA states borrow another session's RoPE table (`rope_from` below).
+ uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int64_t layer_lo = 0,
+-                       int64_t layer_hi = -1);
++                       int64_t layer_hi = -1, bool own_rope = true);
+ /// Carves `base` (DEVICE memory) into `s`.  Returns the bytes used.  Same range convention as `session_bytes`.
++/// `rope_from` (same device, same `max_cells`, read-only after build) points every QSA state at that state's RoPE
++/// table instead of building one: the --batch slot sessions borrow the main session's (32 MiB each at 131K).  The
++/// lender must outlive this session.  Size the carve with `session_bytes(..., own_rope = false)`.
+ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void* base, SessionState& s,
+-                      int64_t layer_lo = 0, int64_t layer_hi = -1);
++                      int64_t layer_lo = 0, int64_t layer_hi = -1, const QsaState* rope_from = nullptr);
+ /// Before the memory `session_init` carved is freed: forgets what points into it from outside the session (the
+ /// rope kernels' registered angle table, #280), so a later session never rotates by freed memory.
+ void session_release(SessionState& s);
+diff --git a/src/core/session.cpp b/src/core/session.cpp
+index 157c4cc..c65098e 100644
+--- a/src/core/session.cpp
++++ b/src/core/session.cpp
+@@ -52,7 +52,8 @@ static uint64_t ple_hist_bytes() {
+     return (uint64_t) strata::kernels::NG_HIST * strata::kernels::NG_HC_DIM * sizeof(float);
+ }
+ 
+-uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int64_t layer_lo, int64_t layer_hi) {
++uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int64_t layer_lo, int64_t layer_hi,
++                       bool own_rope) {
+     if (layer_hi < 0 || layer_hi > g.n_layers) layer_hi = g.n_layers;
+     if (layer_lo < 0) layer_lo = 0;
+     // QSA layers are `l % interval == interval-1`, so exactly `bound / interval` of them live below `bound`
+@@ -65,7 +66,7 @@ uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int
+     n += (uint64_t) gdn_n * gdn_state_floats(g) * 4;
+     // One QSA state carries the RoPE table; the others borrow it (P7: 64 MiB per layer at 262K).
+     if (g.n_qsa_layers() > 0)
+-        n += qsa_state_bytes(g, max_cells, true) + (uint64_t) (q_n - 1) * qsa_state_bytes(g, max_cells, false);
++        n += qsa_state_bytes(g, max_cells, own_rope) + (uint64_t) (q_n - 1) * qsa_state_bytes(g, max_cells, false);
+     n += qsa_buffers_bytes(g, max_cells);
+     n += moe_buffers_bytes(g, k);
+     n += block_buffers_bytes(g);
+@@ -74,7 +75,7 @@ uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int
+ }
+ 
+ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void* base, SessionState& s,
+-                      int64_t layer_lo, int64_t layer_hi) {
++                      int64_t layer_lo, int64_t layer_hi, const QsaState* rope_from) {
+     if (layer_hi < 0 || layer_hi > g.n_layers) layer_hi = g.n_layers;
+     if (layer_lo < 0) layer_lo = 0;
+     uint8_t* p = (uint8_t*) base;
+@@ -104,7 +105,8 @@ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void
+     // same way, which is a coupling with nothing to gain.  Only the range's ordinals are initialized; the
+     // rest stay value-initialized nulls.  The FIRST ALLOCATED one (the session's primary, ordinal qsa_ord0)
+     // owns the RoPE table that the others - and the prefill staging identity, and the MTP drafter - borrow.
+-    const uint64_t first = qsa_state_bytes(g, max_cells, true), rest = qsa_state_bytes(g, max_cells, false);
++    // (a borrowed table - `rope_from` - leaves the primary owning nothing: it lends the lender's pointers on)
++    const uint64_t first = qsa_state_bytes(g, max_cells, rope_from == nullptr), rest = qsa_state_bytes(g, max_cells, false);
+     s.qsa_state_arena = take(g.n_qsa_layers() > 0 ? first + (uint64_t) (s.qsa_alloc - 1) * rest : 0);
+     s.qsa_states = new QsaState[(size_t) g.n_qsa_layers()]();
+     s.qsa_buf_arena = take(qsa_buffers_bytes(g, max_cells));
+@@ -114,7 +116,7 @@ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void
+     // attention read null host pointers at the first request ("illegal memory access"), so the session fails here
+     for (int64_t j = 0; j < s.qsa_alloc; ++j)
+         if (qsa_state_init(g, max_cells, qp + (j == 0 ? 0 : first + (uint64_t) (j - 1) * rest),
+-                           s.qsa_states[s.qsa_ord0 + j], j == 0 ? nullptr : &s.qsa_states[s.qsa_ord0]) == 0)
++                           s.qsa_states[s.qsa_ord0 + j], j == 0 ? rope_from : &s.qsa_states[s.qsa_ord0]) == 0)
+             return 0;
+     qsa_buffers_init(g, max_cells, s.qsa_buf_arena, s.qsa_bufs);
+ 
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 25f29a1..852cfc8 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -4569,12 +4569,18 @@ int main(int argc, char** argv) {
+             const int64_t lo = k == 0 ? 0 : stages[k - 1]->lb;
+             const int64_t hi = k == 0 ? (multi_gpu ? split_at[0] : -1) : stages[k - 1]->le;
+             const strata::core::OnDevice on_k(dev);
+-            const uint64_t bytes = strata::core::session_bytes(g, o.max_context, K, lo, hi);
++            // CUDA0's slots borrow the main session's RoPE table (same device, same cells, read-only): 32 MiB each
++            // at 131K that the expert cache gets instead.  STRATA_SHARE_ROPE=0 has every slot build its own.
++            const char* sre = std::getenv("STRATA_SHARE_ROPE");
++            const strata::core::QsaState* rope_from =
++                k == 0 && g.n_qsa_layers() > 0 && ss.qsa_states != nullptr && (sre == nullptr || sre[0] != '0')
++                    ? &ss.qsa_states[ss.qsa_primary()] : nullptr;
++            const uint64_t bytes = strata::core::session_bytes(g, o.max_context, K, lo, hi, rope_from == nullptr);
+             if (k == 0) bytes0 = bytes;
+             for (int b = 0; b < fit; ++b) {
+                 auto u = std::make_unique<strata::core::SessionState>();
+                 void* buf = nullptr;
+-                if (cudaMalloc(&buf, bytes) != cudaSuccess || strata::core::session_init(g, o.max_context, K, buf, *u, lo, hi) == 0) {
++                if (cudaMalloc(&buf, bytes) != cudaSuccess || strata::core::session_init(g, o.max_context, K, buf, *u, lo, hi, rope_from) == 0) {
+                     cudaGetLastError();
+                     if (buf != nullptr) cudaFree(buf);
+                     size_t fb = 0, tb = 0;
