@@ -1,0 +1,59 @@
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 3787880..eff7cfc 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -6623,6 +6623,15 @@ int main(int argc, char** argv) {
+     // IQ2_XS (RTX 5090, 64K context) read at 5,624 tok/s in 8192-token chunks and 6,465 in one 32768 chunk (40K
+     // -> 18K experts streamed; an NVFP4 pack at 262K: 3,535 -> 5,201).
+     int64_t auto_ceiling = std::max<int64_t>(8192, std::min<int64_t>(o.prefill_auto_max, o.max_context));
++    // A chunk below stream_all_min() is staged: ring_slots() gives it STAGE slots whatever the ring budget, so the
++    // auto scans ask it for the ring room only when this is off.  Measured on llm1 (RTX 4060 Ti 16 GB over PCIe 4.0
++    // x8, Qwen3.8 IQ4_XS, 4.4K prompts): keeping a 199-slot ring's room for a staged chunk made the scan stop at a
++    // 512-768 staged chunk (106-146 tok/s) where 1536/18 read at 159.  STRATA_PREFILL_PLAN_STAGED=0: the old rule.
++    static const bool plan_staged = [] {
++        const char* v = std::getenv("STRATA_PREFILL_PLAN_STAGED");
++        return v == nullptr || v[0] != '0';
++    }();
++    auto ringless = [](int64_t t) { return plan_staged && t < strata::prefill::Prefill::stream_all_min_tokens(); };
+     // 0.1.44: a layer split reads a prompt as a pipeline of chunks (the later card reads chunk c while the first reads c+1), so a
+     // 32K prompt in two 16384 chunks fills and drains the pipe for most of its time.  8192 chunks, same tokens: 2x R9700
+     // pp32k +14%, 4x +19%, pp64k +4% / +16%.  STRATA_SPLIT_CHUNK16K=1 keeps the gfx12 16384 ceiling on a split.
+@@ -6734,7 +6743,7 @@ int main(int argc, char** argv) {
+             auto scan = [&](int64_t floor) -> int64_t {
+                 return biggest_chunk(auto_ceiling, [&](int64_t t) -> bool {
+                     const int64_t room = room_of(t);
+-                    if (room < floor) return false;
++                    if (room < floor && !ringless(t)) return false;
+                     strata::prefill::Prefill::set_ring_budget((int) room, 0);
+                     // ring_slots() now returns `room` - unless STRATA_PREFILL_RING overrides it, in which case the
+                     // chunk has to fit THAT ring, which is the pre-fix rule and the A/B arm
+@@ -6743,7 +6752,9 @@ int main(int argc, char** argv) {
+                 });
+             };
+             int64_t c = scan(ring_max);
+-            if (c == 0 && ring_max < strata::prefill::Prefill::ring_default_slots()) c = scan(kRingMin);
++            // plan_staged: the larger of the two (a bigger chunk beats a bigger ring where PCIe is the limit)
++            if (plan_staged) c = std::max(c, scan(kRingMin));
++            else if (c == 0 && ring_max < strata::prefill::Prefill::ring_default_slots()) c = scan(kRingMin);
+             // a prompt that fits 0.1.39's chunk keeps 0.1.39's ring (one chunk: the smaller ring only slowed it)
+             if (small >= c) {   // the scan bought nothing: 0.1.39's choice
+                 strata::prefill::Prefill::set_ring_budget(0, 0);
+@@ -7422,7 +7433,7 @@ int main(int argc, char** argv) {
+                 auto probe = [&](int64_t floor) -> int64_t {
+                     return biggest_chunk(auto_ceiling, [&](int64_t t) -> bool {
+                         const int64_t room = ring_room(t, only, cap);
+-                        if (room < floor) return false;
++                        if (room < floor && !ringless(t)) return false;
+                         strata::prefill::Prefill::set_ring_budget((int) room, 0);
+                         // ring_slots() now returns `room` - unless STRATA_PREFILL_RING overrides it, in which
+                         // case the chunk has to fit THAT ring, which is the pre-fix rule and the A/B arm
+@@ -7430,7 +7441,8 @@ int main(int argc, char** argv) {
+                     });
+                 };
+                 int64_t c = probe(cap);
+-                if (c == 0 && cap < strata::prefill::Prefill::ring_default_slots()) c = probe(kRingMin);
++                if (plan_staged) c = std::max(c, probe(kRingMin));   // the larger of the two (see plan_staged)
++                else if (c == 0 && cap < strata::prefill::Prefill::ring_default_slots()) c = probe(kRingMin);
+                 return std::max(c, small);   // never a smaller chunk than 0.1.39's
+             };
+             const int64_t chunk = scan(nullptr);

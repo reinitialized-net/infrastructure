@@ -63,6 +63,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-prefill.patch
     # Opt-in direct MTP KV state transfers, checked by conversation_snapshot_test.
     ./strata-decode-round2.patch
+    # Prompt planner: staged chunks need no streaming ring; keep the larger ring probe (STRATA_PREFILL_PLAN_STAGED=0).
+    ./strata-prefill-planner.patch
   ];
 
   nativeBuildInputs = [
