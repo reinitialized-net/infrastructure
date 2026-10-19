@@ -1,0 +1,53 @@
+diff --git a/serve/server.py b/serve/server.py
+index 5ca7f4e..e8336b2 100644
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -1821,12 +1821,29 @@ class StrataEngine:
+                 g0 = b - b % gs
+                 return any(self.slot_busy[x] for x in range(b + 1, g0 + gs))
+             return min(free, key=lambda b: (not fills_hole(b), self.slot_order.index(b)))
+-        def held_prefix(b):
+-            h = self.slot_held[b]
+-            return len(h) if h and len(h) < len(prompt) and prompt[:len(h)] == h else 0
+-        best = max(free, key=held_prefix)
++        def common(b):
++            h, lo, hi = self.slot_held[b], 0, min(len(self.slot_held[b]), len(prompt) - 1)
++            while lo < hi:                       # the longest common start, by halving (slice compares run in C)
++                m = (lo + hi + 1) // 2
++                if prompt[:m] == h[:m]:
++                    lo = m
++                else:
++                    hi = m - 1
++            return lo
++        # an agent's next turn re-renders the end of its history (the template drops the reasoning, the tail of the
++        # last answer differs), so no slot holds ALL of its start - yet the slot that held the conversation shares a
++        # long start with it, and the engine's turn checkpoints restore most of that.  Counting only whole held
++        # prefixes sent such a turn to the least recently used slot, the OTHER agent's: both were read again.
++        # STRATA_SLOT_COMMON=0: whole held prefixes only (as before).
++        partial = os.environ.get("STRATA_SLOT_COMMON", "1") != "0"
++        def reuse(b):
++            c = common(b)
++            if c and c == len(self.slot_held[b]):
++                return c                         # the slot holds a whole start of the prompt
++            return c if partial and c >= self.SLOT_PREFIX_MIN else 0
++        best = max(free, key=reuse)
+         # without --batch-groups a held prefix of any length is taken, as before
+-        if held_prefix(best) >= (self.SLOT_PREFIX_MIN if self.slot_groups > 1 else 1):
++        if reuse(best) >= (self.SLOT_PREFIX_MIN if self.slot_groups > 1 else 1):
+             return best
+         # with --batch-groups: the group with the fewest busy slots first, so the requests spread over the
+         # pipeline's stages (two requests in one group leave the other stage idle); then empty, then least recent
+diff --git a/serve/test_parallel.py b/serve/test_parallel.py
+index 1a63891..b314cba 100644
+--- a/serve/test_parallel.py
++++ b/serve/test_parallel.py
+@@ -247,6 +247,9 @@ class PickSlot(unittest.TestCase):
+         self.assertIsNone(e.pick_slot([7, 8]))
+         e.slot_busy = [False] * 3
+         self.assertEqual(e.pick_slot([1, 2, 3]), 1)                 # a held prompt is never the WHOLE prompt
++        e.slot_held = [list(range(1, 900)) + [5], list(range(1, 601)), []]
++        self.assertEqual(e.pick_slot(list(range(1, 900)) + [7, 8]), 0)    # a re-rendered next turn: the longest start
++        self.assertEqual(e.pick_slot([1] + [9] * 600), 2)                 # a short common start is not worth it
+ 
+     def test_batch_groups_spread_requests_over_the_groups(self):
+         # #1249: with --batch-groups 2 over 4 slots (groups {0,1} and {2,3}) a second request goes to the other group,

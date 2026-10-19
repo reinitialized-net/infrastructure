@@ -75,6 +75,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-rope-share.patch
     # One-token IQ4_NL down rows in ggml's accumulation order, without its per-row call (STRATA_IQ4NL_ONE=0).
     ./strata-cpu-down1.patch
+    # serve: a re-rendered next turn goes to the slot sharing its longest start, not the other agent's (STRATA_SLOT_COMMON=0).
+    ./strata-slot-affinity.patch
   ];
 
   nativeBuildInputs = [
