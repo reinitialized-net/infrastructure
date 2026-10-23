@@ -1,6 +1,8 @@
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index cf47b6ca..533bde5a 100644
 --- a/src/program/generate.cpp
 +++ b/src/program/generate.cpp
-@@ -11072,18 +11072,22 @@
+@@ -12648,7 +12648,22 @@ int main(int argc, char** argv) {
                      resume = 0;
                      from_live = false;
                  } else {
@@ -9,21 +11,52 @@
 +                    // request returns to solo: the next slot admission must carry them on again. Otherwise a
 +                    // solo -> slot -> solo cycle loses the next turn's prefix when the client omits reasoning.
 +                    // The existing prefix/extent filter below drops checkpoints beyond a rewind or on another branch.
-+                    checks = bs[(size_t) slot_source].checks;
++                    std::vector<ConvCheckpoint>& sc = bs[(size_t) slot_source].checks;
++                    const int64_t ck_len = slot_ck != nullptr ? (int64_t) slot_ck->ids.size() : -1;
++                    // STRATA_SLOT_CKPT_MOVE: the slot this request continues in drops its checkpoints at the
++                    // admission, so they move (and the turn checkpoint moves on into the slot then: moved_in)
++                    const bool move_all = slot_ckpt_move_env() && admit_slot == slot_source;
++                    if (move_all) {
++                        checks = std::move(sc);
++                        sc.clear();
++                    } else {
++                        checks = sc;
++                    }
 +                    tail_ckpt_len = -1;
                      // a read that gave way, the same request again (into its own slot): on with it - its segments and
                      // checkpoints as if it had not stopped
                      if (slot_ck == nullptr && bs[(size_t) slot_source].partial && admit_slot == slot_source) {
-                         resumed_from0 = bs[(size_t) slot_source].partial_from0;
+@@ -12656,25 +12671,18 @@ int main(int argc, char** argv) {
+                         resume_plan = bs[(size_t) slot_source].partial_plan;
+                         resume_plan_at = slot_tokens;
+                         resume_plan_end = resume_plan.to;
 -                        for (const ConvCheckpoint& c : bs[(size_t) slot_source].checks) checks.push_back(c);
                          bs[(size_t) slot_source].partial = false;
+                         bs[(size_t) slot_source].partial_plan = {};
                      }
-                     if (slot_ck != nullptr) {
-                         live = slot_ck->ids;
--                        checks.push_back(*slot_ck);   // the main session's chain has it now
--                        checks.back().used = ++check_clock;
+-                    if (slot_ck != nullptr) {
++                    if (ck_len >= 0) {
++                        slot_ck = nullptr;   // the chain's copy of it (the slot's may have moved)
 +                        for (ConvCheckpoint& c : checks)
-+                            if (c.ids.size() == slot_ck->ids.size()) c.used = ++check_clock;
++                            if ((int64_t) c.ids.size() == ck_len) {
++                                c.used = ++check_clock;
++                                slot_ck = &c;
++                            }
+                         live = slot_ck->ids;
+-                        if (slot_ckpt_move_env() && admit_slot == slot_source) {
+-                            // STRATA_SLOT_CKPT_MOVE: the slot this request continues in drops its checkpoints at the
+-                            // admission, so this one moves (and moves on into the slot then: moved_in)
+-                            std::vector<ConvCheckpoint>& sc = bs[(size_t) slot_source].checks;
+-                            const auto it = sc.begin() + (slot_ck - sc.data());
+-                            checks.push_back(std::move(*it));
+-                            sc.erase(it);
+-                            slot_ck = &checks.back();
+-                            moved_in = (int64_t) slot_ck->ids.size();
+-                        } else {
+-                            checks.push_back(*slot_ck);   // the main session's chain has it now
+-                        }
+-                        checks.back().used = ++check_clock;
++                        if (move_all) moved_in = ck_len;
                      } else {
                          live = bs[(size_t) slot_source].ids;
                      }

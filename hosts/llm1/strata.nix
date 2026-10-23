@@ -35,21 +35,22 @@ let
 in
 cuda.backendStdenv.mkDerivation {
   pname = "strata";
-  version = "0.1.44.1";
+  # The v0.2.2 app release; its engine reports 0.1.47.
+  version = "0.2.2";
 
   src = fetchFromGitHub {
     owner = "Niko1221";
     repo = "Strata";
-    rev = "v0.1.44.1";
-    hash = "sha256-Jfo2uldtyXW8Y/wQxA7WcYwtmzCGAOaXgnlMSo7K9LE=";
+    rev = "v0.2.2";
+    hash = "sha256-rZqp6GjcaDzwL9FjBxCrh3DNfF8j9QT7S0kN7BVD+vg=";
   };
 
   patches = [
-    # Upstream 94d189f: all-zero converter compression metadata is unspecified.
-    ./strata-compression-placeholder.patch
-    # mtp_fetch.py: STRATA_MTP_REPO picks the repo; HF_TOKEN authenticates gated ones.
+    # mtp_fetch.py: STRATA_MTP_REPO picks the repo (with STRATA_MTP_REVISION set to one of
+    # its commits); HF_TOKEN authenticates gated ones.
     ./strata-mtp-fetch.patch
-    # Engine changes for the GTX 1070 and two requests at once (docs/llm1.md, "Engine patch").
+    # Engine changes for the GTX 1070 and two requests at once (docs/llm1.md, "Engine patch");
+    # its direct slot copies are upstream now (STRATA_SLOT_COPY_DIRECT).
     ./strata-performance.patch
     # Reuse the IQ4_XS kernel's activation lane layout across rows, with exact qualification.
     ./strata-activation-reuse.patch
@@ -75,7 +76,8 @@ cuda.backendStdenv.mkDerivation {
     ./strata-rope-share.patch
     # One-token IQ4_NL down rows in ggml's accumulation order, without its per-row call (STRATA_IQ4NL_ONE=0).
     ./strata-cpu-down1.patch
-    # serve: a re-rendered next turn goes to the slot sharing its longest start, not the other agent's (STRATA_SLOT_COMMON=0).
+    # serve: a next turn that shares 512+ tokens below upstream's turn-checkpoint match goes to
+    # the slot sharing its longest start, not the other agent's (STRATA_SLOT_COMMON=0).
     ./strata-slot-affinity.patch
   ];
 
@@ -99,6 +101,8 @@ cuda.backendStdenv.mkDerivation {
     (lib.cmakeBool "STRATA_BUILD_CONVERSATION_TESTS" true)
     (lib.cmakeFeature "CMAKE_CUDA_ARCHITECTURES" "61")
     (lib.cmakeFeature "STRATA_GGML_DIR" "${ggml}")
+    # Trellis (Gyro) prompt kernels: no use for the IQ4_XS pack.
+    (lib.cmakeBool "STRATA_MMQ_TQ_OVERLAY" false)
   ];
   # Build only the engine and focused Pascal qualification tools, not the full suite.
   ninjaFlags = [
@@ -117,7 +121,8 @@ cuda.backendStdenv.mkDerivation {
   # hv1's E5-2690 v4 (`cpu: host`) explicitly instead, as hosts/llm1/llm.nix does.
   env.NIX_CFLAGS_COMPILE = "-march=broadwell -mtune=broadwell";
 
-  # The engine, plus the Python server and its web UI, packers, and profiles it runs with.
+  # The engine, plus the Python server (with the strata_control/strata_cli modules it imports)
+  # and its web UI, packers, and profiles it runs with.
   installPhase = ''
     runHook preInstall
     ./gguf_geometry_test
@@ -126,7 +131,7 @@ cuda.backendStdenv.mkDerivation {
     install -m755 gemm_f32_parity mmvq_il_parity dequant_wide_parity $out/libexec/strata/
     install -m755 iq4xs_gu1_parity iq_avx2_parity dequant_fused_parity $out/libexec/strata/
     install -m755 conversation_snapshot_test $out/libexec/strata/
-    cp -r ../{serve,tools,data} $out/share/strata/
+    cp -r ../{serve,tools,data,strata_control,strata_cli} $out/share/strata/
     makeWrapper ${python.interpreter} $out/bin/strata-server \
       --chdir $out/share/strata --add-flags "-m serve.server"
     makeWrapper ${python.interpreter} $out/bin/strata-python \
@@ -134,9 +139,10 @@ cuda.backendStdenv.mkDerivation {
     runHook postInstall
   '';
 
-  # API key, Host/Origin and reasoning-effort routing checks.
+  # API key, Host/Origin, reasoning-effort routing and slot-choice checks, plus the
+  # slot-affinity and mtp-fetch patches' own tests.
   doInstallCheck = true;
   installCheckPhase = ''
-    cd $out/share/strata && PYTHONDONTWRITEBYTECODE=1 ${python.interpreter} -m unittest serve.test_security serve.test_effort_paths
+    cd $out/share/strata && PYTHONDONTWRITEBYTECODE=1 ${python.interpreter} -m unittest serve.test_security serve.test_effort_paths serve.test_slot_alloc serve.test_parallel.PickSlot tools.test_mtp_fetch.Token
   '';
 }

@@ -201,9 +201,11 @@ The service uses Strata's native engine directly. The obsolete Wren server,
 transport adapter and unused llama.cpp/Ollama package definitions have been
 removed. Only the current model and its freshly prepared pack/tokenizer are retained.
 
-`hosts/llm1/strata.nix` builds upstream's experimental CUDA 12 engine
-(`STRATA_EXPERIMENTAL_SM60`, sm_61) with `-march=broadwell`. It also installs
-the Python server (`strata-server`) and packing tools (`strata-python`). A 12 GB
+`hosts/llm1/strata.nix` builds Strata v0.2.2 (engine 0.1.47) as upstream's
+experimental CUDA 12 engine (`STRATA_EXPERIMENTAL_SM60`, sm_61) with
+`-march=broadwell`. It also installs the Python server (`strata-server`, with the
+`strata_control` and `strata_cli` modules it imports) and packing tools
+(`strata-python`). A 12 GB
 card is upstream's floor for supported cards; 8 GB Pascal is a community path.
 
 ### Current model preparation
@@ -245,6 +247,9 @@ The MTP draft head is the base `Qwen/Qwen3.8-Flash-Next` head at Strata's pinned
 revision `de4b8e4d43b917e7706784d8bb445c9af86a3540` (public; `mtp_fetch.py`
 checks every tensor's SHA-256 against the safetensors index). Orca's own head
 needs the gated repository; its acceptance matched the base head's in October.
+To fetch another repository, set `STRATA_MTP_REPO`, `HF_TOKEN` and, since 0.2.x,
+`STRATA_MTP_REVISION` to one of that repository's commits (the tool stops when
+the pinned Qwen revision is missing there).
 The draft experts are packed as `q2_0`, with the English/code draft vocabulary:
 
 ```bash
@@ -378,7 +383,10 @@ Kept (each patch has its own off switch; see the comments in `strata.nix`):
   recently used slot, the other agent's. Both conversations were then read
   again (22k and 43k tokens, 170-214 s each). The slot sharing the longest common
   start (at least 512 tokens) now wins and the turn checkpoints restore it: two
-  ~60k-context agents took 363 s instead of 884 s for three turns each.
+  ~60k-context agents took 363 s instead of 884 s for three turns each. Since
+  0.2.x upstream matches a turn up to its last turn checkpoint itself (#2518); the
+  patch keeps only the fallback for turns that diverge below it, and
+  `STRATA_SLOT_COMMON=0` now gives upstream's behaviour.
 
 Measured and not kept: two captured streams for the solo split window (-16%: they
 contend with the host's ring order), CUDA builds of the HIP node fusions and a
@@ -440,9 +448,10 @@ slots and for one.
   `STRATA_BATCH_SPLIT=0` keeps one group (upstream; only a layer split
   pipelines there, with `--batch-groups`).
 - **Direct slot copies.** Moving a conversation between the main session and a
-  slot copies its device state on the device and its K/V host copy once.
-  Upstream goes through a host image, which takes about twice as long.
-  `STRATA_DIRECT_COPY=0` restores that.
+  slot copies its device state on the device and its K/V host copy once instead
+  of through a host image, which takes about twice as long. Upstream added the
+  same copies in 0.2.0 as an opt-in, so the 0.2.2 port dropped this part and
+  `llm.nix` sets upstream's `STRATA_SLOT_COPY_DIRECT=1`.
 - **A single-token IQ4_XS gate/up kernel for the CPU pool.** It handles both rows
   in one pass with two sub-blocks per AVX2 register: 1.36x ggml-cpu's dot in
   isolation (relative difference 1e-7), and 10% less CPU time in batch windows,
@@ -894,6 +903,58 @@ small conversion would need additional buffer-lifetime and fallback handling
 for little expected benefit. Routed expert staging already keeps transfers
 ahead and overlaps shared-expert work by default; no prefill change was added.
 
+### 0.2.2 migration (2026-10-22/23)
+
+Strata v0.2.2 (engine 0.1.47; same ggml commit and CUDA 12.9 toolchain) with all
+patches ported. `strata-compression-placeholder.patch` was dropped (upstream), the
+performance patch's direct slot copies became upstream's `STRATA_SLOT_COPY_DIRECT=1`,
+and `strata-slot-affinity.patch` keeps only the part upstream's #2518 does not cover.
+Upstream left every path our patches change untouched (no new IQ4_XS/IQ4_NL CPU
+kernels, no HC native read, one draft per batch slot), so each patch still applies
+its gain. The existing pack, PLE table, MTP runtime and saved expert profile load
+unchanged.
+
+Packaging: the 0.2.x server imports the new top-level `strata_control` and
+`strata_cli` modules, so the package and the harness install them; the trellis
+(Gyro) MMQ overlay is off. Server defaults that would change answers are pinned
+to the 0.1.44 behaviour: `sampling.presence_penalty = 0` (the model card adds 1.5
+to thinking-off requests otherwise) and `answer_room = false` (thinking cut early
+to leave a quarter of `max_tokens`). `STRATA_NO_PRESET=1` keeps saved `strata tune`
+presets from overlaying the Nix config.
+
+Evidence on llm1 (none of it is a deployment):
+
+- The 12 packaged parity tools passed bitwise on the GTX 1070 (FP32 GEMM 134
+  shapes, matrix-vector, wide and fused dequantization, HC reads, batch windows,
+  conversation snapshots, the IQ4_XS/IQ4_NL CPU kernels).
+- `tests/check-strata-optimizations.py` against the deployed 0.1.44.1 engine, deployed
+  config, `--expert-cache 486`: identical token IDs in all four modes.
+- Teacher-forced decode quality against the 0.1.44.1 reference: top-1 100%, KL 0.
+- Stock 0.2.2 without the patches: solo 35.4 t/s, 4.4k prompt 98 t/s, and the
+  second slot failed with out of memory (235 MiB free instead of 829).
+- Same harness, deployed engine vs. port (old server, two rounds each): solo
+  39.4 vs. 39.2, two requests 39.6 vs. 40.4, 1.4k prompt 206 vs. 210 t/s. The 0.2.2
+  server with the pinned sampling matched the old one (solo 39.4 vs. 39.4; upstream
+  #3667's short-reply slowdown comes from the penalty default).
+
+Upstream opt-ins kept: the five decode switches of upstream's P100 table
+(`STRATA_SIDE_MIXER=2`, `FUSE_WAIT=2`, `B6_MMVQ_ROWS=1`, `FUSE_DECODE=1`, `GR_UP75=1`;
+the table only applies to cc 6.0) and `--mtp-hnorm stream`. Clean runs: solo 39.3 ->
+40.6 t/s (+3%); two requests 38.9 -> 39.2 (noise). Each P100 switch alone kept the
+solo, two-slot and one-slot tokens; the fresh-prompt mode differs even between two
+runs of the same engine (the auto CPU prompt share splits chunks by measured
+timings), so it cannot qualify a switch. `--mtp-hnorm stream` only changes the drafts:
+more are accepted and the different window shapes change some solo tokens, while
+teacher-forced logits stay identical (top-1 100%, KL 0).
+
+Measured and not kept: `STRATA_AUX_CPUS=auto` (the only DACAN-inspired candidate
+that applied: solo 39.45, two requests 39.2, within noise). DACAN's engine is closed
+source; its other techniques need AVX-512/AVX-VNNI, Turing or newer GPUs, a file
+tier or two sockets, or are already in Strata.
+
+Two benchmark rounds that overlapped hv1's 01:00 backup fell to 8-17 t/s solo
+(PLE reads) and were discarded.
+
 ### Nightly backups
 
 Strata reads the 28.8 GB n-gram (PLE) table with direct I/O from llm1's data
@@ -1040,11 +1101,12 @@ is configured for node 0 too; 102 (w11test) is unchanged.
 
 - The model is in `/mnt/data/models` on llm1's data disk, bind-mounted
   read-only into `strata`.
-- Strata is pinned to the `v0.1.44.1` tag. When bumping it, update the ggml
-  commit from `third_party/ggml/VERSION.txt`, re-check the MTP fetch patch
-  (`strata-mtp-fetch.patch`), and benchmark one and two requests against the
-  Performance table.
-- When bumping Strata, port `strata-performance.patch` (see "Engine patch"),
-  then run upstream's `tools/batch_test.py` on llm1 with strata stopped
-  (`--batch 2 --n 2` and `--n 1`, `--extra "--adapt-every 1000000"`, the
-  config's paths under `/var/lib/private/strata`) and the benchmarks.
+- Strata is pinned to the `v0.2.2` tag. When bumping it, update the ggml
+  commit from `third_party/ggml/VERSION.txt`, port every patch in the order of
+  `strata.nix` (see "Engine patch" and "0.2.2 migration"), and check that the
+  server's imports outside `serve/` are installed.
+- After a bump, run on llm1 with strata stopped: the packaged parity tools
+  (`libexec/strata`), `tests/check-strata-optimizations.py` against the
+  previous engine with a fixed `--expert-cache`, then one- and two-request
+  benchmarks against the Performance table. Compare the engine's per-request
+  log lines, not the server's tok/s.

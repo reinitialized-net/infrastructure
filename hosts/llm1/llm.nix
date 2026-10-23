@@ -40,6 +40,8 @@ let
     chmod -R u+w $out/share/strata/serve
     ln -s ${strata}/share/strata/tools $out/share/strata/tools
     ln -s ${strata}/share/strata/data $out/share/strata/data
+    ln -s ${strata}/share/strata/strata_control $out/share/strata/strata_control
+    ln -s ${strata}/share/strata/strata_cli $out/share/strata/strata_cli
     cp ${./harness/test_workspace.py} $out/share/strata/serve/test_workspace.py
     cp ${./harness/workspace_proxy.py} $out/share/strata/serve/workspace_proxy.py
     cp ${./harness/workspace.js} $out/share/strata/serve/web/workspace.js
@@ -84,6 +86,10 @@ let
         "0.5"
         "--mtp"
         "${strataDir}/mtp-base/rt"
+        # The draft layer normalizes each hyper-connection stream on its own:
+        # more drafts accepted, solo +3% with the switches below (2026-10-23).
+        "--mtp-hnorm"
+        "stream"
         # Lazy CUDA graphs and prompt buffers need headroom above the expert cache:
         # with the default reserve the card fell to 185 MiB free (paging risk, #2065).
         "--vram-reserve-mib"
@@ -114,7 +120,13 @@ let
         temperature = 1.0;
         top_p = 0.95;
         top_k = 20;
+        # Since 0.1.45 the server fills unset keys from the model card, whose
+        # thinking-off set adds presence_penalty 1.5 (0 is the engine's "off").
+        presence_penalty = 0;
       };
+      # 0.1.45+ closes thinking early to leave a quarter of max_tokens for the
+      # answer; agents set their own budgets, so keep the 0.1.44 behaviour.
+      answer_room = false;
       # Agents: while one prompt is read, the other slot decodes for as long as
       # each prompt chunk took (half the time instead of a third).
       env = {
@@ -141,6 +153,17 @@ let
         # full-model parity and repeated slot/solo checkpoint restoration.
         STRATA_IQ4XS_WIDE = "1";
         STRATA_DIRECT_MTP_COPY = "1";
+        # Device-to-device copies between the main session and the batch slots
+        # (upstream since 0.2.0; strata-performance.patch had them on by default).
+        STRATA_SLOT_COPY_DIRECT = "1";
+        # Upstream's decode switches for the P100 (cc 6.0) table, which does not
+        # match this cc 6.1 card: decode tokens identical in solo, two-slot and
+        # one-slot gates; teacher-forced logits identical (2026-10-23).
+        STRATA_SIDE_MIXER = "2";
+        STRATA_FUSE_WAIT = "2";
+        STRATA_B6_MMVQ_ROWS = "1";
+        STRATA_FUSE_DECODE = "1";
+        STRATA_GR_UP75 = "1";
       };
       # Start from what the VRAM expert cache learned before the last restart.
       expert_profile_save = "expert-profile-qwen3.8-flash-next-uncensored-iq4_xs.bin";
@@ -221,6 +244,9 @@ in
       # Read by the server: a request left alone returns to the faster solo path.
       # strata-slot-checkpoints.patch preserves its turn checkpoints across transfers.
       STRATA_PARALLEL_SOLO = "1";
+      # 0.2.x lays saved `strata tune` presets over the config at every start;
+      # the Nix config stays the only source of engine args and env.
+      STRATA_NO_PRESET = "1";
     };
     script = ''
       # Strata takes several keys separated by commas; the file has one per line.

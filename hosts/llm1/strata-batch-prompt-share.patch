@@ -1,8 +1,8 @@
 diff --git a/src/program/generate.cpp b/src/program/generate.cpp
-index eff7cfc..25f29a1 100644
+index b144881b..885bec15 100644
 --- a/src/program/generate.cpp
 +++ b/src/program/generate.cpp
-@@ -7298,7 +7298,16 @@ int main(int argc, char** argv) {
+@@ -8321,7 +8321,16 @@ int main(int argc, char** argv) {
              }
          }
  #endif

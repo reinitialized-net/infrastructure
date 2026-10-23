@@ -1,5 +1,5 @@
 diff --git a/include/strata/core/session.hpp b/include/strata/core/session.hpp
-index 4d63320..f90dd69 100644
+index 4d633205..f90dd69f 100644
 --- a/include/strata/core/session.hpp
 +++ b/include/strata/core/session.hpp
 @@ -95,11 +95,15 @@ struct SessionState {
@@ -21,10 +21,10 @@ index 4d63320..f90dd69 100644
  /// rope kernels' registered angle table, #280), so a later session never rotates by freed memory.
  void session_release(SessionState& s);
 diff --git a/src/core/session.cpp b/src/core/session.cpp
-index 157c4cc..c65098e 100644
+index 0a25df79..5e5f5261 100644
 --- a/src/core/session.cpp
 +++ b/src/core/session.cpp
-@@ -52,7 +52,8 @@ static uint64_t ple_hist_bytes() {
+@@ -53,7 +53,8 @@ static uint64_t ple_hist_bytes() {
      return (uint64_t) strata::kernels::NG_HIST * strata::kernels::NG_HC_DIM * sizeof(float);
  }
  
@@ -34,7 +34,7 @@ index 157c4cc..c65098e 100644
      if (layer_hi < 0 || layer_hi > g.n_layers) layer_hi = g.n_layers;
      if (layer_lo < 0) layer_lo = 0;
      // QSA layers are `l % interval == interval-1`, so exactly `bound / interval` of them live below `bound`
-@@ -65,7 +66,7 @@ uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int
+@@ -66,7 +67,7 @@ uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int
      n += (uint64_t) gdn_n * gdn_state_floats(g) * 4;
      // One QSA state carries the RoPE table; the others borrow it (P7: 64 MiB per layer at 262K).
      if (g.n_qsa_layers() > 0)
@@ -43,7 +43,7 @@ index 157c4cc..c65098e 100644
      n += qsa_buffers_bytes(g, max_cells);
      n += moe_buffers_bytes(g, k);
      n += block_buffers_bytes(g);
-@@ -74,7 +75,7 @@ uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int
+@@ -75,7 +76,7 @@ uint64_t session_bytes(const ModelGeometry& g, int64_t max_cells, int64_t k, int
  }
  
  uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void* base, SessionState& s,
@@ -52,7 +52,7 @@ index 157c4cc..c65098e 100644
      if (layer_hi < 0 || layer_hi > g.n_layers) layer_hi = g.n_layers;
      if (layer_lo < 0) layer_lo = 0;
      uint8_t* p = (uint8_t*) base;
-@@ -104,7 +105,8 @@ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void
+@@ -105,7 +106,8 @@ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void
      // same way, which is a coupling with nothing to gain.  Only the range's ordinals are initialized; the
      // rest stay value-initialized nulls.  The FIRST ALLOCATED one (the session's primary, ordinal qsa_ord0)
      // owns the RoPE table that the others - and the prefill staging identity, and the MTP drafter - borrow.
@@ -62,7 +62,7 @@ index 157c4cc..c65098e 100644
      s.qsa_state_arena = take(g.n_qsa_layers() > 0 ? first + (uint64_t) (s.qsa_alloc - 1) * rest : 0);
      s.qsa_states = new QsaState[(size_t) g.n_qsa_layers()]();
      s.qsa_buf_arena = take(qsa_buffers_bytes(g, max_cells));
-@@ -114,7 +116,7 @@ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void
+@@ -115,7 +117,7 @@ uint64_t session_init(const ModelGeometry& g, int64_t max_cells, int64_t k, void
      // attention read null host pointers at the first request ("illegal memory access"), so the session fails here
      for (int64_t j = 0; j < s.qsa_alloc; ++j)
          if (qsa_state_init(g, max_cells, qp + (j == 0 ? 0 : first + (uint64_t) (j - 1) * rest),
@@ -72,10 +72,10 @@ index 157c4cc..c65098e 100644
      qsa_buffers_init(g, max_cells, s.qsa_buf_arena, s.qsa_bufs);
  
 diff --git a/src/program/generate.cpp b/src/program/generate.cpp
-index 25f29a1..852cfc8 100644
+index 885bec15..e851b842 100644
 --- a/src/program/generate.cpp
 +++ b/src/program/generate.cpp
-@@ -4569,12 +4569,18 @@ int main(int argc, char** argv) {
+@@ -5352,12 +5352,18 @@ int main(int argc, char** argv) {
              const int64_t lo = k == 0 ? 0 : stages[k - 1]->lb;
              const int64_t hi = k == 0 ? (multi_gpu ? split_at[0] : -1) : stages[k - 1]->le;
              const strata::core::OnDevice on_k(dev);

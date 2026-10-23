@@ -1,8 +1,8 @@
 diff --git a/include/strata/kernels/cpu/iq_avx2.hpp b/include/strata/kernels/cpu/iq_avx2.hpp
-index f82f137..c25fc85 100644
+index 500c807c..9df17066 100644
 --- a/include/strata/kernels/cpu/iq_avx2.hpp
 +++ b/include/strata/kernels/cpu/iq_avx2.hpp
-@@ -25,6 +25,8 @@ inline constexpr int kIq256Gather = 1;
+@@ -30,6 +30,8 @@ inline constexpr int kIq256Gather = 1;
  inline constexpr int kIq256Vnni = 2;
  /// IQ4_NL only: identical lanes with a single AVX2 nibble shuffle (STRATA_IQ4NL_WIDE=1).
  inline constexpr int kIq4nlWide = 4;
@@ -12,7 +12,7 @@ index f82f137..c25fc85 100644
  int iq256_variant() noexcept;
  /// Every variant bit this build and this CPU can run (tests and benches).
 diff --git a/src/kernels/cpu/iq_avx2.cpp b/src/kernels/cpu/iq_avx2.cpp
-index 550136c..13888a9 100644
+index 01da29aa..a150c02a 100644
 --- a/src/kernels/cpu/iq_avx2.cpp
 +++ b/src/kernels/cpu/iq_avx2.cpp
 @@ -366,6 +366,23 @@ template <> struct Fmt32<23> {   // IQ4_XS: d, scales_h, scales_l[4], qs[128] -
@@ -39,7 +39,7 @@ index 550136c..13888a9 100644
  // ---- the row kernels, twice: the AVX2 forms and the AVX-VNNI ones (iq_avx2_rows.inl)
  namespace plain {
  #define STRATA_ROWS_VNNI 0
-@@ -457,13 +474,15 @@ int iq256_variant() noexcept {
+@@ -491,13 +508,15 @@ int iq256_variant() noexcept {
      // STRATA_IQ256_GATHER=0/1 for every core; unset, where the calling thread's core gathers faster (per thread: a
      // hybrid CPU's pool runs on P- and E-cores).  AVX-VNNI where cpu_avxvnni_ok().  The same bits either way.
      const int s = iq256_gather_setting();
@@ -57,7 +57,7 @@ index 550136c..13888a9 100644
      const bool g = (variant & kIq256Gather) != 0;
  #if STRATA_AVXVNNI
      if (variant & kIq256Vnni) {
-@@ -478,6 +497,7 @@ void iq256_gu_rows_v(int variant, int type, const uint8_t* blob, size_t gu_row,
+@@ -512,6 +531,7 @@ void iq256_gu_rows_v(int variant, int type, const uint8_t* blob, size_t gu_row,
  
  void iq256_rows_v(int variant, int type, const uint8_t* w, size_t row_bytes, int n, const void* const* act, int nt,
                    float* const* out, int r0, int r1) {
@@ -66,7 +66,7 @@ index 550136c..13888a9 100644
  #if STRATA_AVXVNNI
      if (variant & kIq256Vnni) {
 diff --git a/src/kernels/cpu/iq_avx2_parity.cpp b/src/kernels/cpu/iq_avx2_parity.cpp
-index 6a448b1..75a4022 100644
+index 9e63904c..ba449b36 100644
 --- a/src/kernels/cpu/iq_avx2_parity.cpp
 +++ b/src/kernels/cpu/iq_avx2_parity.cpp
 @@ -104,6 +104,7 @@ std::string variant_name(int v) {
@@ -78,10 +78,10 @@ index 6a448b1..75a4022 100644
  }
  #endif
 diff --git a/src/kernels/cpu/iq_avx2_rows.inl b/src/kernels/cpu/iq_avx2_rows.inl
-index e26f344..9eb51f0 100644
+index 7e659876..549fb978 100644
 --- a/src/kernels/cpu/iq_avx2_rows.inl
 +++ b/src/kernels/cpu/iq_avx2_rows.inl
-@@ -216,6 +216,7 @@ void gu_type(int type, int nt, const uint8_t* blob, size_t gu_row, size_t up_off
+@@ -268,6 +268,7 @@ void gu_type(int type, int nt, const uint8_t* blob, size_t gu_row, size_t up_off
          case 18: gu_rows_nt<G ? 118 : 18>(nt, blob, gu_row, up_off, n, act, ff, r0, r1); break;
          case 21: gu_rows_nt<G ? 121 : 21>(nt, blob, gu_row, up_off, n, act, ff, r0, r1); break;
          case 22: gu_rows_nt<G ? 122 : 22>(nt, blob, gu_row, up_off, n, act, ff, r0, r1); break;
@@ -89,7 +89,7 @@ index e26f344..9eb51f0 100644
          case 23: gu_rows_nt<23>(nt, blob, gu_row, up_off, n, act, ff, r0, r1); break;
          default: break;
      }
-@@ -230,6 +231,7 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
+@@ -282,6 +283,7 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
          case 18: dot_rows_nt<G ? 118 : 18>(nt, w, row_bytes, n, act, out, r0, r1); break;
          case 21: dot_rows_nt<G ? 121 : 21>(nt, w, row_bytes, n, act, out, r0, r1); break;
          case 22: dot_rows_nt<G ? 122 : 22>(nt, w, row_bytes, n, act, out, r0, r1); break;

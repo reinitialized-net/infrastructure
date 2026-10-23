@@ -1,5 +1,5 @@
 diff --git a/src/kernels/cpu/iq_avx2.cpp b/src/kernels/cpu/iq_avx2.cpp
-index 13888a9..52fa27d 100644
+index a150c02a..bcbcc736 100644
 --- a/src/kernels/cpu/iq_avx2.cpp
 +++ b/src/kernels/cpu/iq_avx2.cpp
 @@ -188,6 +188,12 @@ int prefetch_distance() {
@@ -56,7 +56,7 @@ index 13888a9..52fa27d 100644
  // ---- the row kernels, twice: the AVX2 forms and the AVX-VNNI ones (iq_avx2_rows.inl)
  namespace plain {
  #define STRATA_ROWS_VNNI 0
-@@ -549,25 +589,6 @@ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* c
+@@ -583,25 +623,6 @@ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* c
  // lane order once per pair and shared by the gate and the up row; a super-block's eight scales are decoded once,
  // in vector code.  ~0.3 vector instructions per weight against ggml's ~0.6.  Another summation order than ggml's.
  namespace {
@@ -83,10 +83,10 @@ index 13888a9..52fa27d 100644
  inline __m256i iq4xs_pair(const uint8_t* blk, int j, __m256i values, __m256i m4, __m256i ylo, __m256i yhi, __m256i sc) {
      const __m256i bits = _mm256_loadu_si256((const __m256i*) (blk + 8 + 32 * j));
 diff --git a/src/kernels/cpu/iq_avx2_parity.cpp b/src/kernels/cpu/iq_avx2_parity.cpp
-index 75a4022..92537b8 100644
+index ba449b36..27ea7f0b 100644
 --- a/src/kernels/cpu/iq_avx2_parity.cpp
 +++ b/src/kernels/cpu/iq_avx2_parity.cpp
-@@ -317,8 +317,11 @@ int check_down(int d_type) {
+@@ -336,8 +336,11 @@ int check_down(int d_type) {
      }
      int failures = 0;
      const double r_ref = rel(one.data(), ref.data(), one.size());
@@ -101,11 +101,11 @@ index 75a4022..92537b8 100644
      for (int v : subsets(down_variants(d_type))) {
          size_t differ = 0;
 diff --git a/src/kernels/cpu/iq_avx2_rows.inl b/src/kernels/cpu/iq_avx2_rows.inl
-index 9eb51f0..e71fac7 100644
+index 549fb978..be04fec3 100644
 --- a/src/kernels/cpu/iq_avx2_rows.inl
 +++ b/src/kernels/cpu/iq_avx2_rows.inl
-@@ -145,10 +145,48 @@ inline void row_dot_iq2xs(const uint8_t* row, int nblocks, const block_q8_K* con
-     for (int t = 0; t < NT; ++t) res[t] = hsum8(accf[t]);
+@@ -197,10 +197,48 @@ inline void row_dot_iq2xs(const uint8_t* row, int nblocks, const block_q8_K* con
+     for (int t = 0; t < NT; ++t) res[t] = GGML ? 0.125f * ggml_hsum8(accf[t]) : hsum8(accf[t]);
  }
  
 +// ---- IQ4_XS, several tokens (wide-xs, Fmt32<123>): row_dot<123> with the block's eight sub-block scales decoded once
@@ -154,7 +154,7 @@ index 9eb51f0..e71fac7 100644
  }
  
  template <int TY, int NT> STRATA_ROWS_FN
-@@ -242,20 +280,32 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
+@@ -294,20 +332,32 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
  // kvalues_iq4nl pshufb decode and the |w| half of the signed x signed product.  Here both are computed once
  // per block; every token then costs a sign, a maddubs, a madd and an fmadd.  The arithmetic is ggml's - only
  // the order of the float additions differs.
@@ -189,7 +189,7 @@ index 9eb51f0..e71fac7 100644
              __m256i q4;
              if constexpr (Wide) {
                  // The same decoded bytes in the same lanes: a broadcast load and one shuffle
-@@ -277,26 +327,34 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
+@@ -329,26 +379,34 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
                  const block_q8_0& b = y[t][ib];
                  const __m256i q8 = _mm256_loadu_si256((const __m256i*) b.qs);
                  const __m256i p = dot4u(aq, _mm256_sign_epi8(q8, q4));

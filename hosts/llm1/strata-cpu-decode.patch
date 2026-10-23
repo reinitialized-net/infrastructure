@@ -1,8 +1,8 @@
 diff --git a/include/strata/kernels/cpu/iq_avx2.hpp b/include/strata/kernels/cpu/iq_avx2.hpp
-index a67061f..f82f137 100644
+index a428df3d..500c807c 100644
 --- a/include/strata/kernels/cpu/iq_avx2.hpp
 +++ b/include/strata/kernels/cpu/iq_avx2.hpp
-@@ -23,6 +23,8 @@ void iq256_rows(int ggml_type, const uint8_t* w, size_t row_bytes, int n, const
+@@ -28,6 +28,8 @@ void iq256_rows(int ggml_type, const uint8_t* w, size_t row_bytes, int n, const
  /// kIq256Vnni: AVX-VNNI's vpdpwssd / vpdpbusd, every format and iq4nl256_down_rows (cpu_avxvnni_ok).
  inline constexpr int kIq256Gather = 1;
  inline constexpr int kIq256Vnni = 2;
@@ -11,7 +11,7 @@ index a67061f..f82f137 100644
  /// The variant iq256_gu_rows / iq256_rows take on the calling thread.
  int iq256_variant() noexcept;
  /// Every variant bit this build and this CPU can run (tests and benches).
-@@ -48,7 +50,7 @@ void q8k_quant_avx2(const float* x, void* y, int64_t n);
+@@ -53,7 +55,7 @@ void q8k_quant_avx2(const float* x, void* y, int64_t n);
  /// IQ4_NL is a 32-value-block format, so this does not go through iq256_rows (QK_K blocks, Q8_K acts).
  void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
                          float* const* out, int r0, int r1);
@@ -21,10 +21,10 @@ index a67061f..f82f137 100644
                            float* const* out, int r0, int r1);
  
 diff --git a/src/kernels/cpu/iq_avx2.cpp b/src/kernels/cpu/iq_avx2.cpp
-index 2b74176..550136c 100644
+index 795422fe..01da29aa 100644
 --- a/src/kernels/cpu/iq_avx2.cpp
 +++ b/src/kernels/cpu/iq_avx2.cpp
-@@ -506,17 +506,20 @@ void iq4nl256_down_rows_v(int variant, const uint8_t* w, size_t row_bytes, int n
+@@ -540,17 +540,20 @@ void iq4nl256_down_rows_v(int variant, const uint8_t* w, size_t row_bytes, int n
      for (int t = 0; t < nt; ++t) y[t] = (const block_q8_0*) hq[t];
  #if STRATA_AVXVNNI
      if (variant & kIq256Vnni) {
@@ -50,7 +50,7 @@ index 2b74176..550136c 100644
  
  // ---- IQ4_XS gate and up rows for ONE token (the common case: most of a window's expert groups hold one token).
 diff --git a/src/kernels/cpu/iq_avx2_parity.cpp b/src/kernels/cpu/iq_avx2_parity.cpp
-index 5475dd5..6a448b1 100644
+index ab2ea752..9e63904c 100644
 --- a/src/kernels/cpu/iq_avx2_parity.cpp
 +++ b/src/kernels/cpu/iq_avx2_parity.cpp
 @@ -64,7 +64,7 @@ constexpr int kMaxT = 8;
@@ -81,7 +81,7 @@ index 5475dd5..6a448b1 100644
      return s;
  }
  #endif
-@@ -316,7 +319,7 @@ int check_down(int d_type) {
+@@ -335,7 +338,7 @@ int check_down(int d_type) {
      std::printf("  %-8s down rows vs %s: rel %.2e\n", type_name(d_type),
                  d_type == 20 ? "ggml vec_dot" : "a double reference", r_ref);
      if (!(r_ref <= 1e-5)) { std::printf("  %-8s MISMATCH against the reference\n", type_name(d_type)); ++failures; }
@@ -90,7 +90,7 @@ index 5475dd5..6a448b1 100644
          size_t differ = 0;
          std::vector<float> o(kMaxT * R);
          for (int nt = 1; nt <= kMaxT; ++nt) {
-@@ -329,6 +332,18 @@ int check_down(int d_type) {
+@@ -348,6 +351,18 @@ int check_down(int d_type) {
                      variant_name(v).c_str(), differ, variant_name(0).c_str());
          if (differ) ++failures;
      }
@@ -109,7 +109,7 @@ index 5475dd5..6a448b1 100644
      return failures;
  }
  
-@@ -420,7 +435,7 @@ int bench(const std::vector<std::string>& pairs, const std::vector<int>& nts, in
+@@ -439,7 +454,7 @@ int bench(const std::vector<std::string>& pairs, const std::vector<int>& nts, in
              };
          };
          if (!dispatch_only && kVariants) {
@@ -119,10 +119,10 @@ index 5475dd5..6a448b1 100644
                                [&, v, gt](const uint8_t* blob, int nt) { gu_rows_v(v, gt, blob, f.gu_row, f.up_off, a.gup, nt, ff); },
                                down_v(v)});
 diff --git a/src/kernels/cpu/iq_avx2_rows.inl b/src/kernels/cpu/iq_avx2_rows.inl
-index a8af07f..e26f344 100644
+index 5489d8ee..7e659876 100644
 --- a/src/kernels/cpu/iq_avx2_rows.inl
 +++ b/src/kernels/cpu/iq_avx2_rows.inl
-@@ -240,7 +240,7 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
+@@ -292,7 +292,7 @@ void dot_type(int type, int nt, const uint8_t* w, size_t row_bytes, int n, const
  // kvalues_iq4nl pshufb decode and the |w| half of the signed x signed product.  Here both are computed once
  // per block; every token then costs a sign, a maddubs, a madd and an fmadd.  The arithmetic is ggml's - only
  // the order of the float additions differs.
@@ -131,7 +131,7 @@ index a8af07f..e26f344 100644
  void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* const* y, float* const* out,
                  int r0, int r1) {
      const __m128i values = _mm_loadu_si128((const __m128i*) kvalues_iq4nl);
-@@ -254,11 +254,21 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
+@@ -306,11 +306,21 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
          for (int ib = 0; ib < nb; ++ib) {
              const uint8_t* blk = row + (size_t) ib * sizeof(block_iq4_nl);
              rows_ahead(blk, pf);
@@ -158,7 +158,7 @@ index a8af07f..e26f344 100644
              const __m256i aq = _mm256_sign_epi8(q4, q4);   // |w|: the unsigned operand of maddubs
              const float dx = h2f(u16(blk));
              for (int t = 0; t < NT; ++t) {
-@@ -272,16 +282,16 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
+@@ -324,16 +334,16 @@ void iq4nl_rows(const uint8_t* w, size_t row_bytes, int n, const block_q8_0* con
      }
  }
  

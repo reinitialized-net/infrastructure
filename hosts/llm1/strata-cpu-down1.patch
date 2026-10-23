@@ -1,8 +1,8 @@
 diff --git a/include/strata/kernels/cpu/iq_avx2.hpp b/include/strata/kernels/cpu/iq_avx2.hpp
-index c25fc85..a747ea4 100644
+index 9df17066..8cfd2060 100644
 --- a/include/strata/kernels/cpu/iq_avx2.hpp
 +++ b/include/strata/kernels/cpu/iq_avx2.hpp
-@@ -52,6 +52,10 @@ void q8k_quant_avx2(const float* x, void* y, int64_t n);
+@@ -57,6 +57,10 @@ void q8k_quant_avx2(const float* x, void* y, int64_t n);
  /// IQ4_NL is a 32-value-block format, so this does not go through iq256_rows (QK_K blocks, Q8_K acts).
  void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
                          float* const* out, int r0, int r1);
@@ -14,10 +14,10 @@ index c25fc85..a747ea4 100644
  void iq4nl256_down_rows_v(int variant, const uint8_t* w, size_t row_bytes, int n, const void* const* hq, int nt,
                            float* const* out, int r0, int r1);
 diff --git a/src/kernels/cpu/iq_avx2.cpp b/src/kernels/cpu/iq_avx2.cpp
-index 52fa27d..3c18adf 100644
+index bcbcc736..c63571e1 100644
 --- a/src/kernels/cpu/iq_avx2.cpp
 +++ b/src/kernels/cpu/iq_avx2.cpp
-@@ -582,6 +582,50 @@ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* c
+@@ -616,6 +616,50 @@ void iq4nl256_down_rows(const uint8_t* w, size_t row_bytes, int n, const void* c
                           w, row_bytes, n, hq, nt, out, r0, r1);
  }
  
@@ -69,10 +69,10 @@ index 52fa27d..3c18adf 100644
  // ggml-cpu's dot works one row and one 128-bit half at a time, with the sub-block scale decoded in scalar code per
  // 32 values.  Here a 256-bit register holds two sub-blocks (32 qs bytes: sub-block 2j in lane 0, 2j+1 in lane 1), so
 diff --git a/src/kernels/cpu/iq_avx2_parity.cpp b/src/kernels/cpu/iq_avx2_parity.cpp
-index 92537b8..084b4b7 100644
+index 27ea7f0b..3a369f6c 100644
 --- a/src/kernels/cpu/iq_avx2_parity.cpp
 +++ b/src/kernels/cpu/iq_avx2_parity.cpp
-@@ -348,6 +348,16 @@ int check_down(int d_type) {
+@@ -367,6 +367,16 @@ int check_down(int d_type) {
          std::printf("  iq4_nl   dispatch     1..8 tokens: %zu down rows differ from the scalar one-token rows\n", differ);
          if (differ) ++failures;
      }
@@ -89,7 +89,7 @@ index 92537b8..084b4b7 100644
      return failures;
  }
  
-@@ -475,6 +485,15 @@ int bench(const std::vector<std::string>& pairs, const std::vector<int>& nts, in
+@@ -500,6 +510,15 @@ int bench(const std::vector<std::string>& pairs, const std::vector<int>& nts, in
                            else cpu::native_down_rows(f, blob, a.dnp, nt, out, 0, (int) kH);
                        }});
  
@@ -106,15 +106,19 @@ index 92537b8..084b4b7 100644
              for (bool packed : {false, true}) {
                  auto gu1 = ms.back();
 diff --git a/src/kernels/cpu/native_expert.cpp b/src/kernels/cpu/native_expert.cpp
-index 6b050dd..16a0da3 100644
+index 1c7dbd93..f2d1d41f 100644
 --- a/src/kernels/cpu/native_expert.cpp
 +++ b/src/kernels/cpu/native_expert.cpp
-@@ -267,6 +267,12 @@ void native_down_rows(const NativeFmt& f, const uint8_t* blob, const void* const
+@@ -327,6 +327,16 @@ void native_down_rows(const NativeFmt& f, const uint8_t* blob, const void* const
          iq4nl256_down_rows(blob + f.down_off, f.d_row, (int) f.n_ff, hq, nt, out, r0, r1);
          return;
      }
-+    // one token below mt_min: ggml's own dot order without its per-row call (STRATA_IQ4NL_ONE=0: ggml-cpu's dot)
-+    static const bool one = [] { const char* v = std::getenv("STRATA_IQ4NL_ONE"); return v == nullptr || v[0] != '0'; }();
++    // one token below mt_min: ggml's own dot order without its per-row call (STRATA_IQ4NL_ONE=0: ggml-cpu's dot).
++    // ggml's bits only where ggml-cpu is itself the AVX2 build (the exact_one guard above, #2215).
++    static const bool one = [] {
++        const char* v = std::getenv("STRATA_IQ4NL_ONE");
++        return (v == nullptr || v[0] != '0') && ggml_cpu_has_avx2() && !ggml_cpu_has_avx512();
++    }();
 +    if (cpu_avx2_ok() && one && iq4nl_mt && nt == 1 && f.d_type == 20 && !f.tail_off && iq4nl256_down1_fits((int) f.n_ff)) {
 +        iq4nl256_down1_rows(blob + f.down_off, f.d_row, (int) f.n_ff, hq[0], out[0], r0, r1);
 +        return;
